@@ -13,6 +13,8 @@ export interface PlatformIRNode {
   importance: "primary" | "secondary" | "supporting";
   compactPlacement: "inline" | "persistent-bottom";
   regularPlacement: "inline" | "persistent-bottom";
+  eventName: string | null;
+  visibleStates: string[];
 }
 
 export interface PlatformIRScreen {
@@ -20,6 +22,8 @@ export interface PlatformIRScreen {
   title: string;
   route: string;
   nodes: PlatformIRNode[];
+  fixture: Record<string, unknown>;
+  eventTargets: Record<string, string>;
   contract?: UIContract;
 }
 
@@ -69,6 +73,14 @@ export function lowerGraph(graph: SemanticInterfaceGraph, target: PlatformTarget
     tokens: graph.tokens,
     screens: graph.screens.map((screen) => {
       const contract = graph.contracts.find((candidate) => candidate.screenId === screen.id);
+      const fixture = graph.fixtures.find(
+        (candidate) => candidate.screenId === screen.id && candidate.state !== "failed",
+      )?.data ?? {};
+      const eventTargets = Object.fromEntries(
+        graph.flows.flatMap((flow) => flow.steps)
+          .filter((step) => step.from === screen.id)
+          .map((step) => [step.event, step.to]),
+      );
       return {
         id: screen.id,
         title: screen.title,
@@ -81,7 +93,11 @@ export function lowerGraph(graph: SemanticInterfaceGraph, target: PlatformTarget
           importance: node.intent.importance,
           compactPlacement: node.layout.placement?.compact ?? "inline",
           regularPlacement: node.layout.placement?.regular ?? "inline",
+          eventName: node.interactions[0]?.event ?? null,
+          visibleStates: node.states.map((state) => state.name),
         })),
+        fixture,
+        eventTargets,
         ...(contract ? { contract } : {}),
       };
     }),

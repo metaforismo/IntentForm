@@ -167,6 +167,10 @@ export function Studio() {
   const changes = useMemo(() => semanticDiff(baseline, graph), [baseline, graph]);
   const output = outputTarget === "react" ? reactOutput : swiftOutput;
   const selectedCode = output.files.find((file) => file.path.includes(selectedScreen)) ?? output.files[0];
+  const previewVariant = graph.screens
+    .find((screen) => screen.id === "payment-request")
+    ?.nodes.find((node) => node.kind === "primary-action")
+    ?.layout.placement?.compact === "persistent-bottom" ? "after" : "before";
 
   const compileBrief = () => {
     startTransition(async () => {
@@ -337,7 +341,23 @@ export function Studio() {
 
               {stage === "outputs" ? (
                 <div className="grid gap-5 xl:grid-cols-[minmax(330px,.72fr)_minmax(0,1.28fr)]">
-                  <div><PhonePreview graph={graph} selectedScreen={selectedScreen} /></div>
+                  <div>
+                    {outputTarget === "react" ? (
+                      <div className="overflow-hidden rounded-[32px] border border-[var(--line)] bg-[#e9ede8] p-4">
+                        <div className="mb-3 flex items-center justify-between px-1 text-[10px] text-[var(--muted)]">
+                          <span className="font-semibold text-[var(--accent-dark)]">Runnable compiler artifact</span>
+                          <span className="font-mono">{previewVariant} · {reactOutput.fingerprint}</span>
+                        </div>
+                        <iframe
+                          key={`${previewVariant}-${selectedScreen}`}
+                          src={`/react-preview/index.html?variant=${previewVariant}&screen=${selectedScreen}`}
+                          title={`Generated React preview: ${selectedScreen}`}
+                          sandbox="allow-scripts allow-same-origin"
+                          className="h-[570px] w-full rounded-[22px] border border-[var(--line)] bg-white"
+                        />
+                      </div>
+                    ) : <PhonePreview graph={graph} selectedScreen={selectedScreen} />}
+                  </div>
                   <div className="min-w-0 overflow-hidden rounded-[24px] border border-[#303a35] bg-[#1c211f] text-[#dce5df] shadow-[0_24px_50px_-34px_rgba(18,28,23,.8)]">
                     <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
                       <div className="flex gap-1 rounded-lg bg-white/5 p-1">

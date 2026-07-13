@@ -10,47 +10,65 @@ import {
 import type { SemanticInterfaceGraph } from "@intentform/semantic-schema";
 
 const componentForNode = (node: PlatformIRNode): string => {
-  const label = JSON.stringify(node.label);
+  const label = `{${JSON.stringify(node.label)}}`;
+  const handler = node.eventName ? ` onClick={events.${node.eventName}}` : "";
+  let source: string;
   switch (node.kind) {
     case "balance-summary":
-      return `<section className="balance" aria-label={${JSON.stringify(node.accessibilityLabel)}}><span>Available balance</span><strong>€8,420.16</strong><small>Updated just now</small></section>`;
+      source = `<section className="balance" aria-label={${JSON.stringify(node.accessibilityLabel)}}><span>Available balance</span><strong>€8,420.16</strong><small>Updated just now</small></section>`;
+      break;
     case "transaction-list":
-      return `<section aria-label={${JSON.stringify(node.accessibilityLabel)}}><h2>Recent activity</h2><ul className="transactions"><li><span>Riva Studio</span><strong>−€84.20</strong></li><li><span>Northline Market</span><strong>−€32.70</strong></li></ul></section>`;
+      source = `<section aria-label={${JSON.stringify(node.accessibilityLabel)}}><h2>Recent activity</h2><ul className="transactions"><li><span>Riva Studio</span><strong>−€84.20</strong></li><li><span>Northline Market</span><strong>−€32.70</strong></li></ul></section>`;
+      break;
     case "money-input":
-      return `<label className="money-field"><span>${node.label}</span><input inputMode="decimal" defaultValue="120.00" aria-label={${JSON.stringify(node.accessibilityLabel)}} /></label>`;
+      source = `<label className="money-field"><span>${label}</span><input inputMode="decimal" defaultValue="120.00" aria-label={${JSON.stringify(node.accessibilityLabel)}} /></label>`;
+      break;
     case "recipient-identity":
-      return `<section className="recipient" aria-label={${JSON.stringify(node.accessibilityLabel)}}><span className="avatar" aria-hidden="true">MR</span><span><strong>Mara Rinaldi</strong><small>mara@northline.test</small></span></section>`;
+      source = `<section className="recipient" aria-label={${JSON.stringify(node.accessibilityLabel)}}><span className="avatar" aria-hidden="true">MR</span><span><strong>Mara Rinaldi</strong><small>mara@northline.test</small></span></section>`;
+      break;
     case "primary-action": {
       const className = node.compactPlacement === "persistent-bottom" ? "primary persistent" : "primary";
-      return `<button className="${className}" type="button" aria-label={${JSON.stringify(node.accessibilityLabel)}}>${label}</button>`;
+      source = `<button className="${className}" type="button" aria-label={${JSON.stringify(node.accessibilityLabel)}}${handler}>${label}</button>`;
+      break;
     }
     case "secondary-action":
-      return `<button className="secondary" type="button">${label}</button>`;
+      source = `<button className="secondary" type="button"${handler}>${label}</button>`;
+      break;
     case "status-message":
-      return `<p role="status" className="status">${label}</p>`;
+      source = `<p role="status" className="status">${label}</p>`;
+      break;
     case "receipt-summary":
-      return `<section className="receipt" aria-label={${JSON.stringify(node.accessibilityLabel)}}><span>Payment complete</span><strong>€120.00</strong><small>Reference IF-2048</small></section>`;
+      source = `<section className="receipt" aria-label={${JSON.stringify(node.accessibilityLabel)}}><span>Payment complete</span><strong>€120.00</strong><small>Reference IF-2048</small></section>`;
+      break;
     default:
-      return `<div>${label}</div>`;
+      source = `<div>${label}</div>`;
   }
+
+  if (node.visibleStates.length > 0) {
+    return `{${JSON.stringify(node.visibleStates)}.includes(data.status) ? (${source}) : null}`;
+  }
+  return source;
 };
+
+const componentName = (screenId: string): string =>
+  `${screenId.replace(/(^|-)([a-z])/g, (_, __, char: string) => char.toUpperCase())}Screen`;
 
 function screenSource(ir: PlatformIR, screenIndex: number): string {
   const screen = ir.screens[screenIndex];
   if (!screen) throw new Error(`Screen index ${screenIndex} is missing`);
   const body = screen.nodes.map((node) => `        ${componentForNode(node)}`).join("\n");
-  const componentName = `${screen.id.replace(/(^|-)([a-z])/g, (_, __, char: string) => char.toUpperCase())}Screen`;
-  return `import type { ${componentName}Data, ${componentName}Events } from "../contracts/${screen.id}";
+  const name = componentName(screen.id);
+  return `import type { ${name}Data, ${name}Events } from "../contracts/${screen.id}";
 
-export interface ${componentName}Props {
-  data: ${componentName}Data;
-  events: ${componentName}Events;
+export interface ${name}Props {
+  data: ${name}Data;
+  events: ${name}Events;
 }
 
-export function ${componentName}({ data: _data, events: _events }: ${componentName}Props) {
+export function ${name}({ data, events }: ${name}Props) {
   return (
     <main className="screen" data-screen-id="${screen.id}">
-      <header><span className="eyebrow">${ir.productName}</span><h1>${screen.title}</h1></header>
+      <header><span className="eyebrow">{${JSON.stringify(ir.productName)}}</span><h1>{${JSON.stringify(screen.title)}}</h1></header>
       <div className="screen-content">
 ${body}
       </div>
@@ -63,10 +81,68 @@ ${body}
 function contractSource(ir: PlatformIR, screenIndex: number): string {
   const screen = ir.screens[screenIndex];
   if (!screen) throw new Error(`Screen index ${screenIndex} is missing`);
-  const componentName = `${screen.id.replace(/(^|-)([a-z])/g, (_, __, char: string) => char.toUpperCase())}Screen`;
+  const name = componentName(screen.id);
   const fields = screen.contract?.data.map((field) => `  ${field.name}${field.required ? "" : "?"}: ${field.type === "number" ? "number" : field.type === "boolean" ? "boolean" : "string"};`).join("\n") ?? "  readonly empty: never;";
   const events = screen.contract?.events.map((event) => `  ${event.name}(${event.payload ? `payload: ${event.payload}` : ""}): void;`).join("\n") ?? "  readonly empty: never;";
-  return `export interface ${componentName}Data {\n${fields}\n}\n\nexport interface ${componentName}Events {\n${events}\n}\n`;
+  return `export interface ${name}Data {\n${fields}\n}\n\nexport interface ${name}Events {\n${events}\n}\n`;
+}
+
+const defaultValue = (type: "string" | "number" | "boolean" | "money" | "status"): unknown => {
+  if (type === "number") return 0;
+  if (type === "boolean") return false;
+  return type === "status" ? "idle" : "";
+};
+
+function appSource(ir: PlatformIR): string {
+  const imports = ir.screens
+    .map((screen) => `import { ${componentName(screen.id)} } from "./screens/${screen.id}";`)
+    .join("\n");
+  const screenIds = ir.screens.map((screen) => JSON.stringify(screen.id)).join(" | ");
+  const initialScreen = ir.screens[0]?.id;
+  if (!initialScreen) throw new Error("React output needs at least one screen");
+
+  const branches = ir.screens.map((screen) => {
+    const data = Object.fromEntries(
+      (screen.contract?.data ?? []).map((field) => [
+        field.name,
+        screen.fixture[field.name] ?? defaultValue(field.type),
+      ]),
+    );
+    const events = (screen.contract?.events ?? []).map((event) => {
+      const target = screen.eventTargets[event.name];
+      const argument = event.payload ? `_payload: ${event.payload}` : "";
+      return `          ${event.name}: (${argument}) => ${target ? `setScreen(${JSON.stringify(target)})` : "undefined"},`;
+    }).join("\n");
+    return `      {screen === ${JSON.stringify(screen.id)} ? (
+        <${componentName(screen.id)}
+          data={${JSON.stringify(data)}}
+          events={{
+${events}
+          }}
+        />
+      ) : null}`;
+  }).join("\n");
+
+  return `import { useState } from "react";
+${imports}
+import "./styles.css";
+
+type ScreenId = ${screenIds};
+
+export function GeneratedApp() {
+  const requestedScreen = new URLSearchParams(window.location.search).get("screen") as ScreenId | null;
+  const [screen, setScreen] = useState<ScreenId>(
+    requestedScreen && [${ir.screens.map((screen) => JSON.stringify(screen.id)).join(", ")}].includes(requestedScreen)
+      ? requestedScreen
+      : ${JSON.stringify(initialScreen)},
+  );
+  return (
+    <>
+${branches}
+    </>
+  );
+}
+`;
 }
 
 const styles = `:root { color-scheme: light; font-family: ui-sans-serif, system-ui, sans-serif; }
@@ -88,10 +164,12 @@ h1 { margin: 8px 0 28px; font-size: 32px; letter-spacing: -.04em; }
 .recipient small { color: #69736e; }
 .avatar { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: #dcebe4; color: #285a49; font-weight: 700; }
 button { min-height: 48px; border: 0; border-radius: 18px; font: inherit; font-weight: 700; cursor: pointer; }
+button:focus-visible, input:focus-visible { outline: 3px solid #79a995; outline-offset: 3px; }
 .primary { padding: 16px 20px; color: white; background: #397461; }
 .primary.persistent { position: fixed; right: max(22px, calc((100vw - 396px) / 2)); bottom: max(18px, env(safe-area-inset-bottom)); left: max(22px, calc((100vw - 396px) / 2)); }
 .secondary { color: #397461; background: #e7eee9; }
 .status { padding: 14px; border-left: 3px solid #b65e46; background: #f8e9e3; }
+@media (min-width: 700px) { .primary.persistent { position: static; } }
 `;
 
 export class ReactCompiler implements CompilerBackend {
@@ -110,6 +188,7 @@ export class ReactCompiler implements CompilerBackend {
       ...ir.screens.map((_, index) => ({ path: `src/generated/screens/${ir.screens[index]?.id}.tsx`, content: screenSource(ir, index) })),
       ...ir.screens.map((_, index) => ({ path: `src/generated/contracts/${ir.screens[index]?.id}.ts`, content: contractSource(ir, index) })),
       { path: "src/generated/styles.css", content: styles },
+      { path: "src/generated/App.tsx", content: appSource(ir) },
     ];
     return { target: this.id, files, fingerprint: fingerprintFiles(files) };
   }

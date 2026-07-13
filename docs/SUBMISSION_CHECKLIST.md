@@ -18,7 +18,7 @@
 - [x] Typed repair changes only the expected semantic relation.
 - [x] Independent rerun resolves the original error.
 - [x] SwiftUI generated output builds for iOS Simulator.
-- [ ] React screenshot and bounds capture.
+- [x] React screenshot and bounds capture.
 - [ ] SwiftUI Simulator screenshot capture.
 - [ ] Public deployment smoke test from a clean browser.
 

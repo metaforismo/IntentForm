@@ -1,9 +1,75 @@
 import type { PlatformTarget, SemanticInterfaceGraph } from "@intentform/semantic-schema";
 
 export interface Evidence {
-  kind: "viewport" | "node" | "build" | "rule";
+  kind: "viewport" | "node" | "build" | "rule" | "screenshot" | "bounds";
   label: string;
   value: string | number | boolean;
+}
+
+export interface RenderObservation {
+  target: PlatformTarget;
+  screenId: string;
+  viewport: { width: number; height: number };
+  primaryAction: { x: number; y: number; width: number; height: number };
+  position: string;
+  screenshotPath: string;
+  graphExpectsPersistent: boolean;
+}
+
+export function verifyRenderedPrimaryAction(
+  observation: RenderObservation,
+): VerificationFinding[] {
+  const compact = observation.viewport.width <= 390 || observation.viewport.height <= 700;
+  if (!compact) return [];
+
+  const findings: VerificationFinding[] = [];
+  const persistent = observation.position === "fixed" || observation.position === "sticky";
+  const actionBottom = observation.primaryAction.y + observation.primaryAction.height;
+  const insideViewport = observation.primaryAction.x >= 0
+    && observation.primaryAction.y >= 0
+    && observation.primaryAction.x + observation.primaryAction.width <= observation.viewport.width
+    && actionBottom <= observation.viewport.height;
+
+  if (!persistent) {
+    findings.push({
+      id: `${observation.target}.${observation.screenId}.primary.rendered-reachability`,
+      target: observation.target,
+      screenId: observation.screenId,
+      severity: "error",
+      violatedIntent: "The rendered primary action must remain persistently reachable on compact screens.",
+      evidence: [
+        { kind: "viewport", label: "Viewport width", value: observation.viewport.width },
+        { kind: "viewport", label: "Viewport height", value: observation.viewport.height },
+        { kind: "bounds", label: "Primary action Y", value: observation.primaryAction.y },
+        { kind: "bounds", label: "Primary action height", value: observation.primaryAction.height },
+        { kind: "node", label: "Computed position", value: observation.position },
+        { kind: "screenshot", label: "Screenshot", value: observation.screenshotPath },
+      ],
+      responsibleLayer: observation.graphExpectsPersistent ? "compiler" : "graph",
+      status: "open",
+    });
+  }
+
+  if (!insideViewport || observation.primaryAction.height < 44 || observation.primaryAction.width < 44) {
+    findings.push({
+      id: `${observation.target}.${observation.screenId}.primary.rendered-bounds`,
+      target: observation.target,
+      screenId: observation.screenId,
+      severity: "error",
+      violatedIntent: "The rendered primary action must be visible and provide at least a 44 by 44 point target.",
+      evidence: [
+        { kind: "bounds", label: "Primary action X", value: observation.primaryAction.x },
+        { kind: "bounds", label: "Primary action Y", value: observation.primaryAction.y },
+        { kind: "bounds", label: "Primary action width", value: observation.primaryAction.width },
+        { kind: "bounds", label: "Primary action height", value: observation.primaryAction.height },
+        { kind: "screenshot", label: "Screenshot", value: observation.screenshotPath },
+      ],
+      responsibleLayer: observation.graphExpectsPersistent ? "compiler" : "graph",
+      status: "open",
+    });
+  }
+
+  return findings;
 }
 
 export interface VerificationFinding {

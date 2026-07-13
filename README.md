@@ -15,7 +15,8 @@ This repository is the OpenAI Build Week vertical slice. It intentionally proves
 - Versioned and runtime-validated Semantic Interface Graph.
 - Stable node IDs, restricted expression AST, typed UI contracts and fixtures.
 - Deterministic React and SwiftUI compiler backends.
-- Compact-screen primary-action verifier with structured evidence.
+- Runnable generated React application embedded in Studio, with typed navigation events.
+- Playwright screenshot, computed-style and layout-bounds verification for compact and regular viewports.
 - Typed repair proposal, semantic diff and independent verification rerun.
 - Hosted-studio-ready Next.js experience across Brief, Graph, Outputs, Verification and Proof Report.
 - Native SwiftUI build harness validated with `xcodebuild` for iOS Simulator.
@@ -53,6 +54,7 @@ pnpm typecheck
 pnpm test
 pnpm build
 pnpm generate:demo
+pnpm verify:react-preview
 pnpm verify:swiftui
 ```
 
@@ -80,6 +82,7 @@ See [architecture](docs/ARCHITECTURE.md), [hackathon scope](docs/HACKATHON_SCOPE
 
 ```text
 apps/studio-web/            Next.js product experience and server routes
+apps/react-preview/         Vite harness executing generated React output
 packages/semantic-schema/   graph, validation, canonical serialization, patches
 packages/compiler-core/     shared lowering and compiler contracts
 packages/compiler-react/    accessible responsive React output

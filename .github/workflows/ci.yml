@@ -29,6 +29,16 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm capture:react-evidence
+      - run: pnpm smoke:studio
+      - name: Upload React render evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: react-render-evidence
+          path: artifacts/react/
+          if-no-files-found: error
 
   swiftui:
     runs-on: macos-15

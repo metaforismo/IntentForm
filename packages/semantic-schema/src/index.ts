@@ -64,7 +64,12 @@ export const semanticNodeSchema = z.object({
     live: z.enum(["off", "polite", "assertive"]).default("off"),
   }),
   states: z.array(z.object({ name: z.string(), visibleWhen: expressionSchema.optional() })).default([]),
-  interactions: z.array(z.object({ event: z.string(), requires: z.array(z.string()).default([]) })).default([]),
+  interactions: z.array(
+    z.object({
+      event: z.string().regex(/^[a-zA-Z_$][a-zA-Z0-9_$]*$/),
+      requires: z.array(z.string()).default([]),
+    }),
+  ).default([]),
   platformOverrides: z
     .record(z.string(), z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])))
     .optional(),
@@ -86,12 +91,17 @@ export const uiContractSchema = z.object({
   screenId: z.string(),
   data: z.array(
     z.object({
-      name: z.string(),
+      name: z.string().regex(/^[a-zA-Z_$][a-zA-Z0-9_$]*$/),
       type: z.enum(["string", "number", "boolean", "money", "status"]),
       required: z.boolean().default(true),
     }),
   ),
-  events: z.array(z.object({ name: z.string(), payload: z.string().optional() })),
+  events: z.array(
+    z.object({
+      name: z.string().regex(/^[a-zA-Z_$][a-zA-Z0-9_$]*$/),
+      payload: z.enum(["string", "number", "boolean"]).optional(),
+    }),
+  ),
   visualStates: z.array(z.enum(["idle", "loading", "empty", "failed", "completed"])),
   fixtures: z.array(z.string()),
 });

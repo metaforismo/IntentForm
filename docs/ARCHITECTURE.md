@@ -45,9 +45,9 @@ Each backend implements capabilities, lowering, file generation and diagnostics.
 
 ## Verification boundary
 
-The Build Week slice begins with deterministic graph and build evidence. A finding contains target, screen, violated intent, responsible layer and evidence. A repair is accepted only after validation, recompilation, the same check rerunning and no remaining blocking finding.
+The Build Week slice combines deterministic graph and build evidence with a real browser-render adapter. Playwright executes the generated React application, follows the home-to-request-to-receipt flow, captures screenshots, reads computed positioning and records primary-action bounds at compact and regular viewports. A finding contains target, screen, violated intent, responsible layer and evidence.
 
-Screenshot and bounds capture are the next verifier adapters; their contracts are already represented by the evidence model rather than simulated as completed work.
+A repair is accepted only after validation, recompilation, the same rendered check rerunning and no remaining blocking finding. SwiftUI already compiles for iOS Simulator; native screenshot and accessibility-frame capture remain the next verifier adapter.
 
 ## Security and cost controls
 

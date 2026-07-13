@@ -20,4 +20,15 @@
 - Resolved the first Dependabot alert by pinning transitive PostCSS to patched version 8.5.19, then reran typecheck, tests and production build.
 - Updated GitHub Actions to the current Node 24-compatible major releases after CI flagged Node 20 action runtimes.
 
-Known honest boundary: browser screenshot and layout-bounds capture are not yet implemented. The current verifier is deterministic and graph/build based.
+## 2026-07-14 — Executed React proof
+
+- Turned generated React from a code-only artifact into a runnable Vite application.
+- Wired typed graph events into a real home-to-request-to-receipt navigation flow.
+- Embedded the executed generated artifact in the Studio Outputs surface.
+- Added Playwright evidence capture for screenshots, computed positioning and action bounds.
+- Verified the controlled compact failure, repaired fixed placement and regular-width inline fallback.
+- Added render-verifier tests and uploaded browser evidence as a GitHub Actions artifact.
+- Removed shared generated-directory coupling from preview sync so React and SwiftUI validation jobs cannot invalidate each other's inputs.
+- Added a production Studio smoke test that exercises the generated flow inside the sandboxed iframe.
+
+Known honest boundary: SwiftUI builds for iOS Simulator, but native screenshot and accessibility-frame capture are not yet implemented.
