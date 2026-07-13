@@ -17,5 +17,6 @@
 - Confirmed both GitHub Actions jobs (`web` and `swiftui`) pass on the initial commit.
 - Updated the existing OpenAI Build Week Devpost draft to IntentForm and linked the repository.
 - Verified through the Devpost plugin that registration is complete and submissions are open.
+- Resolved the first Dependabot alert by pinning transitive PostCSS to patched version 8.5.19, then reran typecheck, tests and production build.
 
 Known honest boundary: browser screenshot and layout-bounds capture are not yet implemented. The current verifier is deterministic and graph/build based.
