@@ -32,3 +32,14 @@
 - Added a production Studio smoke test that exercises the generated flow inside the sandboxed iframe.
 
 Known honest boundary: SwiftUI builds for iOS Simulator, but native screenshot and accessibility-frame capture are not yet implemented.
+
+## 2026-07-14 — Manual semantic canvas
+
+- Reframed Studio around a design canvas while retaining Brief, Graph, Outputs, Verification and Report.
+- Added Figma-informed pages, layer tree, centered tool palette and contextual design inspector.
+- Added selection bounds, semantic spacing/width/axis controls, label editing, emphasis, ordering, insertion and deletion.
+- Added reversible graph history with undo and redo.
+- Added direct vertical manipulation of primary actions; the gesture produces safe-area placement rather than absolute coordinates.
+- Extended the production smoke test to prove manual canvas edits reach generated React code.
+
+Known honest boundary: this is a finite browser Instant Canvas. Infinite pan, general resize inference, multi-select, native SwiftUI screenshot capture and the desktop shell remain future work.

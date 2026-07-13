@@ -50,8 +50,15 @@ const componentForNode = (node: PlatformIRNode): string => {
   return source;
 };
 
-const componentName = (screenId: string): string =>
-  `${screenId.replace(/(^|-)([a-z])/g, (_, __, char: string) => char.toUpperCase())}Screen`;
+const componentName = (screenId: string): string => {
+  const pascal = screenId
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
+    .join("") || "Generated";
+  const identifier = /^\d/.test(pascal) ? `Screen${pascal}` : pascal;
+  return `${identifier}Screen`;
+};
 
 function screenSource(ir: PlatformIR, screenIndex: number): string {
   const screen = ir.screens[screenIndex];
@@ -82,8 +89,8 @@ function contractSource(ir: PlatformIR, screenIndex: number): string {
   const screen = ir.screens[screenIndex];
   if (!screen) throw new Error(`Screen index ${screenIndex} is missing`);
   const name = componentName(screen.id);
-  const fields = screen.contract?.data.map((field) => `  ${field.name}${field.required ? "" : "?"}: ${field.type === "number" ? "number" : field.type === "boolean" ? "boolean" : "string"};`).join("\n") ?? "  readonly empty: never;";
-  const events = screen.contract?.events.map((event) => `  ${event.name}(${event.payload ? `payload: ${event.payload}` : ""}): void;`).join("\n") ?? "  readonly empty: never;";
+  const fields = screen.contract?.data.map((field) => `  ${field.name}${field.required ? "" : "?"}: ${field.type === "number" ? "number" : field.type === "boolean" ? "boolean" : "string"};`).join("\n") ?? "  readonly empty?: never;";
+  const events = screen.contract?.events.map((event) => `  ${event.name}(${event.payload ? `payload: ${event.payload}` : ""}): void;`).join("\n") ?? "  readonly empty?: never;";
   return `export interface ${name}Data {\n${fields}\n}\n\nexport interface ${name}Events {\n${events}\n}\n`;
 }
 

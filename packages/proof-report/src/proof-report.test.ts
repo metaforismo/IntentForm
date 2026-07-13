@@ -57,6 +57,24 @@ describe("IntentForm proof pipeline", () => {
     expect(payment?.content).toContain("onClick={events.onConfirm}");
   });
 
+  it("keeps manually added contract-free screens runnable", () => {
+    const graph = structuredClone(demoGraph);
+    graph.screens.push({
+      id: "screen-4",
+      title: "Manual screen",
+      purpose: "Prove manual canvas insertion",
+      route: "/manual",
+      nodes: [structuredClone(graph.screens[1]!.nodes[2]!)],
+    });
+    graph.screens.at(-1)!.nodes[0]!.id = "screen-4.content";
+    const output = compileReact(parseGraph(graph));
+    const contract = output.files.find((file) => file.path.endsWith("contracts/screen-4.ts"));
+    expect(contract?.content).toContain("readonly empty?: never");
+    expect(output.files.find((file) => file.path.endsWith("App.tsx"))?.content).toContain("<Screen4Screen");
+    expect(output.files.find((file) => file.path.endsWith("screens/screen-4.tsx"))?.content).toContain("function Screen4Screen");
+    expect(compileSwiftUI(parseGraph(graph)).files.find((file) => file.path.endsWith("screen4.swift"))?.content).toContain("struct Screen4Screen");
+  });
+
   it("verifies rendered compact placement from browser bounds", () => {
     const compact = {
       target: "react" as const,

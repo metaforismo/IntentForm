@@ -14,6 +14,9 @@ This repository is the OpenAI Build Week vertical slice. It intentionally proves
 - Deterministic offline replay, requiring no login or API key.
 - Versioned and runtime-validated Semantic Interface Graph.
 - Stable node IDs, restricted expression AST, typed UI contracts and fixtures.
+- Manual semantic canvas with pages, layers, selection handles and contextual inspector.
+- Direct manipulation that converts vertical action dragging into compact safe-area placement.
+- Human editing for labels, stack axis, width, spacing tokens, emphasis, ordering and component insertion, with undo/redo.
 - Deterministic React and SwiftUI compiler backends.
 - Runnable generated React application embedded in Studio, with typed navigation events.
 - Playwright screenshot, computed-style and layout-bounds verification for compact and regular viewports.

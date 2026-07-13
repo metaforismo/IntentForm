@@ -19,6 +19,8 @@
 - [x] Independent rerun resolves the original error.
 - [x] SwiftUI generated output builds for iOS Simulator.
 - [x] React screenshot and bounds capture.
+- [x] Manual semantic edit updates graph and generated React code.
+- [x] Direct action drag creates an explicit safe-area relationship.
 - [ ] SwiftUI Simulator screenshot capture.
 - [ ] Public deployment smoke test from a clean browser.
 

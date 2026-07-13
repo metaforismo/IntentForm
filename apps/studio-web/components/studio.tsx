@@ -12,6 +12,7 @@ import {
   Play,
   ShieldCheck,
   Sparkle,
+  Selection,
   TreeStructure,
   Warning,
 } from "@phosphor-icons/react";
@@ -28,11 +29,13 @@ import {
 import { verifyGraph, type VerificationFinding } from "@intentform/verifier";
 import { AnimatePresence, motion } from "motion/react";
 import { useMemo, useState, useTransition } from "react";
+import { ManualEditor } from "./manual-editor";
 
-type Stage = "brief" | "graph" | "outputs" | "verify" | "report";
+type Stage = "canvas" | "brief" | "graph" | "outputs" | "verify" | "report";
 type OutputTarget = "react" | "swiftui";
 
 const stages: Array<{ id: Stage; label: string; icon: typeof Sparkle }> = [
+  { id: "canvas", label: "Design canvas", icon: Selection },
   { id: "brief", label: "Brief", icon: Sparkle },
   { id: "graph", label: "Semantic graph", icon: TreeStructure },
   { id: "outputs", label: "Native outputs", icon: Code },
@@ -150,11 +153,14 @@ function PhonePreview({ graph, selectedScreen }: { graph: SemanticInterfaceGraph
 }
 
 export function Studio() {
-  const [stage, setStage] = useState<Stage>("brief");
+  const [stage, setStage] = useState<Stage>("canvas");
   const [brief, setBrief] = useState(demoBrief);
   const [graph, setGraph] = useState<SemanticInterfaceGraph>(demoGraph);
   const [baseline, setBaseline] = useState<SemanticInterfaceGraph>(demoGraph);
   const [selectedScreen, setSelectedScreen] = useState("payment-request");
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>("payment-request.amount");
+  const [history, setHistory] = useState<SemanticInterfaceGraph[]>([]);
+  const [future, setFuture] = useState<SemanticInterfaceGraph[]>([]);
   const [outputTarget, setOutputTarget] = useState<OutputTarget>("react");
   const [mode, setMode] = useState<"live" | "replay">("replay");
   const [model, setModel] = useState("deterministic-sample");
@@ -166,11 +172,37 @@ export function Studio() {
   const verification = useMemo(() => verifyGraph(graph, compactScenario), [graph]);
   const changes = useMemo(() => semanticDiff(baseline, graph), [baseline, graph]);
   const output = outputTarget === "react" ? reactOutput : swiftOutput;
-  const selectedCode = output.files.find((file) => file.path.includes(selectedScreen)) ?? output.files[0];
+  const selectedScreenIndex = Math.max(0, graph.screens.findIndex((screen) => screen.id === selectedScreen));
+  const selectedCode = output.files[selectedScreenIndex] ?? output.files[0];
   const previewVariant = graph.screens
     .find((screen) => screen.id === "payment-request")
     ?.nodes.find((node) => node.kind === "primary-action")
     ?.layout.placement?.compact === "persistent-bottom" ? "after" : "before";
+
+  const commitGraph = (nextGraph: SemanticInterfaceGraph, nextNotice: string) => {
+    setHistory((items) => [...items.slice(-39), graph]);
+    setFuture([]);
+    setGraph(nextGraph);
+    setNotice(nextNotice);
+  };
+
+  const undo = () => {
+    const previous = history.at(-1);
+    if (!previous) return;
+    setHistory((items) => items.slice(0, -1));
+    setFuture((items) => [graph, ...items].slice(0, 40));
+    setGraph(previous);
+    setNotice("Undid the last semantic edit.");
+  };
+
+  const redo = () => {
+    const next = future[0];
+    if (!next) return;
+    setFuture((items) => items.slice(1));
+    setHistory((items) => [...items.slice(-39), graph]);
+    setGraph(next);
+    setNotice("Restored the semantic edit.");
+  };
 
   const compileBrief = () => {
     startTransition(async () => {
@@ -189,8 +221,12 @@ export function Studio() {
         setMode(result.mode);
         setModel(result.model);
         setNotice(result.note);
-        setSelectedScreen(nextGraph.screens.find((screen) => screen.id === "payment-request")?.id ?? nextGraph.screens[0]?.id ?? "");
-        setStage("graph");
+        const nextScreen = nextGraph.screens.find((screen) => screen.id === "payment-request") ?? nextGraph.screens[0];
+        setSelectedScreen(nextScreen?.id ?? "");
+        setSelectedNodeId(nextScreen?.nodes[0]?.id ?? null);
+        setHistory([]);
+        setFuture([]);
+        setStage("canvas");
       } catch (error) {
         setNotice(error instanceof Error ? error.message : "Interpretation failed.");
       }
@@ -231,7 +267,7 @@ export function Studio() {
             <div><strong className="block tracking-[-.03em]">IntentForm</strong><span className="text-[10px] text-[var(--muted)]">Build Week · 0.1</span></div>
           </div>
 
-          <nav aria-label="Workflow" className="mt-5 grid grid-cols-5 gap-1 md:mt-10 md:grid-cols-1 md:gap-1.5">
+          <nav aria-label="Workflow" className="mt-5 grid grid-cols-6 gap-1 md:mt-10 md:grid-cols-1 md:gap-1.5">
             {stages.map((item, index) => {
               const Icon = item.icon;
               const active = stage === item.id;
@@ -259,8 +295,8 @@ export function Studio() {
         <section className="min-w-0">
           <header className="flex min-h-20 flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] px-5 py-4 md:px-8">
             <div>
-              <span className="text-[10px] font-semibold uppercase tracking-[.15em] text-[var(--accent)]">Semantic interface compiler</span>
-              <h1 className="mt-1 text-xl font-semibold tracking-[-.045em] md:text-2xl">Product intent, rendered as evidence.</h1>
+              <span className="text-[10px] font-semibold uppercase tracking-[.15em] text-[var(--accent)]">{stage === "canvas" ? "Semantic design workspace" : "Semantic interface compiler"}</span>
+              <h1 className="mt-1 text-xl font-semibold tracking-[-.045em] md:text-2xl">{stage === "canvas" ? "Manipulate intent. Compile relationships." : "Product intent, rendered as evidence."}</h1>
             </div>
             <div className="flex items-center gap-2">
               <div role="status" aria-live="polite" className="hidden rounded-full border border-[var(--line)] bg-white px-3 py-2 text-[10px] text-[var(--muted)] lg:block">{notice}</div>
@@ -283,8 +319,23 @@ export function Studio() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ type: "spring", stiffness: 120, damping: 20 }}
-              className="p-5 md:p-8"
+              className={stage === "canvas" ? "p-3 md:p-4" : "p-5 md:p-8"}
             >
+              {stage === "canvas" ? (
+                <ManualEditor
+                  graph={graph}
+                  selectedScreen={selectedScreen}
+                  selectedNodeId={selectedNodeId}
+                  canUndo={history.length > 0}
+                  canRedo={future.length > 0}
+                  onSelectScreen={setSelectedScreen}
+                  onSelectNode={setSelectedNodeId}
+                  onCommit={commitGraph}
+                  onUndo={undo}
+                  onRedo={redo}
+                />
+              ) : null}
+
               {stage === "brief" ? (
                 <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(380px,.95fr)]">
                   <div className="pt-3 md:pt-10">
@@ -345,7 +396,7 @@ export function Studio() {
                     {outputTarget === "react" ? (
                       <div className="overflow-hidden rounded-[32px] border border-[var(--line)] bg-[#e9ede8] p-4">
                         <div className="mb-3 flex items-center justify-between px-1 text-[10px] text-[var(--muted)]">
-                          <span className="font-semibold text-[var(--accent-dark)]">Runnable compiler artifact</span>
+                          <span className="font-semibold text-[var(--accent-dark)]">Runnable golden artifact</span>
                           <span className="font-mono">{previewVariant} · {reactOutput.fingerprint}</span>
                         </div>
                         <iframe

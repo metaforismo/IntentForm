@@ -57,7 +57,27 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   page.setDefaultTimeout(10_000);
   await page.goto(origin, { waitUntil: "networkidle" });
+
+  await page.getByTestId("layer-payment-request.confirm").click();
+  const action = page.getByTestId("canvas-node-payment-request.confirm");
+  const bounds = await action.boundingBox();
+  if (!bounds) throw new Error("Primary action is not visible on the semantic canvas");
+  const x = bounds.x + bounds.width / 2;
+  const y = bounds.y + bounds.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  for (const delta of [8, 18, 30, 44, 60, 76]) await page.mouse.move(x, y + delta);
+  await page.mouse.up();
+  await page.getByText("Bottom safe area · semantic", { exact: true }).waitFor();
+
+  const label = page.getByLabel("Label", { exact: true });
+  await label.fill("Send verified request");
+  await page.getByRole("button", { name: "Select", exact: true }).click();
   await page.getByRole("button", { name: "Native outputs" }).click();
+  const generatedCode = await page.locator("code").textContent();
+  if (!generatedCode?.includes("Send verified request") || !generatedCode.includes("primary persistent")) {
+    throw new Error("Manual semantic edits did not reach generated React code");
+  }
   const preview = page.frameLocator('iframe[title^="Generated React preview"]');
   await preview.getByRole("heading", { name: "Request payment" }).waitFor();
   await preview.getByRole("button", { name: "Confirm request" }).click();

@@ -43,6 +43,12 @@ GPT-5.6 is used only for interpretation and repair judgment. Both calls use Resp
 
 Each backend implements capabilities, lowering, file generation and diagnostics. Lowering converts semantic relations into target-native primitives. The compact primary action becomes responsive fixed positioning in React and a bottom safe-area inset in SwiftUI. Freeform coordinates are not part of the current graph.
 
+## Manual canvas boundary
+
+The browser Studio now exposes the graph through a direct semantic editor: pages and layers, selectable canvas nodes, contextual content/layout/style controls, component insertion, ordering and undo/redo. Dragging a primary action vertically does not persist a `y` coordinate; crossing the gesture threshold changes compact placement between the semantic stack and `persistent-bottom` safe-area anchoring. Every accepted edit is parsed again before it becomes canonical and immediately changes deterministic compiler output.
+
+This is an Instant Canvas, not a native rendering claim. The checked-in runnable React artifact remains the golden sample, while SwiftUI Simulator rendering remains the authority for native output.
+
 ## Verification boundary
 
 The Build Week slice combines deterministic graph and build evidence with a real browser-render adapter. Playwright executes the generated React application, follows the home-to-request-to-receipt flow, captures screenshots, reads computed positioning and records primary-action bounds at compact and regular viewports. A finding contains target, screen, violated intent, responsible layer and evidence.

@@ -9,8 +9,15 @@ import {
 } from "@intentform/compiler-core";
 import type { SemanticInterfaceGraph } from "@intentform/semantic-schema";
 
-const swiftIdentifier = (value: string): string =>
-  value.replace(/-([a-z])/g, (_, character: string) => character.toUpperCase());
+const swiftIdentifier = (value: string): string => {
+  const parts = value.split(/[^A-Za-z0-9]+/).filter(Boolean);
+  const camel = parts
+    .map((part, index) => index === 0
+      ? `${part[0]?.toLowerCase() ?? ""}${part.slice(1)}`
+      : `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
+    .join("") || "generated";
+  return /^\d/.test(camel) ? `screen${camel}` : camel;
+};
 
 const escapeSwift = (value: string): string => value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
 

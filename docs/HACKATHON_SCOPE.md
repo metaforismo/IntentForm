@@ -19,12 +19,13 @@ brief -> structured graph -> two deterministic compilers -> real build
 - GPT-5.6 brief interpretation and evidence-informed repair planning.
 - Deterministic replay for free judge access.
 - Semantic diff, generated code, build status, findings and proof report.
+- Browser-based manual semantic canvas with direct action placement, inspector editing and undo/redo.
 - Playwright screenshot, computed-style, bounds and navigation-flow evidence for generated React.
 - Linux web CI and macOS iOS Simulator build CI.
 
 ## Explicitly deferred
 
-- Expo, Compose and the desktop canvas.
+- Expo, Compose, the desktop shell and infinite/freeform canvas.
 - SwiftUI Simulator screenshot capture and cross-platform pixel comparison.
 - Arbitrary source import or round-trip editing.
 - Backend and business-logic generation.
