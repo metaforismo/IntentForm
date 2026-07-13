@@ -24,10 +24,10 @@
 
 ## Devpost
 
-- [ ] Register participation.
-- [ ] Create and continuously update the Devpost draft.
-- [ ] Add public repository URL.
-- [ ] Add free testing instructions.
+- [x] Register participation.
+- [x] Create and continuously update the Devpost draft.
+- [x] Add public repository URL.
+- [x] Add free replay testing instructions to the repository and draft.
 - [ ] Record public video under three minutes.
 - [ ] Include voiceover explaining Codex and GPT-5.6 usage.
 - [ ] Label any native-build time cuts.
@@ -37,3 +37,5 @@
 - [ ] Submit by internal deadline: July 21, 18:00 CEST.
 
 Official submission deadline: July 21, 2026, 5:00 PM PT (July 22, 02:00 CEST).
+
+Live draft: `https://devpost.com/software/intentform` (project `1328078`, not submitted yet).

@@ -97,7 +97,7 @@ Submission closes **July 21, 2026 at 5:00 PM PT**. IntentForm is entered in Deve
 
 - [Build Week](https://openai.devpost.com/)
 - [Official rules](https://openai.devpost.com/rules)
-- [Request the official $100 Codex credit grant](https://forms.gle/Ncu6iGkaHq1SwUmEA)
+- [Request the official $100 Codex credit grant](https://forms.gle/rP8WJgk4D2zQEu1A6) by July 17 at 12:00 PM PT
 
 ## Product direction
 
