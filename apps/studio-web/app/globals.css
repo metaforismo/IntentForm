@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+:root {
+  --canvas: #f1f3ef;
+  --surface: #fafbf8;
+  --surface-strong: #ffffff;
+  --ink: #181c1a;
+  --muted: #67706b;
+  --line: #dce1dc;
+  --accent: #397461;
+  --accent-dark: #245444;
+  --accent-soft: #dfece5;
+  --danger: #a24c39;
+  --danger-soft: #f5e5df;
+}
+
+* { box-sizing: border-box; }
+
+html { background: var(--canvas); }
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--canvas);
+  font-family: var(--font-geist-sans), sans-serif;
+}
+
+button, textarea { font: inherit; }
+button { cursor: pointer; }
+
+::selection { color: #fff; background: var(--accent); }
+
+.code-scroll { scrollbar-width: thin; scrollbar-color: #52635b transparent; }
+.code-scroll code { font-family: var(--font-geist-mono), monospace; }
+
+.phone-shell {
+  box-shadow: 0 28px 70px -24px rgba(28, 45, 37, 0.28), inset 0 0 0 1px rgba(255,255,255,.18);
+}
+
+.status-breathe { animation: breathe 2.2s ease-in-out infinite; }
+
+@keyframes breathe { 0%,100% { opacity: .45; transform: scale(.86); } 50% { opacity: 1; transform: scale(1); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}

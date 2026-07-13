@@ -1,0 +1,34 @@
+{
+  "name": "@intentform/studio-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@intentform/compiler-react": "workspace:*",
+    "@intentform/compiler-swiftui": "workspace:*",
+    "@intentform/intent-interpreter": "workspace:*",
+    "@intentform/proof-report": "workspace:*",
+    "@intentform/repair-planner": "workspace:*",
+    "@intentform/semantic-schema": "workspace:*",
+    "@intentform/verifier": "workspace:*",
+    "@phosphor-icons/react": "^2.1.10",
+    "geist": "^1.7.0",
+    "motion": "^12.38.0",
+    "next": "16.2.9",
+    "openai": "^6.32.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "tailwindcss": "^4.2.1"
+  }
+}

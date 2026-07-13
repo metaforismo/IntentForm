@@ -1,0 +1,17 @@
+node_modules/
+.next/
+*.tsbuildinfo
+dist/
+coverage/
+generated/
+artifacts/
+.env
+.env.local
+*.xcresult
+.build/
+.swiftpm/
+.DS_Store
+playwright-report/
+test-results/
+output/
+examples/preview-ios/Sources/IntentFormPreview/Generated/

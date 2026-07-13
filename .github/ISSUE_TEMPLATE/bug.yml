@@ -1,0 +1,32 @@
+name: Bug report
+description: Report a reproducible graph, compiler, verifier or Studio defect.
+title: "bug: "
+labels: [bug]
+body:
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Observed behavior
+      description: Include the screen, target and graph revision.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected intent
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Provide the smallest safe graph or steps and relevant diagnostics.
+    validations:
+      required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: Target
+      options: [semantic graph, React, SwiftUI, verifier, Studio, other]
+    validations:
+      required: true

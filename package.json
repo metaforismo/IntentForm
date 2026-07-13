@@ -1,0 +1,26 @@
+{
+  "name": "intentform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Compile product intent into platform-native, runnable, verified interfaces.",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@10.28.0",
+  "scripts": {
+    "dev": "pnpm --filter @intentform/studio-web dev",
+    "build": "pnpm --filter @intentform/studio-web build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify": "pnpm typecheck && pnpm test && pnpm build",
+    "generate:demo": "tsx scripts/generate-demo.ts",
+    "sync:swift-preview": "pnpm generate:demo && node scripts/sync-swift-preview.mjs",
+    "verify:swiftui": "pnpm sync:swift-preview && node scripts/verify-swiftui.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

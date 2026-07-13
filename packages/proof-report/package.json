@@ -1,0 +1,15 @@
+{
+  "name": "@intentform/proof-report",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts", "./demo": "./src/demo.ts" },
+  "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" },
+  "dependencies": {
+    "@intentform/compiler-react": "workspace:*",
+    "@intentform/compiler-swiftui": "workspace:*",
+    "@intentform/repair-planner": "workspace:*",
+    "@intentform/semantic-schema": "workspace:*",
+    "@intentform/verifier": "workspace:*"
+  }
+}
