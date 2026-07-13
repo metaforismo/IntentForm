@@ -1,9 +1,12 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { join } from "node:path";
 import { chromium, type Browser } from "playwright";
 
+const root = process.cwd();
+const studioRoot = join(root, "apps/studio-web");
 const origin = "http://127.0.0.1:4319";
-const server = spawn("pnpm", ["--filter", "@intentform/studio-web", "start"], {
-  cwd: process.cwd(),
+const server = spawn(process.execPath, [join(studioRoot, "node_modules/next/dist/bin/next"), "start"], {
+  cwd: studioRoot,
   env: { ...process.env, HOSTNAME: "127.0.0.1", PORT: "4319" },
   stdio: ["ignore", "pipe", "pipe"],
 });
