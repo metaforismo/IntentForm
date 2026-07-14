@@ -26,6 +26,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.0.0",
+    "next": "16.2.9",
     "playwright": "1.61.1",
     "serve-sim": "0.1.44",
     "tsx": "^4.21.0",

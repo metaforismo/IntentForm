@@ -1,0 +1,15 @@
+.git
+.github
+.intentform
+.next
+**/.next
+node_modules
+**/node_modules
+dist
+**/dist
+.build
+**/.build
+artifacts
+.env
+.env.*
+*.log

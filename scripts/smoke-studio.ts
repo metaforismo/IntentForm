@@ -5,20 +5,23 @@ import { chromium, type Browser } from "playwright";
 
 const root = process.cwd();
 const studioRoot = join(root, "apps/studio-web");
-const origin = "http://127.0.0.1:4319";
-const server = spawn(process.execPath, [join(studioRoot, "node_modules/next/dist/bin/next"), "start"], {
+const remoteOrigin = process.env.STUDIO_ORIGIN?.replace(/\/$/, "");
+const origin = remoteOrigin || "http://127.0.0.1:4319";
+const server = remoteOrigin ? undefined : spawn(process.execPath, [join(studioRoot, "node_modules/next/dist/bin/next"), "start"], {
   cwd: studioRoot,
   env: { ...process.env, OPENAI_API_KEY: "", HOSTNAME: "127.0.0.1", PORT: "4319" },
   stdio: ["ignore", "pipe", "pipe"],
 });
 
 let serverOutput = "";
-server.stdout?.on("data", (chunk) => { serverOutput += chunk.toString(); });
-server.stderr?.on("data", (chunk) => { serverOutput += chunk.toString(); });
+server?.stdout?.on("data", (chunk) => { serverOutput += chunk.toString(); });
+server?.stderr?.on("data", (chunk) => { serverOutput += chunk.toString(); });
 
 async function waitForServer() {
   for (let attempt = 0; attempt < 60; attempt += 1) {
-    if (server.exitCode !== null) throw new Error(`Studio exited before startup:\n${serverOutput}`);
+    if (server?.exitCode !== null && server?.exitCode !== undefined) {
+      throw new Error(`Studio exited before startup:\n${serverOutput}`);
+    }
     try {
       const response = await fetch(origin);
       if (response.ok) return;
@@ -266,5 +269,5 @@ try {
   console.log("Studio typed semantic edit and replay disclosure: passed");
 } finally {
   await browser?.close();
-  await stopServer(server);
+  if (server) await stopServer(server);
 }

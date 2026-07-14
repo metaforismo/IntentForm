@@ -54,6 +54,8 @@ pnpm dev
 
 Open `http://localhost:3000`. Without `OPENAI_API_KEY`, the app clearly reports **Deterministic replay** and exercises the complete sample plus safe typed edits. With a server-side key, it uses the `gpt-5.6` alias; the key is never included in the client bundle. Model traces expose only a request ID, deterministic fingerprint, attempt count and token totals—never prompts, secrets or reasoning chains.
 
+For the replay-first Vercel configuration and the clean-browser remote gate, see [Deployment](docs/DEPLOYMENT.md).
+
 Core checks:
 
 ```bash

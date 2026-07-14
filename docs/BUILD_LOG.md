@@ -177,3 +177,11 @@ The public macOS run completed on an iPhone 16 Pro Simulator, uploaded the nativ
 - Added `set-fixture-value` to the typed graph patch protocol, GPT-5.6 capability catalog and MCP contract, so coding agents and the Studio call the same semantic mutation rather than editing generated code or replacing the whole graph.
 - Extended semantic diffs to report fixture additions and field-level data changes, including paths such as `fixtures.payment-request.failed.data.recipientName`.
 - Verified with 31 unit tests, workspace typecheck, production build, all five Playwright smoke suites, React evidence capture and a successful SwiftUI `xcodebuild` for both simulator architectures.
+
+## 2026-07-14 — Reproducible public deployment path
+
+- Connected the GitHub repository to a dedicated Vercel `intentform` project and completed a successful replay-only preview build with no OpenAI key.
+- Added explicit monorepo build/output settings and root Next.js detection so the hosted build uses the same frozen lockfile and scripts as local verification.
+- Added `.vercelignore` to keep `.intentform` graphs and revisions, local build caches, native DerivedData, evidence and environment files out of deployment uploads; the verified upload dropped from an accidental 1.2 GB local-tree package to about 69 KB of changed source.
+- Made the five-part Playwright smoke suite targetable through `STUDIO_ORIGIN`, preserving the local-server path when no remote origin is supplied.
+- The first clean-browser request correctly exposed Vercel team SSO as the remaining public-access blocker. The protection was not weakened without explicit owner approval, and the public smoke checklist remains open.

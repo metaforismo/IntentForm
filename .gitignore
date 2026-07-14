@@ -21,4 +21,5 @@ apps/studio-web/public/react-preview/
 .intentform/
 .claude/
 .playwright-mcp/
+.vercel/
 audit-*.png
