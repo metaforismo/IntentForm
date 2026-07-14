@@ -190,6 +190,16 @@ try {
   await page.getByLabel("Visual state").selectOption("idle");
   await page.locator("[data-loading-skeleton]").waitFor({ state: "detached" });
 
+  await page.getByRole("button", { name: "Toggle color theme" }).click();
+  if (await page.locator("html[data-theme='dark']").count() !== 1) {
+    throw new Error("The theme toggle did not switch the workspace to dark mode");
+  }
+  await page.screenshot({ path: join(root, "output/playwright/studio-redesign-dark.png"), fullPage: true });
+  await page.getByRole("button", { name: "Toggle color theme" }).click();
+  if (await page.locator("html[data-theme='light']").count() !== 1) {
+    throw new Error("The theme toggle did not restore light mode");
+  }
+
   await page.getByRole("button", { name: "Toggle preview mode" }).click();
   await page.getByTestId("canvas-node-payment-request.confirm").click();
   await page.locator('[data-testid="device-frame"][data-screen-id="receipt"]').waitFor();

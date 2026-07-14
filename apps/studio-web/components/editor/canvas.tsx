@@ -339,21 +339,21 @@ export function CanvasStage({
         >
           <defs>
             <marker id="flow-arrow" viewBox="0 0 8 8" refX="6.4" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M 0 0.6 L 7.4 4 L 0 7.4 z" fill="#7d8b83" />
+              <path d="M 0 0.6 L 7.4 4 L 0 7.4 z" fill="var(--flow-edge)" />
             </marker>
           </defs>
           {flowEdges.map((edge) => (
             <g key={edge.id}>
-              <path d={edge.path} fill="none" stroke="#76847c" strokeWidth={1.5} vectorEffect="non-scaling-stroke" markerEnd="url(#flow-arrow)" />
+              <path d={edge.path} fill="none" stroke="var(--flow-edge)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" markerEnd="url(#flow-arrow)" />
               <text
                 x={edge.labelX}
                 y={edge.labelY}
                 textAnchor="middle"
                 fontSize={15}
                 fontFamily="var(--font-geist-mono), monospace"
-                fill="#5f6a64"
+                fill="var(--flow-label)"
                 paintOrder="stroke"
-                stroke="#e3e6e3"
+                stroke="var(--board)"
                 strokeWidth={5}
               >
                 {edge.event}
@@ -384,11 +384,11 @@ export function CanvasStage({
                   title="Double-click to zoom to this screen"
                   onClick={() => { onSelectScreen(screen.id); onSelectNode(screen.nodes[0]?.id ?? null); }}
                   onDoubleClick={() => fitScreen(screen.id, true)}
-                  className={`flex min-w-0 items-baseline gap-2 rounded-md px-1.5 py-1 text-left text-[12px] font-semibold tracking-[-.01em] ${isSelectedScreen ? "text-[var(--accent-dark)]" : "text-[#5d6661] hover:text-[var(--ink)]"}`}
+                  className={`flex min-w-0 items-baseline gap-2 rounded-md px-1.5 py-1 text-left text-[12px] font-semibold tracking-[-.01em] ${isSelectedScreen ? "text-[var(--accent-dark)]" : "text-[var(--muted)] hover:text-[var(--ink)]"}`}
                 >
                   <span className="truncate">{screen.title}</span>
                   {isSelectedScreen ? <span className="shrink-0 font-mono text-[10px] font-normal text-[var(--faint)]">{screen.route}</span> : null}
-                  {state !== "idle" ? <span className="shrink-0 rounded-full bg-[#e7ebe7] px-1.5 py-0.5 font-mono text-[9px] font-medium capitalize text-[#5d6661]">{state}</span> : null}
+                  {state !== "idle" ? <span className="shrink-0 rounded-full bg-[var(--chip)] px-1.5 py-0.5 font-mono text-[9px] font-medium capitalize text-[var(--muted)]">{state}</span> : null}
                 </button>
                 {status.errors > 0 ? (
                   <button type="button" onClick={onOpenVerify} className="flex shrink-0 items-center gap-1 rounded-full bg-[var(--danger-soft)] px-2 py-1 text-[10px] font-semibold text-[var(--danger)] hover:brightness-95">
@@ -545,7 +545,7 @@ export function CanvasStage({
         <div
           role="menu"
           aria-label="Layer actions"
-          className="menu-pop absolute z-20 w-52 rounded-xl border border-[var(--line-strong)] bg-white/98 p-1.5 shadow-[0_24px_60px_-24px_rgba(18,27,22,.4)] backdrop-blur-xl"
+          className="menu-pop absolute z-20 w-52 p-1.5"
           style={{ left: Math.min(contextMenu.x, (viewportRef.current?.clientWidth ?? 600) - 220), top: Math.min(contextMenu.y, (viewportRef.current?.clientHeight ?? 500) - 240) }}
           onPointerDown={(event) => event.stopPropagation()}
         >
@@ -567,7 +567,7 @@ export function CanvasStage({
                 type="button"
                 role="menuitem"
                 onClick={() => { item.run(); setContextMenu(null); }}
-                className={`flex min-h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[11px] ${"danger" in item && item.danger ? "text-[var(--danger)] hover:bg-[var(--danger-soft)]" : "text-[#2f3531] hover:bg-[#eef2ef]"}`}
+                className={`flex min-h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[11px] ${"danger" in item && item.danger ? "text-[var(--danger)] hover:bg-[var(--danger-soft)]" : "text-[var(--t-strong)] hover:bg-[var(--hover)]"}`}
               >
                 <Icon size={13} />
                 <span className="flex-1">{item.label}</span>

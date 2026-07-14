@@ -135,3 +135,11 @@ The public macOS run completed on an iPhone 16 Pro Simulator, uploaded the nativ
 - Added the `set-color-token` typed patch operation end to end (schema, apply, capability catalog, MCP contract) and a deterministic contrast repair that darkens the offending token to the nearest passing shade — closing the tokens → verify → repair loop without the live model.
 - Workspace polish toward the Figma/Canva bar: resizable side panels (persisted), arrow-key node and screen navigation, Shift+2 zoom-to-selection, double-click a frame header to zoom to it, drag-to-reorder pages, duplicate/delete screens with contract/fixture/flow cleanup, popovers that dismiss on outside click, and animated frame repositioning.
 - Verified with 29 vitest cases (5 new for contrast verification/repair, color-token patch rejection), a production build, and the full five-part Playwright smoke run including a new loading-skeleton assertion.
+
+## 2026-07-14 — Semantic theme system and dark mode
+
+- Replaced ~200 hardcoded chrome hex colors with a semantic CSS-variable palette (text, lines, hovers, chips, fields, menus, shadows, flow edges) defined once for light and dark.
+- Added a full dark theme in the Figma tradition: the workspace chrome darkens while device frames keep their product colors from the graph tokens, so boards pop on the dark canvas; native controls follow via `color-scheme`.
+- Added a persisted Sun/Moon theme toggle with a no-flash inline script, plus premium shared primitives: `.menu-pop` (translucent, blurred, layered shadows) for every menu, and `.select-control` (custom caret, accent focus ring) for native selects.
+- Verified the dark palette with live computed-style probes and raw pixel sampling of fresh screenshots, and added a smoke assertion that the toggle switches `data-theme` both ways plus a dark full-page screenshot artifact.
+- Ignored `.claude/` in git (local agent settings never get committed).

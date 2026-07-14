@@ -8,10 +8,21 @@ export const metadata: Metadata = {
   description: "Compile semantic product intent into React and SwiftUI, then verify the result.",
 };
 
+const themeScript = `try {
+  const stored = localStorage.getItem("intentform-theme");
+  const theme = stored === "dark" || stored === "light"
+    ? stored
+    : (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  document.documentElement.dataset.theme = theme;
+} catch { document.documentElement.dataset.theme = "light"; }`;
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
-      <body>{children}</body>
+    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`} suppressHydrationWarning>
+      <body>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        {children}
+      </body>
     </html>
   );
 }

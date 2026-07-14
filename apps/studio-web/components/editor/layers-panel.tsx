@@ -60,7 +60,7 @@ function TokenNumberField({
   onCommit(next: number): void;
 }) {
   return (
-    <label className="grid grid-cols-[1fr_72px] items-center gap-2 text-[10.5px] text-[#5f6863]">
+    <label className="grid grid-cols-[1fr_72px] items-center gap-2 text-[10.5px] text-[var(--muted)]">
       <span className="truncate font-mono">{label}</span>
       <input
         key={`${label}-${value}`}
@@ -72,7 +72,7 @@ function TokenNumberField({
           if (Number.isFinite(next) && next >= 0 && next !== value) onCommit(next);
         }}
         onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); }}
-        className="min-h-7 rounded-md border border-[var(--line-strong)] bg-white px-2 text-right font-mono text-[10.5px] text-[#2f3531] outline-none focus:border-[#6c9a85]"
+        className="min-h-7 rounded-md border border-[var(--line-strong)] bg-[var(--field)] px-2 text-right font-mono text-[10.5px] text-[var(--t-strong)] outline-none focus:border-[var(--accent)]"
       />
     </label>
   );
@@ -140,7 +140,7 @@ export function LayersPanel({
         onClick={() => { onSelectNode(node.id); onDismissMobile(); }}
         onMouseEnter={() => onHoverNode(node.id)}
         onMouseLeave={() => onHoverNode(null)}
-        className={`group flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] ${node.id === selectedNodeId ? "bg-[#dceae3] font-medium text-[#214d3f]" : nodeVisible ? "text-[#5e6762] hover:bg-[#ecefec] hover:text-[var(--ink)]" : "text-[var(--faint)] hover:bg-[#ecefec] hover:text-[#6a736e]"}`}
+        className={`group flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] ${node.id === selectedNodeId ? "bg-[var(--accent-soft)] font-medium text-[var(--accent-text)]" : nodeVisible ? "text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]" : "text-[var(--faint)] hover:bg-[var(--hover)] hover:text-[var(--muted)]"}`}
       >
         <DotsSixVertical size={12} className={draggable ? "cursor-grab opacity-40" : "opacity-15"} />
         {layerIcon(node)}
@@ -156,7 +156,7 @@ export function LayersPanel({
     <aside
       id="editor-structure-panel"
       aria-label="Pages and layers"
-      className={`${visible ? "grid" : "hidden"} ${desktopVisible ? "xl:grid" : "xl:hidden"} absolute inset-y-0 left-0 z-[3] w-[268px] min-h-0 grid-rows-[auto_1fr] border-r border-[var(--line)] bg-[var(--chrome)] shadow-[24px_0_52px_-32px_rgba(24,34,28,.32)] xl:relative xl:z-[1] xl:w-auto xl:shadow-none`}
+      className={`${visible ? "grid" : "hidden"} ${desktopVisible ? "xl:grid" : "xl:hidden"} absolute inset-y-0 left-0 z-[3] w-[268px] min-h-0 grid-rows-[auto_1fr] border-r border-[var(--line)] bg-[var(--chrome)] shadow-[24px_0_52px_-32px_var(--shadow-strong)] xl:relative xl:z-[1] xl:w-auto xl:shadow-none`}
     >
       <div className="flex items-center justify-between border-b border-[var(--line)] px-2 pt-1.5">
         <div className="flex gap-0.5" role="tablist" aria-label="Left panel sections">
@@ -173,15 +173,15 @@ export function LayersPanel({
             </button>
           ))}
         </div>
-        <button type="button" aria-label="Close pages and layers" onClick={onClose} className="grid size-7 place-items-center rounded-md text-[#727b76] hover:bg-[#e9edea] hover:text-[var(--ink)]"><X size={13} /></button>
+        <button type="button" aria-label="Close pages and layers" onClick={onClose} className="grid size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"><X size={13} /></button>
       </div>
 
       {railTab === "layers" ? (
         <div className="grid min-h-0 grid-rows-[auto_auto_1fr]">
           <div className="border-b border-[var(--line)] p-3">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-[#343a36]">Pages</span>
-              <button type="button" aria-label="Add screen" onClick={onAddScreen} className="grid size-7 place-items-center rounded-md text-[#727b76] hover:bg-[#e9edea] hover:text-[var(--ink)]"><Plus size={13} /></button>
+              <span className="text-[11px] font-semibold text-[var(--t-strong)]">Pages</span>
+              <button type="button" aria-label="Add screen" onClick={onAddScreen} className="grid size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"><Plus size={13} /></button>
             </div>
             <Reorder.Group axis="y" as="div" values={pageOrder} onReorder={setPageOrder} className="mt-2 grid gap-0.5">
               {pageOrder.map((screenId) => {
@@ -189,19 +189,19 @@ export function LayersPanel({
                 if (!item) return null;
                 return (
                   <Reorder.Item key={screenId} value={screenId} as="div" onDragEnd={commitPageOrder} className="relative">
-                    <div className={`group flex min-h-8 items-center gap-1 rounded-md pr-1 ${item.id === screen.id ? "bg-[#e2ebe6]" : "hover:bg-[#ecefec]"}`}>
+                    <div className={`group flex min-h-8 items-center gap-1 rounded-md pr-1 ${item.id === screen.id ? "bg-[var(--accent-soft)]" : "hover:bg-[var(--hover)]"}`}>
                       <button
                         type="button"
                         onClick={() => { onSelectScreen(item.id); onSelectNode(item.nodes[0]?.id ?? null); onDismissMobile(); }}
-                        className={`flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-[11px] ${item.id === screen.id ? "font-medium text-[#234d40]" : "text-[#626b66] group-hover:text-[var(--ink)]"}`}
+                        className={`flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-[11px] ${item.id === screen.id ? "font-medium text-[var(--accent-text)]" : "text-[var(--muted)] group-hover:text-[var(--ink)]"}`}
                       >
                         <FrameCorners size={13} />
                         <span className="min-w-0 flex-1 truncate">{item.title}</span>
                         <span className="font-mono text-[9px] text-[var(--faint)] group-hover:hidden">{item.nodes.length}</span>
                       </button>
                       <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
-                        <button type="button" aria-label={`Duplicate screen ${item.title}`} onClick={() => onDuplicateScreen(item.id)} className="grid size-6 place-items-center rounded text-[#727b76] hover:bg-white hover:text-[var(--ink)]"><Copy size={11} /></button>
-                        <button type="button" aria-label={`Delete screen ${item.title}`} disabled={graph.screens.length <= 1} onClick={() => onDeleteScreen(item.id)} className="grid size-6 place-items-center rounded text-[#727b76] hover:bg-[#f3e5e1] hover:text-[#9b4432] disabled:opacity-25"><Trash size={11} /></button>
+                        <button type="button" aria-label={`Duplicate screen ${item.title}`} onClick={() => onDuplicateScreen(item.id)} className="grid size-6 place-items-center rounded text-[var(--muted)] hover:bg-[var(--field)] hover:text-[var(--ink)]"><Copy size={11} /></button>
+                        <button type="button" aria-label={`Delete screen ${item.title}`} disabled={graph.screens.length <= 1} onClick={() => onDeleteScreen(item.id)} className="grid size-6 place-items-center rounded text-[var(--muted)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] disabled:opacity-25"><Trash size={11} /></button>
                       </span>
                     </div>
                   </Reorder.Item>
@@ -211,21 +211,21 @@ export function LayersPanel({
           </div>
 
           <div className="border-b border-[var(--line)] px-3 py-2.5">
-            <span className="text-[11px] font-semibold text-[#343a36]">Layers</span>
-            <label className="mt-2 flex min-h-8 items-center gap-2 rounded-lg border border-[var(--line-strong)] bg-white px-2.5 text-[#78817c] focus-within:border-[#7aa08f] focus-within:shadow-[0_0_0_3px_rgba(57,116,97,.08)]">
+            <span className="text-[11px] font-semibold text-[var(--t-strong)]">Layers</span>
+            <label className="mt-2 flex min-h-8 items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--field)] px-2.5 text-[var(--muted)] focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_rgba(57,116,97,.08)]">
               <MagnifyingGlass size={12} aria-hidden="true" />
               <span className="sr-only">Search layers</span>
-              <input aria-label="Search layers" value={layerQuery} onChange={(event) => onLayerQuery(event.target.value)} placeholder="Find a layer" className="min-w-0 flex-1 bg-transparent text-[10.5px] text-[#343a36] outline-none placeholder:text-[var(--faint)]" />
-              {layerQuery ? <button type="button" aria-label="Clear layer search" onClick={() => onLayerQuery("")} className="grid size-5 place-items-center rounded hover:bg-[#eef1ef]"><X size={10} /></button> : null}
+              <input aria-label="Search layers" value={layerQuery} onChange={(event) => onLayerQuery(event.target.value)} placeholder="Find a layer" className="min-w-0 flex-1 bg-transparent text-[10.5px] text-[var(--t-strong)] outline-none placeholder:text-[var(--faint)]" />
+              {layerQuery ? <button type="button" aria-label="Clear layer search" onClick={() => onLayerQuery("")} className="grid size-5 place-items-center rounded hover:bg-[var(--hover)]"><X size={10} /></button> : null}
             </label>
           </div>
 
           <div className="min-h-0 overflow-auto px-2 py-2">
-            <div className="mb-1 flex items-center gap-1.5 px-1.5 py-1.5 text-[11px] text-[#5e6762]"><CaretRight size={11} weight="bold" /><FrameCorners size={12} /><strong>{screen.title}</strong></div>
+            <div className="mb-1 flex items-center gap-1.5 px-1.5 py-1.5 text-[11px] text-[var(--muted)]"><CaretRight size={11} weight="bold" /><FrameCorners size={12} /><strong>{screen.title}</strong></div>
             {filteredNodes ? (
               <>
                 {filteredNodes.map((node) => layerRow(node, false))}
-                {filteredNodes.length === 0 ? <div className="mx-1 mt-3 rounded-lg border border-dashed border-[var(--line-strong)] px-3 py-5 text-center text-[10.5px] leading-relaxed text-[#818984]">No layers match “{layerQuery}”.</div> : null}
+                {filteredNodes.length === 0 ? <div className="mx-1 mt-3 rounded-lg border border-dashed border-[var(--line-strong)] px-3 py-5 text-center text-[10.5px] leading-relaxed text-[var(--muted)]">No layers match “{layerQuery}”.</div> : null}
               </>
             ) : (
               <Reorder.Group axis="y" as="div" values={order} onReorder={setOrder} className="grid gap-0.5">
@@ -245,7 +245,7 @@ export function LayersPanel({
       ) : (
         <div className="min-h-0 overflow-auto">
           <section className="border-b border-[var(--line)] p-3">
-            <h3 className="text-[11px] font-semibold text-[#343a36]">Color tokens</h3>
+            <h3 className="text-[11px] font-semibold text-[var(--t-strong)]">Color tokens</h3>
             <p className="mt-1 text-[10px] leading-relaxed text-[var(--muted)]">Bound to every frame and compiled into both platforms.</p>
             <div className="mt-3 grid gap-2">
               {Object.entries(graph.tokens.colors).map(([key, value]) => (
@@ -255,9 +255,9 @@ export function LayersPanel({
                     aria-label={`Pick ${key}`}
                     value={/^#[0-9a-fA-F]{6}$/.test(value) ? value : "#397461"}
                     onChange={(event) => onUpdateTokens((tokens) => { tokens.colors[key] = event.target.value; }, `Set ${key}.`)}
-                    className="h-7 w-full cursor-pointer rounded-md border border-[var(--line-strong)] bg-white p-0.5"
+                    className="h-7 w-full cursor-pointer rounded-md border border-[var(--line)] bg-[var(--field)] p-0.5"
                   />
-                  <span className="truncate font-mono text-[10.5px] text-[#5f6863]">{key}</span>
+                  <span className="truncate font-mono text-[10.5px] text-[var(--muted)]">{key}</span>
                   <input
                     key={`${key}-${value}`}
                     aria-label={`Hex for ${key}`}
@@ -267,14 +267,14 @@ export function LayersPanel({
                       if (/^#[0-9a-fA-F]{3,8}$/.test(next) && next !== value) onUpdateTokens((tokens) => { tokens.colors[key] = next; }, `Set ${key}.`);
                     }}
                     onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); }}
-                    className="min-h-7 rounded-md border border-[var(--line-strong)] bg-white px-1.5 font-mono text-[10px] text-[#2f3531] outline-none focus:border-[#6c9a85]"
+                    className="min-h-7 rounded-md border border-[var(--line-strong)] bg-[var(--field)] px-1.5 font-mono text-[10px] text-[var(--t-strong)] outline-none focus:border-[var(--accent)]"
                   />
                 </div>
               ))}
             </div>
           </section>
           <section className="border-b border-[var(--line)] p-3">
-            <h3 className="text-[11px] font-semibold text-[#343a36]">Radii</h3>
+            <h3 className="text-[11px] font-semibold text-[var(--t-strong)]">Radii</h3>
             <div className="mt-3 grid gap-2">
               {Object.entries(graph.tokens.radii).map(([key, value]) => (
                 <TokenNumberField key={key} label={key} value={value} onCommit={(next) => onUpdateTokens((tokens) => { tokens.radii[key] = next; }, `Set ${key} to ${next}.`)} />
@@ -282,13 +282,13 @@ export function LayersPanel({
             </div>
           </section>
           <section className="p-3">
-            <h3 className="text-[11px] font-semibold text-[#343a36]">Spacing</h3>
+            <h3 className="text-[11px] font-semibold text-[var(--t-strong)]">Spacing</h3>
             <div className="mt-3 grid gap-2">
               {Object.entries(graph.tokens.spacing).map(([key, value]) => (
                 <TokenNumberField key={key} label={key} value={value} onCommit={(next) => onUpdateTokens((tokens) => { tokens.spacing[key] = next; }, `Set ${key} to ${next}.`)} />
               ))}
             </div>
-            <div className="mt-4 rounded-lg border border-[#d7dfda] bg-[#edf3ef] p-3 text-[10px] leading-relaxed text-[#68716c]">
+            <div className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--hover)] p-3 text-[10px] leading-relaxed text-[var(--muted)]">
               Token edits are semantic changes: they land in the graph diff and recompile React and SwiftUI deterministically.
             </div>
           </section>

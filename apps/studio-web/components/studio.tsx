@@ -16,9 +16,11 @@ import {
   FolderOpen,
   GitDiff,
   Lightning,
+  Moon,
   Selection,
   ShieldCheck,
   Sparkle,
+  Sun,
   TreeStructure,
   Warning,
 } from "@phosphor-icons/react";
@@ -77,10 +79,10 @@ interface TraceSummary {
 
 function ModeBadge({ mode, model, trace }: { mode: "live" | "replay"; model: string; trace: TraceSummary | null }) {
   return (
-    <div title={trace ? `${trace.requestFingerprint} · ${trace.attempts} attempt(s)${trace.usage ? ` · ${trace.usage.totalTokens} tokens` : ""}` : undefined} className="inline-flex min-h-8 items-center gap-2 rounded-lg border border-[var(--line)] bg-white/70 px-2.5 text-[10px] font-medium text-[var(--muted)] shadow-[inset_0_1px_0_rgba(255,255,255,.8)]">
+    <div title={trace ? `${trace.requestFingerprint} · ${trace.attempts} attempt(s)${trace.usage ? ` · ${trace.usage.totalTokens} tokens` : ""}` : undefined} className="inline-flex min-h-8 items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--chip)] px-2.5 text-[10px] font-medium text-[var(--muted)] shadow-[inset_0_1px_0_var(--float-inset)]">
       <span className={`status-breathe size-2 rounded-full ${mode === "live" ? "bg-[var(--accent)]" : "bg-amber-500"}`} />
       {mode === "live" ? "Live model" : "Deterministic replay"}
-      <span className="hidden font-mono font-normal text-zinc-400 2xl:inline">{model}</span>
+      <span className="hidden font-mono font-normal text-[var(--faint)] 2xl:inline">{model}</span>
     </div>
   );
 }
@@ -96,7 +98,7 @@ function PhonePreview({ graph, selectedScreen }: { graph: SemanticInterfaceGraph
   const nodes = screen.nodes.filter((node) => isNodeVisible(node, "idle"));
   const fixture = fixtureFor(graph, screen.id, "idle");
   return (
-    <div className="relative grid min-h-[520px] place-items-center rounded-[32px] border border-[var(--line)] bg-[#e9ede8] p-6">
+    <div className="relative grid min-h-[520px] place-items-center rounded-[32px] border border-[var(--line)] bg-[var(--inset)] p-6">
       <div style={{ width: width * scale, height: height * scale }}>
         <div
           className="phone-shell flex flex-col overflow-hidden rounded-[40px] bg-[#fcfdfb] px-7 pb-7 pt-5"
@@ -121,7 +123,7 @@ function PhonePreview({ graph, selectedScreen }: { graph: SemanticInterfaceGraph
           <div className="mx-auto mt-5 h-[5px] w-28 shrink-0 rounded-full bg-[#1d211f]" />
         </div>
       </div>
-      <div className="absolute bottom-4 left-4 flex items-center gap-2 rounded-full border border-white/70 bg-white/75 px-3 py-1.5 text-[10px] font-medium text-zinc-600 backdrop-blur-xl">
+      <div className="absolute bottom-4 left-4 flex items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--float)] px-3 py-1.5 text-[10px] font-medium text-[var(--muted)] backdrop-blur-xl">
         <DeviceMobile size={13} /> 375 × 667 · Compact
       </div>
     </div>
@@ -156,8 +158,24 @@ export function Studio() {
   const [noticeOpen, setNoticeOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
+  const [theme, setThemeState] = useState<"light" | "dark">("light");
   const [isPending, startTransition] = useTransition();
   const lastCommit = useRef({ at: 0, notice: "" });
+
+  useEffect(() => {
+    if (document.documentElement.dataset.theme === "dark") setThemeState("dark");
+  }, []);
+
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setThemeState(next);
+    document.documentElement.dataset.theme = next;
+    try {
+      window.localStorage.setItem("intentform-theme", next);
+    } catch {
+      // Theme preference persistence is best-effort.
+    }
+  };
 
   const setNotice = (text: string) => {
     setNoticeText(text);
@@ -434,29 +452,29 @@ export function Studio() {
                 aria-label="IntentForm project menu"
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen((open) => !open)}
-                className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-[var(--accent-deep)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,.18)] transition-transform active:scale-[.96]"
+                className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-[var(--accent-deep)] text-white shadow-[inset_0_1px_0_var(--float-inset)] transition-transform active:scale-[.96]"
               >
                 <BracketsCurly size={16} weight="bold" />
               </button>
               {menuOpen ? (
                 <>
                   <button type="button" aria-label="Close project menu" onClick={() => setMenuOpen(false)} className="fixed inset-0 z-[5] cursor-default" tabIndex={-1} />
-                  <div className="menu-pop absolute left-0 top-10 z-[6] w-64 rounded-xl border border-[var(--line-strong)] bg-white p-1.5 shadow-[0_24px_60px_-24px_rgba(18,27,22,.4)]">
+                  <div className="menu-pop absolute left-0 top-10 z-[6] w-64 p-1.5">
                     <div className="border-b border-[var(--line)] px-2.5 pb-2 pt-1.5">
                       <strong className="block text-[11px]">{graph.product.name}</strong>
                       <span className="mt-0.5 block font-mono text-[9px] text-[var(--faint)]">payment-flow.intentform · v{graph.schemaVersion}</span>
                     </div>
-                    <button type="button" onClick={openLocalProject} className="mt-1 flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[11px] text-[#2f3531] hover:bg-[#eef2ef]">
+                    <button type="button" onClick={openLocalProject} className="mt-1 flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[11px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
                       <FolderOpen size={13} /> Open local project
                     </button>
-                    <button type="button" onClick={saveLocalProject} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[11px] text-[#2f3531] hover:bg-[#eef2ef]">
+                    <button type="button" onClick={saveLocalProject} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[11px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
                       <FloppyDisk size={13} /> Save to local project
                     </button>
                     <div className="my-1 border-t border-[var(--line)]" />
-                    <button type="button" onClick={exportGraph} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[11px] text-[#2f3531] hover:bg-[#eef2ef]">
+                    <button type="button" onClick={exportGraph} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[11px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
                       <DownloadSimple size={13} /> Export graph as JSON
                     </button>
-                    <button type="button" onClick={resetProject} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[11px] text-[#2f3531] hover:bg-[#eef2ef]">
+                    <button type="button" onClick={resetProject} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[11px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
                       <ArrowsCounterClockwise size={13} /> Reset to verified sample
                     </button>
                   </div>
@@ -471,7 +489,7 @@ export function Studio() {
             </div>
           </div>
 
-          <nav aria-label="Workflow" className="mx-auto flex min-w-0 items-center rounded-[10px] border border-[var(--line)] bg-[#f1f3f0] p-0.5">
+          <nav aria-label="Workflow" className="mx-auto flex min-w-0 items-center rounded-[10px] border border-[var(--line)] bg-[var(--chip)] p-0.5">
             {stages.map((item) => {
               const Icon = item.icon;
               const active = stage === item.id;
@@ -483,7 +501,7 @@ export function Studio() {
                   aria-label={item.label}
                   aria-current={active ? "page" : undefined}
                   onClick={() => setStage(item.id)}
-                  className={`group relative flex min-h-8 items-center justify-center gap-1.5 rounded-lg px-2 text-[10px] font-medium transition-[background,color,box-shadow,transform] duration-200 active:scale-[.97] lg:px-2.5 ${active ? "bg-white text-[var(--ink)] shadow-[0_5px_14px_-10px_rgba(20,32,26,.55),inset_0_0_0_1px_rgba(255,255,255,.8)]" : "text-[var(--muted)] hover:bg-white/60 hover:text-[var(--ink)]"}`}
+                  className={`group relative flex min-h-8 items-center justify-center gap-1.5 rounded-lg px-2 text-[10px] font-medium transition-[background,color,box-shadow,transform] duration-200 active:scale-[.97] lg:px-2.5 ${active ? "bg-[var(--seg-active)] text-[var(--ink)] shadow-[0_5px_14px_-10px_var(--shadow-strong),inset_0_0_0_1px_var(--float-inset)]" : "text-[var(--muted)] hover:bg-[var(--seg-hover)] hover:text-[var(--ink)]"}`}
                 >
                   <Icon size={14} weight={active ? "fill" : "regular"} />
                   <span className="hidden xl:inline">{item.shortLabel}</span>
@@ -496,12 +514,21 @@ export function Studio() {
           </nav>
 
           <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              aria-label="Toggle color theme"
+              aria-pressed={theme === "dark"}
+              onClick={toggleTheme}
+              className="grid size-8 place-items-center rounded-lg text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"
+            >
+              {theme === "dark" ? <Sun size={14} weight="fill" /> : <Moon size={14} />}
+            </button>
             <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
-              <button type="button" aria-label="Show workspace status" aria-expanded={noticeOpen} onClick={() => setNoticeOpen((open) => !open)} className="grid size-8 place-items-center rounded-lg text-[var(--muted)] hover:bg-[#eef1ee] hover:text-[var(--ink)]">
+              <button type="button" aria-label="Show workspace status" aria-expanded={noticeOpen} onClick={() => setNoticeOpen((open) => !open)} className="grid size-8 place-items-center rounded-lg text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]">
                 {noticeIsError ? <Warning size={14} weight="fill" className="text-[var(--danger)]" /> : <CheckCircle size={14} weight="fill" className="text-[var(--accent)]" />}
               </button>
               {noticeOpen ? (
-                <div className="menu-pop absolute right-0 top-10 z-[6] w-80 overflow-hidden rounded-xl border border-[var(--line)] bg-white shadow-[0_18px_50px_-24px_rgba(21,36,29,.38)]">
+                <div className="menu-pop absolute right-0 top-10 z-[6] w-80 overflow-hidden">
                   <div role="status" aria-live="polite" className="border-b border-[var(--line)] p-3 text-[11px] leading-relaxed text-[var(--ink)]">{notice}</div>
                   {activity.length > 1 ? (
                     <div className="max-h-56 overflow-auto p-1.5">
@@ -528,7 +555,7 @@ export function Studio() {
               <span className="hidden sm:inline">{stage === "canvas" ? "Recompile" : "Compile intent"}</span>
             </button>
           </div>
-          {isPending ? <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-[#dce6e1]"><motion.span className="block h-full w-1/3 bg-[var(--accent)]" initial={{ x: "-100%" }} animate={{ x: "300%" }} transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }} /></div> : null}
+          {isPending ? <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-[var(--line)]"><motion.span className="block h-full w-1/3 bg-[var(--accent)]" initial={{ x: "-100%" }} animate={{ x: "300%" }} transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }} /></div> : null}
         </header>
 
         <section className="min-h-0 min-w-0 overflow-hidden">
@@ -567,9 +594,9 @@ export function Studio() {
                     <span className="font-mono text-[11px] text-[var(--accent)]">01 / PRODUCT BRIEF</span>
                     <h2 className="mt-4 max-w-[620px] text-3xl font-semibold leading-[1.03] tracking-[-.055em] md:text-5xl">Describe the product. Keep the intent.</h2>
                     <p className="mt-5 max-w-[58ch] text-sm leading-relaxed text-[var(--muted)]">GPT‑5.6 turns a brief into a validated graph or proposes a narrow typed patch. React and SwiftUI are always compiled later by deterministic backends.</p>
-                    <div className="mt-8 inline-flex rounded-xl border border-[var(--line)] bg-[#eef1ee] p-1" aria-label="Intent operation">
+                    <div className="mt-8 inline-flex rounded-xl border border-[var(--line)] bg-[var(--hover)] p-1" aria-label="Intent operation">
                       {(["create", "edit"] as const).map((operation) => (
-                        <button key={operation} type="button" onClick={() => setBriefOperation(operation)} className={`min-h-8 rounded-lg px-3 text-[10px] font-semibold capitalize ${briefOperation === operation ? "bg-white text-[var(--ink)] shadow-sm" : "text-[var(--muted)]"}`}>{operation === "create" ? "New graph" : "Semantic edit"}</button>
+                        <button key={operation} type="button" onClick={() => setBriefOperation(operation)} className={`min-h-8 rounded-lg px-3 text-[10px] font-semibold capitalize ${briefOperation === operation ? "bg-[var(--seg-active)] text-[var(--ink)] shadow-sm" : "text-[var(--muted)]"}`}>{operation === "create" ? "New graph" : "Semantic edit"}</button>
                       ))}
                     </div>
                     <label className="mt-10 grid gap-2 text-xs font-semibold">
@@ -578,7 +605,7 @@ export function Studio() {
                         value={briefOperation === "create" ? brief : editInstruction}
                         onChange={(event) => briefOperation === "create" ? setBrief(event.target.value) : setEditInstruction(event.target.value)}
                         rows={8}
-                        className="resize-none rounded-[24px] border border-[var(--line)] bg-white p-5 text-sm font-normal leading-relaxed outline-none transition-shadow focus:border-[var(--accent)] focus:shadow-[0_0_0_4px_rgba(57,116,97,.1)]"
+                        className="resize-none rounded-[24px] border border-[var(--line)] bg-[var(--field)] p-5 text-sm font-normal leading-relaxed outline-none transition-shadow focus:border-[var(--accent)] focus:shadow-[0_0_0_4px_color-mix(in_oklab,var(--accent)_12%,transparent)]"
                       />
                       <span className="flex items-center justify-between font-normal text-[var(--muted)]">
                         <span>{briefOperation === "create" ? "Describe audience, hierarchy, behavior and recovery." : "Describe one intent change. Only affected stable nodes will be patched."}</span>
@@ -589,7 +616,7 @@ export function Studio() {
                       <button type="button" onClick={() => compileBrief(briefOperation)} className="inline-flex min-h-12 items-center gap-3 rounded-2xl bg-[var(--accent-deep)] px-5 text-sm font-semibold text-white transition-transform active:translate-y-px">
                         {briefOperation === "create" ? "Build semantic graph" : "Apply typed edit"} <ArrowRight size={16} />
                       </button>
-                      <button type="button" onClick={() => setBrief(demoBrief)} className="inline-flex min-h-9 items-center rounded-xl border border-[var(--line)] bg-white px-3 text-xs font-medium text-[var(--muted)] hover:text-[var(--ink)]">
+                      <button type="button" onClick={() => setBrief(demoBrief)} className="inline-flex min-h-9 items-center rounded-xl border border-[var(--line)] bg-[var(--chip)] px-3 text-xs font-medium text-[var(--muted)] hover:text-[var(--ink)]">
                         Use the verified sample brief
                       </button>
                     </div>
@@ -604,13 +631,13 @@ export function Studio() {
                     <span className="font-mono text-[10px] text-[var(--accent)]">SCREENS</span>
                     <div className="mt-3 grid gap-2">
                       {graph.screens.map((screen) => (
-                        <button key={screen.id} type="button" onClick={() => setSelectedScreen(screen.id)} className={`flex items-center justify-between rounded-xl px-3 py-3 text-left text-xs transition-colors ${selectedScreen === screen.id ? "bg-[#e2ece6] text-[#214d3f]" : "hover:bg-[#f0f2ef]"}`}>
+                        <button key={screen.id} type="button" onClick={() => setSelectedScreen(screen.id)} className={`flex items-center justify-between rounded-xl px-3 py-3 text-left text-xs transition-colors ${selectedScreen === screen.id ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "hover:bg-[var(--hover)]"}`}>
                           <span><strong className="block">{screen.title}</strong><small className="font-mono text-[9px] opacity-60">{screen.route}</small></span>
                           <ArrowRight size={13} />
                         </button>
                       ))}
                     </div>
-                    <div className="mt-6 rounded-xl border border-[var(--line)] bg-white p-3">
+                    <div className="mt-6 rounded-xl border border-[var(--line)] bg-[var(--surface-strong)] p-3">
                       <span className="font-mono text-[9px] text-[var(--accent)]">FLOWS</span>
                       {graph.flows.flatMap((flow) => flow.steps).map((step) => (
                         <div key={`${step.from}-${step.event}`} className="mt-2.5 grid gap-0.5 text-[10px]">
@@ -622,11 +649,11 @@ export function Studio() {
                   </div>
                   <PhonePreview graph={graph} selectedScreen={selectedScreen} />
                   <div className="min-w-0">
-                    <div className="flex items-center justify-between"><span className="font-mono text-[10px] text-[var(--accent)]">SEMANTIC OUTLINE</span><span className="rounded-full bg-[#e6eae6] px-2 py-1 font-mono text-[9px]">valid · v{graph.schemaVersion}</span></div>
+                    <div className="flex items-center justify-between"><span className="font-mono text-[10px] text-[var(--accent)]">SEMANTIC OUTLINE</span><span className="rounded-full bg-[var(--accent-soft)] px-2 py-1 font-mono text-[9px]">valid · v{graph.schemaVersion}</span></div>
                     <div className="mt-3 divide-y divide-[var(--line)] border-y border-[var(--line)]">
                       {graph.screens.find((screen) => screen.id === selectedScreen)?.nodes.map((node, index) => (
                         <motion.div layout key={node.id} className="grid grid-cols-[24px_1fr_auto] gap-3 py-3.5">
-                          <span className="font-mono text-[9px] text-zinc-400">{String(index + 1).padStart(2, "0")}</span>
+                          <span className="font-mono text-[9px] text-[var(--faint)]">{String(index + 1).padStart(2, "0")}</span>
                           <span className="min-w-0"><strong className="block truncate text-xs">{node.intent.label}</strong><small className="font-mono text-[9px] text-[var(--muted)]">{node.kind} · {node.id}</small></span>
                           <span className="self-center rounded-full border border-[var(--line)] px-2 py-1 text-[8px] font-semibold uppercase tracking-wider text-[var(--muted)]">{node.intent.importance}</span>
                         </motion.div>
@@ -636,11 +663,11 @@ export function Studio() {
                       const contract = graph.contracts.find((item) => item.screenId === selectedScreen);
                       if (!contract) return null;
                       return (
-                        <div className="mt-5 rounded-2xl border border-[var(--line)] bg-white p-4">
+                        <div className="mt-5 rounded-2xl border border-[var(--line)] bg-[var(--surface-strong)] p-4">
                           <span className="font-mono text-[9px] text-[var(--accent)]">SCREEN CONTRACT</span>
                           <div className="mt-3 grid gap-3 text-[10px]">
-                            <div><span className="text-[var(--faint)]">Data</span><div className="mt-1 flex flex-wrap gap-1.5">{contract.data.map((field) => <span key={field.name} className="rounded-md bg-[#eef1ee] px-1.5 py-0.5 font-mono text-[9px]">{field.name}: {field.type}</span>)}</div></div>
-                            <div><span className="text-[var(--faint)]">Events</span><div className="mt-1 flex flex-wrap gap-1.5">{contract.events.map((event) => <span key={event.name} className="rounded-md bg-[#eef1ee] px-1.5 py-0.5 font-mono text-[9px]">{event.name}</span>)}</div></div>
+                            <div><span className="text-[var(--faint)]">Data</span><div className="mt-1 flex flex-wrap gap-1.5">{contract.data.map((field) => <span key={field.name} className="rounded-md bg-[var(--hover)] px-1.5 py-0.5 font-mono text-[9px]">{field.name}: {field.type}</span>)}</div></div>
+                            <div><span className="text-[var(--faint)]">Events</span><div className="mt-1 flex flex-wrap gap-1.5">{contract.events.map((event) => <span key={event.name} className="rounded-md bg-[var(--hover)] px-1.5 py-0.5 font-mono text-[9px]">{event.name}</span>)}</div></div>
                             <div><span className="text-[var(--faint)]">Visual states</span><div className="mt-1 flex flex-wrap gap-1.5">{contract.visualStates.map((state) => <span key={state} className="rounded-md bg-[var(--accent-soft)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--accent-dark)]">{state}</span>)}</div></div>
                           </div>
                         </div>
@@ -655,7 +682,7 @@ export function Studio() {
                 <div className="mx-auto grid max-w-[1400px] gap-5 xl:grid-cols-[minmax(330px,.72fr)_minmax(0,1.28fr)]">
                   <div>
                     {outputTarget === "react" ? (
-                      <div className="overflow-hidden rounded-[32px] border border-[var(--line)] bg-[#e9ede8] p-4">
+                      <div className="overflow-hidden rounded-[32px] border border-[var(--line)] bg-[var(--inset)] p-4">
                         <div className="mb-3 flex items-center justify-between px-1 text-[10px] text-[var(--muted)]">
                           <span className="font-semibold text-[var(--accent-dark)]">Runnable golden artifact</span>
                           <span className="font-mono">{previewVariant} · {reactOutput.fingerprint}</span>
@@ -718,17 +745,17 @@ export function Studio() {
                       ) : verification.findings.map((finding) => (
                         <div key={finding.id} className="grid gap-4 py-5 md:grid-cols-[30px_1fr_auto]">
                           <Warning size={22} weight="fill" className={finding.severity === "error" ? "text-[var(--danger)]" : "text-amber-600"} />
-                          <div><strong className="text-sm">{finding.violatedIntent}</strong><p className="mt-1 font-mono text-[9px] text-[var(--muted)]">{finding.id} · layer: {finding.responsibleLayer}</p><div className="mt-3 flex flex-wrap gap-2">{finding.evidence.map((evidence) => <span key={evidence.label} className="rounded-lg bg-[#ecefec] px-2 py-1 font-mono text-[9px]">{evidence.label}: {String(evidence.value)}</span>)}</div></div>
+                          <div><strong className="text-sm">{finding.violatedIntent}</strong><p className="mt-1 font-mono text-[9px] text-[var(--muted)]">{finding.id} · layer: {finding.responsibleLayer}</p><div className="mt-3 flex flex-wrap gap-2">{finding.evidence.map((evidence) => <span key={evidence.label} className="rounded-lg bg-[var(--hover)] px-2 py-1 font-mono text-[9px]">{evidence.label}: {String(evidence.value)}</span>)}</div></div>
                           {finding.severity === "error" ? <button type="button" onClick={() => repairFinding(finding)} disabled={isPending} className="self-start rounded-xl bg-[var(--accent-deep)] px-4 py-2.5 text-[10px] font-semibold text-white active:translate-y-px disabled:opacity-60">Plan repair</button> : null}
                         </div>
                       ))}
                     </div>
                   </div>
-                  <div className="rounded-[24px] border border-[var(--line)] bg-[#edf1ed] p-5">
+                  <div className="rounded-[24px] border border-[var(--line)] bg-[var(--inset)] p-5">
                     <span className="font-mono text-[9px] text-[var(--accent)]">SCENARIO</span>
-                    <div className="mt-3 grid grid-flow-col rounded-lg border border-[#dce0dd] bg-white p-0.5">
+                    <div className="mt-3 grid grid-flow-col rounded-lg border border-[var(--line)] bg-[var(--field)] p-0.5">
                       {(Object.entries(scenarios) as Array<[ScenarioId, typeof scenario]>).map(([id, item]) => (
-                        <button key={id} type="button" aria-pressed={scenarioId === id} onClick={() => setScenarioId(id)} className={`min-h-8 rounded-md px-2 text-[10px] font-medium ${scenarioId === id ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]" : "text-[#78817c] hover:text-[#343a36]"}`}>
+                        <button key={id} type="button" aria-pressed={scenarioId === id} onClick={() => setScenarioId(id)} className={`min-h-8 rounded-md px-2 text-[10px] font-medium ${scenarioId === id ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]" : "text-[var(--muted)] hover:text-[var(--t-strong)]"}`}>
                           {item.label}
                         </button>
                       ))}
@@ -746,10 +773,10 @@ export function Studio() {
                     <h2 className="mt-3 max-w-[700px] text-3xl font-semibold tracking-[-.05em] md:text-4xl">The intent survived two compilers and one repair.</h2>
                     <div className="mt-8 border-y border-[var(--line)]">
                       {[{ label: "Graph validated", detail: `${graph.screens.length} screens · ${graph.screens.flatMap((screen) => screen.nodes).length} semantic nodes`, icon: TreeStructure }, { label: "React compiled", detail: `Fingerprint ${reactOutput.fingerprint}`, icon: Code }, { label: "SwiftUI compiled", detail: `Fingerprint ${swiftOutput.fingerprint}`, icon: DeviceMobile }, { label: `${scenario.label} verified`, detail: verification.passed ? "No blocking findings remain" : `${verification.findings.length} findings remain`, icon: ShieldCheck }].map((item, index) => {
-                        const Icon = item.icon; return <div key={item.label} className="grid grid-cols-[26px_1fr_auto] items-center gap-4 border-b border-[var(--line)] py-4 last:border-0"><Icon size={18} className="text-[var(--accent)]" /><span><strong className="block text-sm">{item.label}</strong><small className="font-mono text-[9px] text-[var(--muted)]">{item.detail}</small></span><CheckCircle size={18} weight="fill" className={index === 3 && !verification.passed ? "text-zinc-300" : "text-[var(--accent)]"} /></div>;
+                        const Icon = item.icon; return <div key={item.label} className="grid grid-cols-[26px_1fr_auto] items-center gap-4 border-b border-[var(--line)] py-4 last:border-0"><Icon size={18} className="text-[var(--accent)]" /><span><strong className="block text-sm">{item.label}</strong><small className="font-mono text-[9px] text-[var(--muted)]">{item.detail}</small></span><CheckCircle size={18} weight="fill" className={index === 3 && !verification.passed ? "text-[var(--faint)]" : "text-[var(--accent)]"} /></div>;
                       })}
                     </div>
-                    <button type="button" onClick={exportGraph} className="mt-6 inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-4 py-2.5 text-xs font-semibold text-[var(--accent-dark)] hover:border-[var(--accent)]">
+                    <button type="button" onClick={exportGraph} className="mt-6 inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--field)] px-4 py-2.5 text-xs font-semibold text-[var(--accent-dark)] hover:border-[var(--accent)]">
                       <DownloadSimple size={14} /> Export canonical graph
                     </button>
                   </div>

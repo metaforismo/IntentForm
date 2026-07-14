@@ -19,3 +19,4 @@ apps/react-preview/src/generated/
 apps/react-preview/dist/
 apps/studio-web/public/react-preview/
 .intentform/
+.claude/

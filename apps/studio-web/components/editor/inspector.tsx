@@ -26,14 +26,14 @@ export function SegmentedControl<T extends string>({
 }) {
   return (
     <div className="grid gap-2">
-      <span className="text-[10px] font-medium text-[#747d78]">{label}</span>
-      <div className="grid grid-flow-col rounded-lg border border-[#dce0dd] bg-[#eef1ef] p-0.5">
+      <span className="text-[10px] font-medium text-[var(--muted)]">{label}</span>
+      <div className="grid grid-flow-col rounded-lg border border-[var(--line)] bg-[var(--hover)] p-0.5">
         {options.map((option) => (
           <button
             key={option.value}
             type="button"
             onClick={() => onChange(option.value)}
-            className={`min-h-7 rounded-md px-2 text-[10px] font-medium transition-colors ${value === option.value ? "bg-white text-[#2d3430] shadow-[0_3px_9px_-7px_rgba(24,34,28,.8),inset_0_0_0_1px_rgba(255,255,255,.8)]" : "text-[#78817c] hover:bg-white/55 hover:text-[#343a36]"}`}
+            className={`min-h-7 rounded-md px-2 text-[10px] font-medium transition-colors ${value === option.value ? "bg-[var(--seg-active)] text-[var(--t-strong)] shadow-[0_3px_9px_-7px_var(--shadow-strong),inset_0_0_0_1px_var(--float-inset)]" : "text-[var(--muted)] hover:bg-[var(--seg-hover)] hover:text-[var(--t-strong)]"}`}
           >
             {option.label}
           </button>
@@ -56,9 +56,9 @@ function TextField({
   multiline?: boolean;
   onCommit(next: string): void;
 }) {
-  const shared = "rounded-lg border border-[#d7dcd8] bg-white px-2.5 text-[11px] text-[#2f3531] outline-none focus:border-[#6c9a85] focus:shadow-[0_0_0_3px_rgba(57,116,97,.08)]";
+  const shared = "rounded-lg border border-[var(--line)] bg-[var(--field)] px-2.5 text-[11px] text-[var(--t-strong)] outline-none focus:border-[var(--accent)] focus:shadow-[0_0_0_3px_color-mix(in_oklab,var(--accent)_14%,transparent)]";
   return (
-    <label className="grid gap-2 text-[10px] text-[#747d78]">
+    <label className="grid gap-2 text-[10px] text-[var(--muted)]">
       {label}
       {multiline ? (
         <textarea
@@ -123,11 +123,11 @@ export function Inspector({
     <aside
       id="editor-inspector-panel"
       aria-label="Design inspector"
-      className={`${visible ? "block" : "hidden"} ${desktopVisible ? "xl:block" : "xl:hidden"} absolute inset-y-0 right-0 z-[3] w-[304px] min-h-0 overflow-auto border-l border-[var(--line)] bg-[var(--chrome)] text-[#29302c] shadow-[-24px_0_52px_-32px_rgba(24,34,28,.32)] xl:relative xl:z-[1] xl:w-auto xl:shadow-none`}
+      className={`${visible ? "block" : "hidden"} ${desktopVisible ? "xl:block" : "xl:hidden"} absolute inset-y-0 right-0 z-[3] w-[304px] min-h-0 overflow-auto border-l border-[var(--line)] bg-[var(--chrome)] text-[var(--t-strong)] shadow-[-24px_0_52px_-32px_var(--shadow-strong)] xl:relative xl:z-[1] xl:w-auto xl:shadow-none`}
     >
       <div className="sticky top-0 z-[1] flex h-11 items-center justify-between border-b border-[var(--line)] bg-[var(--chrome)] px-3">
-        <div className="flex items-center gap-2"><span className="text-[11px] font-semibold text-[#303632]">Design</span><span className="rounded-md bg-[var(--accent-soft)] px-1.5 py-0.5 font-mono text-[8px] text-[#356652]">semantic</span></div>
-        <button type="button" aria-label="Close design inspector" onClick={onClose} className="grid size-7 place-items-center rounded-md text-[#727b76] hover:bg-[#e9edea] hover:text-[var(--ink)]"><X size={13} /></button>
+        <div className="flex items-center gap-2"><span className="text-[11px] font-semibold text-[var(--t-strong)]">Design</span><span className="rounded-md bg-[var(--accent-soft)] px-1.5 py-0.5 font-mono text-[8px] text-[var(--accent-text)]">semantic</span></div>
+        <button type="button" aria-label="Close design inspector" onClick={onClose} className="grid size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"><X size={13} /></button>
       </div>
 
       <section className="grid gap-3 border-b border-[var(--line)] p-4">
@@ -137,15 +137,15 @@ export function Inspector({
       </section>
 
       {selectedNode ? (
-        <div data-testid="semantic-inspector" className="divide-y divide-[#e1e5e2]">
+        <div data-testid="semantic-inspector" className="divide-y divide-[var(--line)]">
           <section className="p-4">
             <div className="flex items-center justify-between">
               <div className="min-w-0"><span className="block text-[11px] font-semibold">{nodeNames[selectedNode.kind]}</span><span className="mt-1 block truncate font-mono text-[9px] text-[var(--faint)]">{selectedNode.id}</span></div>
               <div className="flex gap-1">
-                <button type="button" aria-label="Duplicate layer" onClick={onDuplicate} className="grid size-7 place-items-center rounded-md text-[#747d78] hover:bg-[#e8ece9] hover:text-[#29302c]"><Copy size={12} /></button>
-                <button type="button" aria-label="Move layer up" onClick={() => onReorder(-1)} className="grid size-7 place-items-center rounded-md text-[#747d78] hover:bg-[#e8ece9] hover:text-[#29302c]"><ArrowUp size={12} /></button>
-                <button type="button" aria-label="Move layer down" onClick={() => onReorder(1)} className="grid size-7 place-items-center rounded-md text-[#747d78] hover:bg-[#e8ece9] hover:text-[#29302c]"><ArrowDown size={12} /></button>
-                <button type="button" aria-label="Delete layer" onClick={onDelete} disabled={screen.nodes.length <= 1} className="grid size-7 place-items-center rounded-md text-[#747d78] hover:bg-[#f3e5e1] hover:text-[#9b4432] disabled:opacity-25"><Trash size={12} /></button>
+                <button type="button" aria-label="Duplicate layer" onClick={onDuplicate} className="grid size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--t-strong)]"><Copy size={12} /></button>
+                <button type="button" aria-label="Move layer up" onClick={() => onReorder(-1)} className="grid size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--t-strong)]"><ArrowUp size={12} /></button>
+                <button type="button" aria-label="Move layer down" onClick={() => onReorder(1)} className="grid size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--t-strong)]"><ArrowDown size={12} /></button>
+                <button type="button" aria-label="Delete layer" onClick={onDelete} disabled={screen.nodes.length <= 1} className="grid size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] disabled:opacity-25"><Trash size={12} /></button>
               </div>
             </div>
           </section>
@@ -197,8 +197,8 @@ export function Inspector({
             <SegmentedControl label="Axis" value={selectedNode.layout.axis} options={[{ value: "vertical", label: "Vertical" }, { value: "horizontal", label: "Horizontal" }, { value: "overlay", label: "Overlay" }]} onChange={(value) => updateNode((node) => { node.layout.axis = value; }, `Changed layout axis to ${value}.`)} />
             <SegmentedControl label="Width" value={selectedNode.layout.width} options={[{ value: "hug", label: "Hug" }, { value: "fill", label: "Fill" }, { value: "fixed", label: "Fixed" }]} onChange={(value) => updateNode((node) => { node.layout.width = value; }, `Changed semantic width to ${value}.`)} />
             <div className="grid grid-cols-2 gap-2">
-              <label className="grid gap-2 text-[10px] text-[#747d78]">Gap token<select value={selectedNode.layout.gapToken} onChange={(event) => updateNode((node) => { node.layout.gapToken = event.target.value; }, `Bound gap to ${event.target.value}.`)} className="min-h-8 rounded-lg border border-[#d7dcd8] bg-white px-2 text-[10px] text-[#2f3531] outline-none focus:border-[#6c9a85]">{Object.keys(graph.tokens.spacing).map((token) => <option key={token}>{token}</option>)}</select></label>
-              <label className="grid gap-2 text-[10px] text-[#747d78]">Padding token<select value={selectedNode.layout.paddingToken} onChange={(event) => updateNode((node) => { node.layout.paddingToken = event.target.value; }, `Bound padding to ${event.target.value}.`)} className="min-h-8 rounded-lg border border-[#d7dcd8] bg-white px-2 text-[10px] text-[#2f3531] outline-none focus:border-[#6c9a85]">{Object.keys(graph.tokens.spacing).map((token) => <option key={token}>{token}</option>)}</select></label>
+              <label className="grid gap-2 text-[10px] text-[var(--muted)]">Gap token<select value={selectedNode.layout.gapToken} onChange={(event) => updateNode((node) => { node.layout.gapToken = event.target.value; }, `Bound gap to ${event.target.value}.`)} className="select-control text-[10px]">{Object.keys(graph.tokens.spacing).map((token) => <option key={token}>{token}</option>)}</select></label>
+              <label className="grid gap-2 text-[10px] text-[var(--muted)]">Padding token<select value={selectedNode.layout.paddingToken} onChange={(event) => updateNode((node) => { node.layout.paddingToken = event.target.value; }, `Bound padding to ${event.target.value}.`)} className="select-control text-[10px]">{Object.keys(graph.tokens.spacing).map((token) => <option key={token}>{token}</option>)}</select></label>
             </div>
             {selectedNode.kind === "primary-action" && selectedNode.layout.placement ? (
               <SegmentedControl
@@ -229,7 +229,7 @@ export function Inspector({
                           ? node.states.filter((binding) => binding.name !== state)
                           : [...node.states, { name: state }];
                       }, bound ? `Unbound the layer from the ${state} state.` : `Bound the layer to the ${state} state.`)}
-                      className={`min-h-7 rounded-full border px-2.5 text-[10px] font-medium capitalize ${bound ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-dark)]" : "border-[#dce0dd] bg-white text-[#78817c] hover:border-[#b9c4bd]"}`}
+                      className={`min-h-7 rounded-full border px-2.5 text-[10px] font-medium capitalize ${bound ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-dark)]" : "border-[var(--line)] bg-[var(--field)] text-[var(--muted)] hover:border-[var(--line-strong)]"}`}
                     >
                       {state}
                     </button>
@@ -245,14 +245,14 @@ export function Inspector({
           {isAction && contract && contract.events.length > 0 ? (
             <section className="grid gap-3 p-4">
               <h3 className="text-[11px] font-semibold">Interaction</h3>
-              <label className="grid gap-2 text-[10px] text-[#747d78]">
+              <label className="grid gap-2 text-[10px] text-[var(--muted)]">
                 Emits event
                 <select
                   value={selectedNode.interactions[0]?.event ?? ""}
                   onChange={(event) => updateNode((node) => {
                     node.interactions = event.target.value ? [{ event: event.target.value, requires: [] }] : [];
                   }, event.target.value ? `Bound the action to ${event.target.value}.` : "Detached the action from its event.")}
-                  className="min-h-8 rounded-lg border border-[#d7dcd8] bg-white px-2 font-mono text-[10px] text-[#2f3531] outline-none focus:border-[#6c9a85]"
+                  className="select-control font-mono text-[10px]"
                 >
                   <option value="">No event</option>
                   {contract.events.map((event) => <option key={event.name} value={event.name}>{event.name}</option>)}
@@ -265,14 +265,14 @@ export function Inspector({
           <section className="grid gap-3.5 p-4">
             <h3 className="text-[11px] font-semibold">Style intent</h3>
             <SegmentedControl label="Emphasis" value={selectedNode.style.emphasis} options={[{ value: "quiet", label: "Quiet" }, { value: "normal", label: "Normal" }, { value: "strong", label: "Strong" }]} onChange={(value) => updateNode((node) => { node.style.emphasis = value; }, `Changed semantic emphasis to ${value}.`)} />
-            <div className="rounded-lg border border-[#d7dfda] bg-[#edf3ef] p-3">
-              <div className="flex items-center gap-2 text-[10px] font-medium text-[#385c4c]"><Selection size={12} className="text-[var(--accent)]" /> Compiles responsively</div>
-              <p className="mt-2 text-[9.5px] leading-relaxed text-[#737d78]">Edits change graph properties, never viewport coordinates. React and SwiftUI lower the same relation differently.</p>
+            <div className="rounded-lg border border-[var(--line)] bg-[var(--hover)] p-3">
+              <div className="flex items-center gap-2 text-[10px] font-medium text-[var(--accent-text)]"><Selection size={12} className="text-[var(--accent)]" /> Compiles responsively</div>
+              <p className="mt-2 text-[9.5px] leading-relaxed text-[var(--muted)]">Edits change graph properties, never viewport coordinates. React and SwiftUI lower the same relation differently.</p>
             </div>
           </section>
         </div>
       ) : (
-        <div className="grid min-h-56 place-items-center p-6 text-center"><div><span className="mx-auto grid size-10 place-items-center rounded-xl border border-[#dce1dd] bg-white text-[#7b847f]"><Cursor size={18} /></span><p className="mt-3 text-[11px] text-[#7b847f]">Select a layer to edit its semantic properties.</p></div></div>
+        <div className="grid min-h-56 place-items-center p-6 text-center"><div><span className="mx-auto grid size-10 place-items-center rounded-xl border border-[var(--line)] bg-[var(--field)] text-[var(--muted)]"><Cursor size={18} /></span><p className="mt-3 text-[11px] text-[var(--muted)]">Select a layer to edit its semantic properties.</p></div></div>
       )}
     </aside>
   );
