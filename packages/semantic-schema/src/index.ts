@@ -186,6 +186,14 @@ export const graphPatchSchema = z.object({
         regular: z.enum(["inline", "persistent-bottom"]),
       }),
       z.object({ op: z.literal("set-label"), target: z.string(), label: z.string().min(1) }),
+      z.object({ op: z.literal("set-purpose"), target: z.string(), purpose: z.string().min(3) }),
+      z.object({
+        op: z.literal("set-emphasis"),
+        target: z.string(),
+        emphasis: z.enum(["quiet", "normal", "strong"]),
+      }),
+      z.object({ op: z.literal("set-gap-token"), target: z.string(), token: z.string().min(1) }),
+      z.object({ op: z.literal("set-padding-token"), target: z.string(), token: z.string().min(1) }),
     ]),
   ),
 });
@@ -209,8 +217,22 @@ export function applyGraphPatch(
 
     if (operation.op === "set-placement") {
       node.layout.placement = { compact: operation.compact, regular: operation.regular };
-    } else {
+    } else if (operation.op === "set-label") {
       node.intent.label = operation.label;
+    } else if (operation.op === "set-purpose") {
+      node.intent.purpose = operation.purpose;
+    } else if (operation.op === "set-emphasis") {
+      node.style.emphasis = operation.emphasis;
+    } else if (operation.op === "set-gap-token") {
+      if (!(operation.token in clone.tokens.spacing)) {
+        throw new Error(`Unknown spacing token: ${operation.token}`);
+      }
+      node.layout.gapToken = operation.token;
+    } else {
+      if (!(operation.token in clone.tokens.spacing)) {
+        throw new Error(`Unknown spacing token: ${operation.token}`);
+      }
+      node.layout.paddingToken = operation.token;
     }
     node.provenance.revision += 1;
   }
@@ -266,6 +288,12 @@ export function semanticDiff(
     }
     if (previous.style.emphasis !== node.style.emphasis) {
       changes.push({ path: `${node.id}.style.emphasis`, before: previous.style.emphasis, after: node.style.emphasis });
+    }
+    if (previous.layout.gapToken !== node.layout.gapToken) {
+      changes.push({ path: `${node.id}.layout.gapToken`, before: previous.layout.gapToken, after: node.layout.gapToken });
+    }
+    if (previous.layout.paddingToken !== node.layout.paddingToken) {
+      changes.push({ path: `${node.id}.layout.paddingToken`, before: previous.layout.paddingToken, after: node.layout.paddingToken });
     }
     if (JSON.stringify(previous.layout.placement) !== JSON.stringify(node.layout.placement)) {
       changes.push({

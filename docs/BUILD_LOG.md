@@ -107,3 +107,14 @@ The public macOS run completed on an iPhone 16 Pro Simulator, uploaded the nativ
 - Added an activity log, graph JSON export, reset-to-sample recovery for broken drafts, undo coalescing for rapid token edits, schema-guarded commits, and richer command-menu coverage (stages, devices, tokens, project actions).
 - Extended `semanticDiff` to cover tokens, purpose, importance, emphasis, state bindings, interactions and node removals; added compiler tests pinning token resolution on both targets.
 - Verified with the full suite: `pnpm typecheck`, 12 vitest cases, production build, `xcodebuild` on the regenerated SwiftUI, React render evidence, and an extended Playwright smoke run covering the board, token repaint and flow preview.
+
+## 2026-07-14 — GPT-5.6 structured intent loop
+
+- Split model work into full graph creation, scoped semantic editing and evidence-backed repair planning; deterministic compilers remain the only code generators.
+- Added an explicit capability catalog and expanded typed patches for purpose, emphasis and spacing-token relations without permitting arbitrary paths or JavaScript.
+- Added one corrective retry for schema failures and for schema-valid patches that reference unknown stable IDs or tokens.
+- Added deterministic replay edits for adaptive primary-action placement and quoted primary-action renames, scoped to the selected screen.
+- Added redacted traces containing only request ID, deterministic input fingerprint, attempt count and token totals; prompts, provider errors and reasoning chains are not persisted.
+- Fixed quota accounting so offline replay consumes no live allowance, combined client/session identity for anonymous live limits and hardened malformed environment limits.
+- Hardened both API routes for invalid JSON, invalid graphs, oversized input, timeout, unsupported replay edits and findings without a safe deterministic repair.
+- Added unit coverage for replay independence, corrective retry, deterministic semantic diffs and referential patch validation; expanded browser smoke coverage for typed replay editing and its visible disclosure.

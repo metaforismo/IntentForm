@@ -66,9 +66,16 @@ function getSessionId(): string {
   return next;
 }
 
-function ModeBadge({ mode, model }: { mode: "live" | "replay"; model: string }) {
+interface TraceSummary {
+  requestId: string;
+  requestFingerprint: string;
+  attempts: number;
+  usage?: { inputTokens: number; outputTokens: number; totalTokens: number };
+}
+
+function ModeBadge({ mode, model, trace }: { mode: "live" | "replay"; model: string; trace: TraceSummary | null }) {
   return (
-    <div className="inline-flex min-h-8 items-center gap-2 rounded-lg border border-[var(--line)] bg-white/70 px-2.5 text-[10px] font-medium text-[var(--muted)] shadow-[inset_0_1px_0_rgba(255,255,255,.8)]">
+    <div title={trace ? `${trace.requestFingerprint} · ${trace.attempts} attempt(s)${trace.usage ? ` · ${trace.usage.totalTokens} tokens` : ""}` : undefined} className="inline-flex min-h-8 items-center gap-2 rounded-lg border border-[var(--line)] bg-white/70 px-2.5 text-[10px] font-medium text-[var(--muted)] shadow-[inset_0_1px_0_rgba(255,255,255,.8)]">
       <span className={`status-breathe size-2 rounded-full ${mode === "live" ? "bg-[var(--accent)]" : "bg-amber-500"}`} />
       {mode === "live" ? "Live model" : "Deterministic replay"}
       <span className="hidden font-mono font-normal text-zinc-400 2xl:inline">{model}</span>
@@ -126,6 +133,8 @@ interface ActivityEntry {
 export function Studio() {
   const [stage, setStage] = useState<Stage>("canvas");
   const [brief, setBrief] = useState(demoBrief);
+  const [editInstruction, setEditInstruction] = useState("Keep the primary action reachable on compact devices and inline when space allows.");
+  const [briefOperation, setBriefOperation] = useState<"create" | "edit">("create");
   const [graph, setGraph] = useState<SemanticInterfaceGraph>(demoGraph);
   const [baseline, setBaseline] = useState<SemanticInterfaceGraph>(demoGraph);
   const [selectedScreen, setSelectedScreen] = useState("payment-request");
@@ -138,6 +147,7 @@ export function Studio() {
   const [scenarioId, setScenarioId] = useState<ScenarioId>("compact");
   const [mode, setMode] = useState<"live" | "replay">("replay");
   const [model, setModel] = useState("deterministic-sample");
+  const [lastTrace, setLastTrace] = useState<TraceSummary | null>(null);
   const [notice, setNoticeText] = useState("Ready to compile the sample brief.");
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [noticeOpen, setNoticeOpen] = useState(false);
@@ -294,28 +304,36 @@ export function Studio() {
     }
   };
 
-  const compileBrief = () => {
+  const compileBrief = (operation: "create" | "edit" = briefOperation) => {
     startTransition(async () => {
       try {
-        setNotice("Interpreting product intent and validating the graph…");
+        const instruction = operation === "edit" ? editInstruction : brief;
+        setNotice(operation === "edit" ? "Planning the smallest typed semantic edit…" : "Interpreting product intent and validating the graph…");
         const response = await fetch("/api/interpret", {
           method: "POST",
           headers: { "content-type": "application/json", "x-intentform-session": getSessionId() },
-          body: JSON.stringify({ brief }),
+          body: JSON.stringify({ brief: instruction, operation, ...(operation === "edit" ? { graph, screenId: selectedScreen } : {}) }),
         });
-        if (!response.ok) throw new Error("The brief could not be interpreted.");
-        const result = (await response.json()) as { graph: unknown; mode: "live" | "replay"; model: string; note: string };
+        const payload = (await response.json()) as { error?: string; graph?: unknown; mode?: "live" | "replay"; model?: string; note?: string; trace?: TraceSummary };
+        if (!response.ok || !payload.graph || !payload.mode || !payload.model || !payload.note) {
+          throw new Error(payload.error ?? (operation === "edit" ? "The semantic edit could not be interpreted." : "The brief could not be interpreted."));
+        }
+        const result = payload as { graph: unknown; mode: "live" | "replay"; model: string; note: string; trace?: TraceSummary };
         const nextGraph = parseGraph(result.graph);
-        setGraph(nextGraph);
-        setBaseline(nextGraph);
+        if (operation === "edit") commitGraph(nextGraph, result.note);
+        else {
+          setGraph(nextGraph);
+          setBaseline(nextGraph);
+          setHistory([]);
+          setFuture([]);
+        }
         setMode(result.mode);
         setModel(result.model);
+        setLastTrace(result.trace ?? null);
         setNotice(result.note);
         const nextScreen = nextGraph.screens.find((screen) => screen.id === "payment-request") ?? nextGraph.screens[0];
         setSelectedScreen(nextScreen?.id ?? "");
         setSelectedNodeId(nextScreen?.nodes[0]?.id ?? null);
-        setHistory([]);
-        setFuture([]);
         setStage("canvas");
       } catch (error) {
         setNotice(error instanceof Error ? error.message : "Interpretation failed.");
@@ -330,14 +348,16 @@ export function Studio() {
         const response = await fetch("/api/repair", {
           method: "POST",
           headers: { "content-type": "application/json", "x-intentform-session": getSessionId() },
-          body: JSON.stringify({ graph, finding }),
+          body: JSON.stringify({ graph, finding, evidence: { build: { passed: true, diagnostics: [] } } }),
         });
-        if (!response.ok) throw new Error("A safe repair could not be planned.");
-        const result = (await response.json()) as { proposal: RepairProposal; mode: "live" | "replay"; model: string };
+        const payload = (await response.json()) as { error?: string; proposal?: RepairProposal; mode?: "live" | "replay"; model?: string; trace?: TraceSummary };
+        if (!response.ok || !payload.proposal || !payload.mode || !payload.model) throw new Error(payload.error ?? "A safe repair could not be planned.");
+        const result = payload as { proposal: RepairProposal; mode: "live" | "replay"; model: string; trace?: TraceSummary };
         const repaired = applyRepair(graph, result.proposal);
         setGraph(repaired);
         setMode(result.mode);
         setModel(result.model);
+        setLastTrace(result.trace ?? null);
         setNotice(result.proposal.summary);
         setStage("report");
       } catch (error) {
@@ -436,10 +456,10 @@ export function Studio() {
                 </div>
               ) : null}
             </div>
-            <div className="hidden lg:block"><ModeBadge mode={mode} model={model} /></div>
+            <div className="hidden lg:block"><ModeBadge mode={mode} model={model} trace={lastTrace} /></div>
             <button
               type="button"
-              onClick={compileBrief}
+              onClick={() => compileBrief("create")}
               disabled={isPending}
               className="inline-flex min-h-8 items-center gap-2 rounded-lg bg-[var(--accent)] px-3 text-[10.5px] font-semibold text-white shadow-[0_8px_18px_-14px_rgba(36,84,68,.9)] transition-[transform,background] hover:bg-[var(--accent-dark)] active:scale-[.97] disabled:cursor-wait disabled:opacity-70"
             >
@@ -485,23 +505,28 @@ export function Studio() {
                   <div className="pt-3 md:pt-10">
                     <span className="font-mono text-[11px] text-[var(--accent)]">01 / PRODUCT BRIEF</span>
                     <h2 className="mt-4 max-w-[620px] text-3xl font-semibold leading-[1.03] tracking-[-.055em] md:text-5xl">Describe the product. Keep the intent.</h2>
-                    <p className="mt-5 max-w-[58ch] text-sm leading-relaxed text-[var(--muted)]">GPT‑5.6 turns the brief into a validated semantic graph. React and SwiftUI are compiled later by deterministic backends.</p>
+                    <p className="mt-5 max-w-[58ch] text-sm leading-relaxed text-[var(--muted)]">GPT‑5.6 turns a brief into a validated graph or proposes a narrow typed patch. React and SwiftUI are always compiled later by deterministic backends.</p>
+                    <div className="mt-8 inline-flex rounded-xl border border-[var(--line)] bg-[#eef1ee] p-1" aria-label="Intent operation">
+                      {(["create", "edit"] as const).map((operation) => (
+                        <button key={operation} type="button" onClick={() => setBriefOperation(operation)} className={`min-h-8 rounded-lg px-3 text-[10px] font-semibold capitalize ${briefOperation === operation ? "bg-white text-[var(--ink)] shadow-sm" : "text-[var(--muted)]"}`}>{operation === "create" ? "New graph" : "Semantic edit"}</button>
+                      ))}
+                    </div>
                     <label className="mt-10 grid gap-2 text-xs font-semibold">
-                      Product brief
+                      {briefOperation === "create" ? "Product brief" : "Edit instruction"}
                       <textarea
-                        value={brief}
-                        onChange={(event) => setBrief(event.target.value)}
+                        value={briefOperation === "create" ? brief : editInstruction}
+                        onChange={(event) => briefOperation === "create" ? setBrief(event.target.value) : setEditInstruction(event.target.value)}
                         rows={8}
                         className="resize-none rounded-[24px] border border-[var(--line)] bg-white p-5 text-sm font-normal leading-relaxed outline-none transition-shadow focus:border-[var(--accent)] focus:shadow-[0_0_0_4px_rgba(57,116,97,.1)]"
                       />
                       <span className="flex items-center justify-between font-normal text-[var(--muted)]">
-                        <span>Describe audience, hierarchy, behavior and recovery. Avoid implementation details.</span>
-                        <span className="font-mono text-[10px] text-[var(--faint)]">{brief.length} chars</span>
+                        <span>{briefOperation === "create" ? "Describe audience, hierarchy, behavior and recovery." : "Describe one intent change. Only affected stable nodes will be patched."}</span>
+                        <span className="font-mono text-[10px] text-[var(--faint)]">{(briefOperation === "create" ? brief : editInstruction).length} chars</span>
                       </span>
                     </label>
                     <div className="mt-4 flex flex-wrap items-center gap-2">
-                      <button type="button" onClick={compileBrief} className="inline-flex min-h-12 items-center gap-3 rounded-2xl bg-[var(--accent-deep)] px-5 text-sm font-semibold text-white transition-transform active:translate-y-px">
-                        Build semantic graph <ArrowRight size={16} />
+                      <button type="button" onClick={() => compileBrief(briefOperation)} className="inline-flex min-h-12 items-center gap-3 rounded-2xl bg-[var(--accent-deep)] px-5 text-sm font-semibold text-white transition-transform active:translate-y-px">
+                        {briefOperation === "create" ? "Build semantic graph" : "Apply typed edit"} <ArrowRight size={16} />
                       </button>
                       <button type="button" onClick={() => setBrief(demoBrief)} className="inline-flex min-h-9 items-center rounded-xl border border-[var(--line)] bg-white px-3 text-xs font-medium text-[var(--muted)] hover:text-[var(--ink)]">
                         Use the verified sample brief

@@ -20,6 +20,9 @@
 - [x] SwiftUI generated output builds for iOS Simulator.
 - [x] React screenshot and bounds capture.
 - [x] Manual semantic edit updates graph and generated React code.
+- [x] GPT structured-output failure receives one corrective retry.
+- [x] Two identical replay edits produce byte-equivalent typed patches and narrow semantic diffs.
+- [x] Semantic patches with unknown stable targets are rejected before persistence.
 - [x] Direct action drag creates an explicit safe-area relationship.
 - [x] SwiftUI Simulator screenshot and accessibility bounds capture locally.
 - [x] Automate native render capture on hosted macOS CI.

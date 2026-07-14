@@ -10,11 +10,11 @@ This repository is the OpenAI Build Week vertical slice. It intentionally proves
 
 ## What works today
 
-- GPT-5.6 brief interpreter through the Responses API with structured output.
-- Deterministic offline replay, requiring no login or API key.
+- GPT-5.6 brief interpreter and scoped semantic editor through the Responses API with structured output and one corrective retry.
+- Deterministic offline replay, including typed adaptive-placement and primary-action rename edits, requiring no login or API key.
 - Versioned and runtime-validated Semantic Interface Graph.
 - Stable node IDs, restricted expression AST, typed UI contracts and fixtures.
-- Full-viewport manual semantic workspace with a compact workflow command bar, collapsible Pages/Layers and Inspector panels, adaptive drawers and focus mode.
+- Infinite multi-frame semantic board with flow edges, live finding badges, pointer-anchored zoom, pan, fit commands and adaptive workspace panels.
 - State-aware previews that expose idle, loading, failed and completed fixtures without rendering state-bound nodes at the wrong time.
 - Compact and regular device profiles; direct manipulation changes the active semantic breakpoint rather than storing coordinates.
 - Fit-to-canvas, trackpad zoom, middle-mouse panning, preview mode and contextual keyboard shortcuts for selection, panels and revision history.
@@ -52,7 +52,7 @@ cp .env.example .env.local
 pnpm dev
 ```
 
-Open `http://localhost:3000`. Without `OPENAI_API_KEY`, the app clearly reports **Deterministic replay** and exercises the complete sample. With a server-side key, it uses `gpt-5.6`; the key is never included in the client bundle.
+Open `http://localhost:3000`. Without `OPENAI_API_KEY`, the app clearly reports **Deterministic replay** and exercises the complete sample plus safe typed edits. With a server-side key, it uses the `gpt-5.6` alias; the key is never included in the client bundle. Model traces expose only a request ID, deterministic fingerprint, attempt count and token totals—never prompts, secrets or reasoning chains.
 
 Core checks:
 
@@ -79,7 +79,7 @@ Generated evidence is written to `generated/` and excluded from Git because it i
 ## Architecture
 
 ```text
-Brief
+Brief or semantic edit
   -> GPT-5.6 intent interpreter
   -> validated Semantic Interface Graph
   -> shared Platform IR
@@ -105,7 +105,7 @@ packages/compiler-react/    accessible responsive React output
 packages/compiler-swiftui/  native SwiftUI output
 packages/verifier/          deterministic findings and evidence
 packages/repair-planner/    typed deterministic and GPT-5.6 repairs
-packages/intent-interpreter GPT-5.6 structured brief interpretation
+packages/intent-interpreter GPT-5.6 structured graph creation and typed semantic edits
 packages/proof-report/      end-to-end proof orchestration and golden sample
 examples/preview-ios/       buildable iOS Swift package harness
 ```

@@ -21,7 +21,7 @@ Key invariants:
 
 ```mermaid
 flowchart LR
-  B["Product brief"] --> I["GPT-5.6 intent interpreter"]
+  B["Product brief or edit"] --> I["GPT-5.6 intent interpreter"]
   I --> V["Schema and semantic validation"]
   V --> G["Semantic Interface Graph"]
   G --> IR["Platform IR"]
@@ -37,7 +37,7 @@ flowchart LR
 
 ## Model boundary
 
-GPT-5.6 is used only for interpretation and repair judgment. Both calls use Responses API structured output, bounded tokens, explicit timeout and schema validation. The fallback sample is deterministic and clearly labelled. Reasoning chains are neither requested nor persisted.
+GPT-5.6 is used only for graph creation, scoped semantic edits and repair judgment. Calls use Responses API structured output, `reasoning.effort: medium`, low verbosity, bounded tokens, a 45-second cancellation deadline and one corrective retry. A graph result must satisfy schema invariants; a patch must also resolve every stable target and token before it is accepted. Traces retain only request ID, input fingerprint, attempt count and token totals. Prompts, secrets, raw provider errors and reasoning chains are neither exposed nor persisted.
 
 ## Compiler boundary
 
@@ -45,7 +45,7 @@ Each backend implements capabilities, lowering, file generation and diagnostics.
 
 ## Manual canvas boundary
 
-The browser Studio now exposes the graph through a full-viewport semantic editor: pages and searchable layers, selectable canvas nodes, contextual content/layout/style controls, component insertion, duplication, ordering and undo/redo. A searchable command menu, preview mode, middle-mouse panning and modifier-wheel zoom provide an editor-grade manual workflow. Workspace panels collapse on wide viewports and become scoped drawers when space is tighter, without removing graph operations from keyboard navigation.
+The browser Studio exposes every screen as a frame on one infinite world-space board. Flow arrows are derived from graph transitions and verification badges attach findings to their screen frames. Pages and searchable layers, contextual content/layout/style/token controls, insertion, duplication, ordering and undo/redo surround the board. Pointer-anchored zoom, trackpad pan, Space hand mode, fit shortcuts, a searchable command menu and interactive flow preview provide an editor-grade manual workflow. Workspace panels collapse on wide viewports and become scoped drawers when space is tighter.
 
 The canvas resolves node state bindings against the selected visual fixture before rendering, so a failed-only recovery message never leaks into the idle preview. Compact and regular device profiles select the corresponding placement relation. Dragging a primary action vertically does not persist a `y` coordinate; crossing the gesture threshold changes the currently previewed breakpoint between the semantic stack and `persistent-bottom` safe-area anchoring. Every accepted edit is parsed again before it becomes canonical and immediately changes deterministic compiler output.
 
@@ -63,7 +63,10 @@ A repair is accepted only after validation, recompilation, the same rendered che
 
 - OpenAI credentials are server-only.
 - Anonymous requests are bounded by session and process-wide quotas.
+- Client address and session are combined for the per-session bucket; malformed limits fall back to safe defaults.
 - Requests have a 45-second cancellation deadline.
 - Replay works when the API is absent or quota is exhausted.
+- Quota is not consumed when no live server-side key exists.
+- Provider errors are converted to generic client messages; trace metadata is redacted by construction.
 - The graph cannot execute arbitrary code.
 - CI scans source and bundles through ordinary build boundaries; no secrets are committed.

@@ -8,7 +8,7 @@ const studioRoot = join(root, "apps/studio-web");
 const origin = "http://127.0.0.1:4319";
 const server = spawn(process.execPath, [join(studioRoot, "node_modules/next/dist/bin/next"), "start"], {
   cwd: studioRoot,
-  env: { ...process.env, HOSTNAME: "127.0.0.1", PORT: "4319" },
+  env: { ...process.env, OPENAI_API_KEY: "", HOSTNAME: "127.0.0.1", PORT: "4319" },
   stdio: ["ignore", "pipe", "pipe"],
 });
 
@@ -213,6 +213,19 @@ try {
   await adaptivePage.getByText("Bottom safe area", { exact: true }).waitFor();
   await adaptivePage.screenshot({ path: join(root, "output/playwright/studio-redesign-1100.png"), fullPage: true });
   console.log("Studio adaptive layer and inspector drawers: passed");
+
+  const editContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const editPage = await editContext.newPage();
+  editPage.setDefaultTimeout(10_000);
+  await editPage.goto(origin, { waitUntil: "networkidle" });
+  await editPage.getByRole("button", { name: "Brief", exact: true }).click();
+  await editPage.getByRole("button", { name: "Semantic edit" }).click();
+  await editPage.getByLabel("Edit instruction").fill("Rename the primary action label to “Pay securely”");
+  await editPage.getByRole("button", { name: "Apply typed edit" }).click();
+  await editPage.getByTestId("canvas-node-payment-request.confirm").getByText("Pay securely", { exact: true }).waitFor();
+  await editPage.getByText("Deterministic replay", { exact: false }).first().waitFor();
+  await editContext.close();
+  console.log("Studio typed semantic edit and replay disclosure: passed");
 } finally {
   await browser?.close();
   await stopServer(server);
