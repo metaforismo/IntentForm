@@ -34,6 +34,7 @@ import { verifyGraph, type VerificationFinding } from "@intentform/verifier";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ManualEditor, type WorkflowStage } from "./manual-editor";
+import { deviceProfiles, type DeviceId } from "./editor/support";
 import { BriefStage } from "./stages/brief-stage";
 import { GraphStage } from "./stages/graph-stage";
 import { OutputsStage } from "./stages/outputs-stage";
@@ -42,7 +43,7 @@ import { VerifyStage } from "./stages/verify-stage";
 
 type Stage = "canvas" | WorkflowStage;
 export type OutputTarget = "react" | "swiftui";
-export type ScenarioId = "compact" | "regular";
+export type ScenarioId = DeviceId;
 
 const stages: Array<{ id: Stage; label: string; shortLabel: string; icon: typeof Sparkle }> = [
   { id: "canvas", label: "Design canvas", shortLabel: "Design", icon: Selection },
@@ -53,10 +54,10 @@ const stages: Array<{ id: Stage; label: string; shortLabel: string; icon: typeof
   { id: "report", label: "Proof report", shortLabel: "Report", icon: FileText },
 ];
 
-const scenarios: Record<ScenarioId, { label: string; viewport: { width: number; height: number } }> = {
-  compact: { label: "Compact iPhone", viewport: { width: 375, height: 667 } },
-  regular: { label: "Regular iPhone", viewport: { width: 402, height: 874 } },
-};
+const scenarios = Object.fromEntries(deviceProfiles.map((profile) => [
+  profile.id,
+  { label: profile.label, viewport: { width: profile.width, height: profile.height } },
+])) as Record<ScenarioId, { label: string; viewport: { width: number; height: number } }>;
 
 const DRAFT_KEY = "intentform-project-draft-v1";
 
@@ -105,7 +106,7 @@ export function Studio() {
   const [outputTarget, setOutputTarget] = useState<OutputTarget>("react");
   const [outputFilePath, setOutputFilePath] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [scenarioId, setScenarioId] = useState<ScenarioId>("compact");
+  const [scenarioId, setScenarioId] = useState<ScenarioId>("compact-phone");
   const [mode, setMode] = useState<"live" | "replay">("replay");
   const [model, setModel] = useState("deterministic-sample");
   const [lastTrace, setLastTrace] = useState<TraceSummary | null>(null);
@@ -532,7 +533,9 @@ export function Studio() {
                   canUndo={history.length > 0}
                   canRedo={future.length > 0}
                   findings={verification.findings}
+                  deviceId={scenarioId}
                   onSelectScreen={setSelectedScreen}
+                  onDeviceId={setScenarioId}
                   onSelectNode={setSelectedNodeId}
                   onCommit={commitGraph}
                   onNotice={setNotice}

@@ -59,12 +59,50 @@ describe("IntentForm agent project store", () => {
     expect(projectRevisions(dir).revisions).toHaveLength(1);
   });
 
+  it("edits preview fixtures through a typed patch and reports a field-level diff", () => {
+    const result = applyPatch(dir, {
+      id: "edit.fixture-recipient",
+      rationale: "Show the alternate failed-payment recipient",
+      operations: [{
+        op: "set-fixture-value",
+        screenId: "payment-request",
+        state: "failed",
+        field: "recipientName",
+        value: "Elena Serra",
+      }],
+    });
+
+    expect(result.changes).toContainEqual({
+      path: "fixtures.payment-request.failed.data.recipientName",
+      before: "Mara Rinaldi",
+      after: "Elena Serra",
+    });
+    expect(loadProject(dir).graph.fixtures.find((fixture) => fixture.id === "payment-request.failed")?.data.recipientName)
+      .toBe("Elena Serra");
+  });
+
   it("rejects invalid patches without touching the project", () => {
     expect(() => applyPatch(dir, {
       id: "edit.bad",
       rationale: "invalid",
       operations: [{ op: "set-label", target: "missing.node", label: "Nope" }],
     })).toThrow(/Patch target not found/);
+    expect(projectRevisions(dir).revisions).toHaveLength(0);
+    expect(loadProject(dir).graph).toEqual(demoGraph);
+  });
+
+  it("rejects fixture values that violate the screen contract atomically", () => {
+    expect(() => applyPatch(dir, {
+      id: "edit.bad-fixture",
+      rationale: "invalid fixture type",
+      operations: [{
+        op: "set-fixture-value",
+        screenId: "payment-request",
+        state: "failed",
+        field: "recipientName",
+        value: false,
+      }],
+    })).toThrow(/Invalid string value/);
     expect(projectRevisions(dir).revisions).toHaveLength(0);
     expect(loadProject(dir).graph).toEqual(demoGraph);
   });

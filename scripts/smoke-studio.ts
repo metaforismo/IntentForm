@@ -109,12 +109,29 @@ try {
   }
   await page.getByLabel("Visual state").selectOption("failed");
   await page.getByTestId("canvas-node-payment-request.failure").waitFor();
+  await page.getByTestId("fixture-editor").waitFor();
+  const recipientFixture = page.getByLabel("Fixture recipientName");
+  await recipientFixture.fill("Elena Serra");
+  await recipientFixture.press("Enter");
+  await page.getByTestId("canvas-node-payment-request.recipient").getByText("Elena Serra", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Undo" }).click();
+  await page.getByTestId("canvas-node-payment-request.recipient").getByText("Mara Rinaldi", { exact: true }).waitFor();
   await page.getByLabel("Visual state").selectOption("idle");
   await page.getByTestId("canvas-node-payment-request.failure").waitFor({ state: "detached" });
 
   await page.getByLabel("Preview device").selectOption("regular-phone");
   if (await page.getByTestId("device-frame").getAttribute("data-breakpoint") !== "regular") {
     throw new Error("Device profile did not switch the semantic preview breakpoint");
+  }
+  await page.getByRole("button", { name: "Verification" }).click();
+  const regularScenario = page.getByRole("button", { name: "Regular phone", exact: true });
+  if (await regularScenario.getAttribute("aria-pressed") !== "true") {
+    throw new Error("Verification did not inherit the active canvas device");
+  }
+  await page.getByText("402 × 874", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Design canvas" }).click();
+  if (await page.getByLabel("Preview device").inputValue() !== "regular-phone") {
+    throw new Error("Canvas device changed after visiting verification");
   }
   await page.keyboard.press("h");
   if (await page.getByRole("button", { name: "Pan", exact: true }).getAttribute("aria-pressed") !== "true") {
@@ -155,7 +172,7 @@ try {
   await preview.getByRole("button", { name: "Confirm request" }).click();
   await preview.getByRole("heading", { name: "Request sent" }).waitFor();
   console.log("Studio embedded generated React flow: passed");
-  console.log("Studio state, device and keyboard command model: passed");
+  console.log("Studio fixture editing, shared device verification and keyboard command model: passed");
 
   await page.getByRole("button", { name: "Design canvas" }).click();
   await page.getByTestId("canvas-viewport").waitFor();

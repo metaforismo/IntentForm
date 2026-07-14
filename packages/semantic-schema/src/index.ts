@@ -199,6 +199,13 @@ export const graphPatchSchema = z.object({
         token: z.string().min(1),
         value: z.string().regex(/^#[0-9a-fA-F]{6}$/),
       }),
+      z.object({
+        op: z.literal("set-fixture-value"),
+        screenId: z.string().min(1),
+        state: z.enum(["idle", "loading", "empty", "failed", "completed"]),
+        field: z.string().min(1),
+        value: z.union([z.string(), z.number(), z.boolean()]),
+      }),
     ]),
   ),
 });
@@ -207,6 +214,55 @@ export type GraphPatch = z.infer<typeof graphPatchSchema>;
 
 export function parseGraph(input: unknown): SemanticInterfaceGraph {
   return semanticInterfaceGraphSchema.parse(input);
+}
+
+export function setFixtureValue(
+  graph: SemanticInterfaceGraph,
+  screenId: string,
+  state: "idle" | "loading" | "empty" | "failed" | "completed",
+  fieldName: string,
+  value: string | number | boolean,
+): SemanticInterfaceGraph {
+  const clone = structuredClone(graph);
+  const contract = clone.contracts.find((item) => item.screenId === screenId);
+  const field = contract?.data.find((item) => item.name === fieldName);
+  if (!contract || !field) throw new Error(`Unknown fixture field: ${screenId}.${fieldName}`);
+  if (!contract.visualStates.includes(state)) {
+    throw new Error(`Unsupported visual state for ${screenId}: ${state}`);
+  }
+
+  const validValue = field.type === "boolean" ? typeof value === "boolean"
+    : field.type === "number" ? typeof value === "number" && Number.isFinite(value)
+      : typeof value === "string";
+  if (!validValue) throw new Error(`Invalid ${field.type} value for ${screenId}.${fieldName}`);
+  if (field.type === "status" && value !== state) {
+    throw new Error(`Status fixture value must match its visual state: ${state}`);
+  }
+
+  let fixture = clone.fixtures.find((item) => item.screenId === screenId && item.state === state);
+  if (!fixture) {
+    const fixtureId = `${screenId}.${state}`;
+    const collision = clone.fixtures.find((item) => item.id === fixtureId);
+    if (collision) throw new Error(`Fixture id is already in use: ${fixtureId}`);
+
+    const idle = clone.fixtures.find((item) => item.screenId === screenId && item.state === "idle");
+    const data = structuredClone(idle?.data ?? {});
+    for (const contractField of contract.data) {
+      if (!(contractField.name in data)) {
+        data[contractField.name] = contractField.type === "boolean" ? false
+          : contractField.type === "number" ? 0
+            : contractField.type === "money" ? "0.00"
+              : contractField.type === "status" ? state
+                : "";
+      }
+      if (contractField.type === "status") data[contractField.name] = state;
+    }
+    fixture = { id: fixtureId, screenId, state, data };
+    clone.fixtures.push(fixture);
+    if (!contract.fixtures.includes(fixture.id)) contract.fixtures.push(fixture.id);
+  }
+  fixture.data[fieldName] = value;
+  return parseGraph(clone);
 }
 
 export function applyGraphPatch(
@@ -222,6 +278,19 @@ export function applyGraphPatch(
         throw new Error(`Unknown color token: ${operation.token}`);
       }
       clone.tokens.colors[operation.token] = operation.value;
+      continue;
+    }
+
+    if (operation.op === "set-fixture-value") {
+      const updated = setFixtureValue(
+        clone,
+        operation.screenId,
+        operation.state,
+        operation.field,
+        operation.value,
+      );
+      clone.contracts = updated.contracts;
+      clone.fixtures = updated.fixtures;
       continue;
     }
 
@@ -271,6 +340,22 @@ export function semanticDiff(
     for (const key of new Set([...Object.keys(beforeTokens), ...Object.keys(afterTokens)])) {
       if (beforeTokens[key] !== afterTokens[key]) {
         changes.push({ path: `tokens.${group}.${key}`, before: beforeTokens[key], after: afterTokens[key] });
+      }
+    }
+  }
+
+  const beforeFixtures = new Map(before.fixtures.map((fixture) => [fixture.id, fixture]));
+  const afterFixtures = new Map(after.fixtures.map((fixture) => [fixture.id, fixture]));
+  for (const id of new Set([...beforeFixtures.keys(), ...afterFixtures.keys()])) {
+    const previous = beforeFixtures.get(id);
+    const next = afterFixtures.get(id);
+    if (!previous || !next) {
+      changes.push({ path: `fixtures.${id}`, before: previous, after: next });
+      continue;
+    }
+    for (const field of new Set([...Object.keys(previous.data), ...Object.keys(next.data)])) {
+      if (JSON.stringify(previous.data[field]) !== JSON.stringify(next.data[field])) {
+        changes.push({ path: `fixtures.${id}.data.${field}`, before: previous.data[field], after: next.data[field] });
       }
     }
   }

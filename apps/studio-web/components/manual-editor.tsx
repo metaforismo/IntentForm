@@ -54,7 +54,9 @@ import {
   isNodeVisible,
   nodeCatalog,
   nodeNames,
+  withFixtureValue,
   type EditorTool,
+  type DeviceId,
   type FrameStatus,
   type MobilePanel,
   type NodeCommand,
@@ -71,7 +73,9 @@ interface ManualEditorProps {
   canUndo: boolean;
   canRedo: boolean;
   findings: VerificationFinding[];
+  deviceId: DeviceId;
   onSelectScreen(screenId: string): void;
+  onDeviceId(deviceId: DeviceId): void;
   onSelectNode(nodeId: string | null): void;
   onCommit(graph: SemanticInterfaceGraph, notice: string): void;
   onNotice(notice: string): void;
@@ -100,7 +104,9 @@ export function ManualEditor({
   canUndo,
   canRedo,
   findings,
+  deviceId,
   onSelectScreen,
+  onDeviceId,
   onSelectNode,
   onCommit,
   onNotice,
@@ -118,7 +124,6 @@ export function ManualEditor({
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const [desktopPanels, setDesktopPanels] = useState({ structure: true, inspector: true });
   const [railTab, setRailTab] = useState<RailTab>("layers");
-  const [deviceId, setDeviceId] = useState(deviceProfiles[0]!.id);
   const [visualStateByScreen, setVisualStateByScreen] = useState<Record<string, VisualState>>({});
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
@@ -226,6 +231,16 @@ export function ManualEditor({
     if (!selectedNode) return;
     updateNodeById(selectedNode.id, mutate, notice);
   };
+
+  const updateFixture = useCallback((fieldName: string, value: string | number | boolean) => {
+    if (!screen) return;
+    try {
+      const draft = withFixtureValue(graph, screen.id, activeVisualState, fieldName, value);
+      commitDraft(draft, `Updated ${fieldName} in the ${screen.title} ${activeVisualState} fixture.`);
+    } catch {
+      onNotice("That fixture edit was rejected, so the preview data stayed unchanged.");
+    }
+  }, [activeVisualState, commitDraft, graph, onNotice, screen]);
 
   const moveNode = useCallback((nodeId: string, direction: -1 | 1) => {
     const draft = structuredClone(graph);
@@ -651,7 +666,7 @@ export function ManualEditor({
       label: `Preview on ${profile.label.toLowerCase()} (${profile.detail})`,
       section: "Device",
       icon: DeviceMobile,
-      action: () => setDeviceId(profile.id),
+      action: () => onDeviceId(profile.id),
     })),
     { label: "Open product brief", section: "Workflow", icon: Sparkle, action: () => onOpenStage("brief") },
     { label: "Open semantic graph", section: "Workflow", icon: TreeStructure, action: () => onOpenStage("graph") },
@@ -839,7 +854,7 @@ export function ManualEditor({
             <label className="relative flex items-center gap-1.5 text-[var(--muted)]">
               <DeviceMobile size={12} aria-hidden="true" />
               <span className="sr-only">Preview device</span>
-              <select aria-label="Preview device" value={activeProfile.id} onChange={(event) => setDeviceId(event.target.value)} className="min-h-7 max-w-36 appearance-none rounded-md bg-transparent pr-4 text-[12px] font-semibold outline-none hover:bg-[var(--hover)]">
+              <select aria-label="Preview device" value={activeProfile.id} onChange={(event) => onDeviceId(event.target.value as DeviceId)} className="min-h-7 max-w-36 appearance-none rounded-md bg-transparent pr-4 text-[12px] font-semibold outline-none hover:bg-[var(--hover)]">
                 {deviceProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label} · {profile.detail}</option>)}
               </select>
               <CaretDown size={9} className="pointer-events-none absolute right-0 text-[var(--faint)]" />
@@ -892,9 +907,11 @@ export function ManualEditor({
         screen={screen}
         selectedNode={selectedNode}
         profile={activeProfile}
+        visualState={activeVisualState}
         visible={mobilePanel === "inspector"}
         desktopVisible={desktopPanels.inspector}
         updateNode={updateNode}
+        onUpdateFixture={updateFixture}
         onSetActionEvent={setActionEvent}
         onSetFlowTarget={setFlowTarget}
         onDuplicate={() => { if (selectedNode) duplicateNodeById(selectedNode.id); }}

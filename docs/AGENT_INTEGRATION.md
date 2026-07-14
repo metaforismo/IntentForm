@@ -39,7 +39,7 @@ It is a dependency-free stdio JSON-RPC server. Point it at a different project w
 | --- | --- |
 | `intentform_describe_project` | Product, screens with stable node IDs, tokens, flows, contracts, current findings, compiler fingerprints. Call first. |
 | `intentform_get_graph` | Full canonical graph JSON. |
-| `intentform_apply_patch` | Typed `GraphPatch` (`set-label`, `set-placement`, `set-purpose`, `set-emphasis`, `set-gap-token`, `set-padding-token`). Atomic: an invalid operation rejects the whole patch. |
+| `intentform_apply_patch` | Typed `GraphPatch` (`set-label`, `set-placement`, `set-purpose`, `set-emphasis`, `set-gap-token`, `set-padding-token`, `set-color-token`, `set-fixture-value`). Atomic: an invalid operation rejects the whole patch. |
 | `intentform_replace_graph` | Full-graph replacement for structural edits; schema-validated before anything is written. |
 | `intentform_verify` | Deterministic intent rules for a `compact` (375×667) or `regular` (402×874) scenario. |
 | `intentform_compile` | Deterministic React/SwiftUI codegen; `write: true` emits files under `.intentform/output/<target>/`. |

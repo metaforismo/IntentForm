@@ -96,9 +96,11 @@ interface InspectorProps {
   screen: SemanticInterfaceGraph["screens"][number];
   selectedNode: SemanticNode | null;
   profile: DeviceProfile;
+  visualState: VisualState;
   visible: boolean;
   desktopVisible: boolean;
   updateNode(mutate: (node: SemanticNode) => void, notice: string): void;
+  onUpdateFixture(fieldName: string, value: string | number | boolean): void;
   onSetActionEvent(nodeId: string, eventName: string | null): void;
   onSetFlowTarget(fromScreenId: string, eventName: string, targetScreenId: string | null): void;
   onDuplicate(): void;
@@ -114,9 +116,11 @@ export function Inspector({
   screen,
   selectedNode,
   profile,
+  visualState,
   visible,
   desktopVisible,
   updateNode,
+  onUpdateFixture,
   onSetActionEvent,
   onSetFlowTarget,
   onDuplicate,
@@ -130,6 +134,8 @@ export function Inspector({
   const contractStates = (contract?.visualStates ?? []) as VisualState[];
   const boundStates = new Set(selectedNode?.states.map((state) => state.name) ?? []);
   const isAction = selectedNode?.kind === "primary-action" || selectedNode?.kind === "secondary-action";
+  const exactFixture = graph.fixtures.find((item) => item.screenId === screen.id && item.state === visualState);
+  const fixture = exactFixture ?? graph.fixtures.find((item) => item.screenId === screen.id && item.state === "idle");
 
   return (
     <aside
@@ -152,6 +158,58 @@ export function Inspector({
           <span className="font-mono text-[10px] text-[var(--faint)]">{screen.route}</span>
         </Section>
       </div>
+
+      {contract && contract.data.length > 0 ? (
+        <div className="border-b border-[var(--line)]" data-testid="fixture-editor">
+          <Section title="Preview data">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[11px] text-[var(--muted)]"><span className="font-medium capitalize text-[var(--t-strong)]">{visualState}</span> fixture</span>
+              <span className={`rounded px-1.5 py-0.5 font-mono text-[9px] ${exactFixture ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "bg-[var(--warn-soft)] text-[var(--warn)]"}`}>{exactFixture ? "saved" : "inherits idle"}</span>
+            </div>
+            <div className="grid gap-2.5">
+              {contract.data.map((field) => {
+                const value = fixture?.data[field.name];
+                if (field.type === "boolean") {
+                  return (
+                    <label key={field.name} className="flex min-h-8 items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--field)] px-2.5 text-[11px] font-medium text-[var(--muted)]">
+                      {field.name}
+                      <input aria-label={`Fixture ${field.name}`} type="checkbox" checked={value === true} onChange={(event) => onUpdateFixture(field.name, event.target.checked)} className="size-4 accent-[var(--accent)]" />
+                    </label>
+                  );
+                }
+                if (field.type === "status") {
+                  return (
+                    <label key={field.name} className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">
+                      {field.name}
+                      <input aria-label={`Fixture ${field.name}`} value={visualState} readOnly className="min-h-8 rounded-lg border border-[var(--line)] bg-[var(--hover)] px-2.5 font-mono text-[11px] font-normal text-[var(--faint)] outline-none" />
+                    </label>
+                  );
+                }
+                return (
+                  <label key={field.name} className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">
+                    {field.name}
+                    <input
+                      key={`${screen.id}-${visualState}-${field.name}-${String(value ?? "")}`}
+                      aria-label={`Fixture ${field.name}`}
+                      type={field.type === "number" ? "number" : "text"}
+                      inputMode={field.type === "number" || field.type === "money" ? "decimal" : undefined}
+                      defaultValue={typeof value === "string" || typeof value === "number" ? value : ""}
+                      onBlur={(event) => {
+                        const next = field.type === "number" ? Number(event.target.value) : event.target.value;
+                        if (Number.isNaN(next) || next === value) return;
+                        onUpdateFixture(field.name, next);
+                      }}
+                      onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); }}
+                      className="min-h-8 rounded-lg border border-[var(--line)] bg-[var(--field)] px-2.5 font-mono text-[11px] font-normal text-[var(--t-strong)] outline-none transition-colors hover:border-[var(--line-strong)] focus:border-[var(--accent)] focus:shadow-[0_0_0_3px_color-mix(in_oklab,var(--accent)_12%,transparent)]"
+                    />
+                  </label>
+                );
+              })}
+            </div>
+            <p className="text-[11px] leading-relaxed text-[var(--faint)]">Fixture values are design-time data. They update this state preview and compiler samples without becoming business logic.</p>
+          </Section>
+        </div>
+      ) : null}
 
       {selectedNode ? (
         <div data-testid="semantic-inspector" className="divide-y divide-[var(--line)]">

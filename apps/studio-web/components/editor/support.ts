@@ -1,14 +1,15 @@
-import type { SemanticInterfaceGraph, SemanticNode } from "@intentform/semantic-schema";
+import { setFixtureValue, type SemanticInterfaceGraph, type SemanticNode } from "@intentform/semantic-schema";
 
 export type EditorTool = "select" | "hand";
 export type MobilePanel = "structure" | "inspector" | null;
 export type PreviewBreakpoint = "compact" | "regular";
+export type DeviceId = "compact-phone" | "regular-phone" | "regular-tablet";
 export type VisualState = "idle" | "loading" | "empty" | "failed" | "completed";
 export type RailTab = "layers" | "tokens";
 export type NodeCommand = "duplicate" | "delete" | "move-up" | "move-down";
 
 export interface DeviceProfile {
-  id: string;
+  id: DeviceId;
   label: string;
   detail: string;
   width: number;
@@ -85,6 +86,16 @@ export function fixtureFor(
   return graph.fixtures.find((fixture) => fixture.screenId === screenId && fixture.state === state)?.data
     ?? graph.fixtures.find((fixture) => fixture.screenId === screenId && fixture.state === "idle")?.data
     ?? {};
+}
+
+export function withFixtureValue(
+  graph: SemanticInterfaceGraph,
+  screenId: string,
+  state: VisualState,
+  fieldName: string,
+  value: string | number | boolean,
+): SemanticInterfaceGraph {
+  return setFixtureValue(graph, screenId, state, fieldName, value);
 }
 
 export interface FrameStatus {

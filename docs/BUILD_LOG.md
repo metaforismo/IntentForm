@@ -168,3 +168,12 @@ The public macOS run completed on an iPhone 16 Pro Simulator, uploaded the nativ
 - New feature (plan: navigation & flows): action nodes gained a "Navigates to" control that writes validated flow steps into the graph — board arrows and preview-mode navigation react immediately, event detachment cleans stale steps, all undoable; covered by a new smoke assertion.
 - Fixed post-redesign nits found in review: flows-card chip clipping in the 230px rail and a cryptic step chip in the report timeline.
 - Verified: full typecheck, 29 tests, production build, all five Playwright suites (including the new flow-editing check), and screenshot review of every stage in both themes.
+
+## 2026-07-14 — Shared device context and contract-aware fixture editing
+
+- Unified the canvas device picker and Verification scenario into one workspace-level state: moving between Design and Verify preserves the exact compact phone, regular phone or regular tablet viewport instead of silently changing test context.
+- Added a contract-aware Preview data editor to the inspector. It edits the active screen and visual-state fixture, creates a missing state fixture from idle data, updates the canvas immediately and participates in normal undo/redo and semantic diffs.
+- Kept status fields read-only and tied to their visual-state discriminator; fixture writes validate contract field names and scalar types before changing the graph.
+- Added `set-fixture-value` to the typed graph patch protocol, GPT-5.6 capability catalog and MCP contract, so coding agents and the Studio call the same semantic mutation rather than editing generated code or replacing the whole graph.
+- Extended semantic diffs to report fixture additions and field-level data changes, including paths such as `fixtures.payment-request.failed.data.recipientName`.
+- Verified with 31 unit tests, workspace typecheck, production build, all five Playwright smoke suites, React evidence capture and a successful SwiftUI `xcodebuild` for both simulator architectures.
