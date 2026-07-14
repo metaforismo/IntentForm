@@ -11,6 +11,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import type { SemanticInterfaceGraph, SemanticNode } from "@intentform/semantic-schema";
+import { IconButton } from "../ui/controls";
 import { nodeNames, type DeviceProfile, type VisualState } from "./support";
 
 export function SegmentedControl<T extends string>({
@@ -127,7 +128,7 @@ export function Inspector({
     >
       <div className="sticky top-0 z-[1] flex h-11 items-center justify-between border-b border-[var(--line)] bg-[var(--chrome)] px-3">
         <div className="flex items-center gap-2"><span className="text-[11px] font-semibold text-[var(--t-strong)]">Design</span><span className="rounded-md bg-[var(--accent-soft)] px-1.5 py-0.5 font-mono text-[8px] text-[var(--accent-text)]">semantic</span></div>
-        <button type="button" aria-label="Close design inspector" onClick={onClose} className="grid size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"><X size={13} /></button>
+        <IconButton ariaLabel="Close design inspector" onClick={onClose}><X size={13} /></IconButton>
       </div>
 
       <section className="grid gap-3 border-b border-[var(--line)] p-4">
@@ -145,7 +146,7 @@ export function Inspector({
                 <button type="button" aria-label="Duplicate layer" onClick={onDuplicate} className="grid size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--t-strong)]"><Copy size={12} /></button>
                 <button type="button" aria-label="Move layer up" onClick={() => onReorder(-1)} className="grid size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--t-strong)]"><ArrowUp size={12} /></button>
                 <button type="button" aria-label="Move layer down" onClick={() => onReorder(1)} className="grid size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--t-strong)]"><ArrowDown size={12} /></button>
-                <button type="button" aria-label="Delete layer" onClick={onDelete} disabled={screen.nodes.length <= 1} className="grid size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] disabled:opacity-25"><Trash size={12} /></button>
+                <IconButton ariaLabel="Delete layer" onClick={onDelete} disabled={screen.nodes.length <= 1} danger><Trash size={12} /></IconButton>
               </div>
             </div>
           </section>

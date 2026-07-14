@@ -18,6 +18,7 @@ import {
 import type { SemanticInterfaceGraph, SemanticNode } from "@intentform/semantic-schema";
 import { Reorder } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
+import { IconButton } from "../ui/controls";
 import { isNodeVisible, nodeNames, type RailTab, type VisualState } from "./support";
 
 interface LayersPanelProps {
@@ -173,7 +174,7 @@ export function LayersPanel({
             </button>
           ))}
         </div>
-        <button type="button" aria-label="Close pages and layers" onClick={onClose} className="grid size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"><X size={13} /></button>
+        <IconButton ariaLabel="Close pages and layers" onClick={onClose}><X size={13} /></IconButton>
       </div>
 
       {railTab === "layers" ? (
@@ -181,7 +182,7 @@ export function LayersPanel({
           <div className="border-b border-[var(--line)] p-3">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-semibold text-[var(--t-strong)]">Pages</span>
-              <button type="button" aria-label="Add screen" onClick={onAddScreen} className="grid size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"><Plus size={13} /></button>
+              <IconButton ariaLabel="Add screen" onClick={onAddScreen}><Plus size={13} /></IconButton>
             </div>
             <Reorder.Group axis="y" as="div" values={pageOrder} onReorder={setPageOrder} className="mt-2 grid gap-0.5">
               {pageOrder.map((screenId) => {

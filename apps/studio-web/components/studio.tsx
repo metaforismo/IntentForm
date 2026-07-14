@@ -1,20 +1,16 @@
 "use client";
 
 import {
-  ArrowRight,
   ArrowsCounterClockwise,
   BracketsCurly,
   CaretDown,
   CheckCircle,
   CircleNotch,
   Code,
-  Copy,
-  DeviceMobile,
   DownloadSimple,
   FileText,
   FloppyDisk,
   FolderOpen,
-  GitDiff,
   Lightning,
   Moon,
   Selection,
@@ -37,13 +33,16 @@ import {
 import { verifyGraph, type VerificationFinding } from "@intentform/verifier";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { NodePreview } from "./editor/node-preview";
-import { fixtureFor, isNodeVisible } from "./editor/support";
 import { ManualEditor, type WorkflowStage } from "./manual-editor";
+import { BriefStage } from "./stages/brief-stage";
+import { GraphStage } from "./stages/graph-stage";
+import { OutputsStage } from "./stages/outputs-stage";
+import { ReportStage } from "./stages/report-stage";
+import { VerifyStage } from "./stages/verify-stage";
 
 type Stage = "canvas" | WorkflowStage;
-type OutputTarget = "react" | "swiftui";
-type ScenarioId = "compact" | "regular";
+export type OutputTarget = "react" | "swiftui";
+export type ScenarioId = "compact" | "regular";
 
 const stages: Array<{ id: Stage; label: string; shortLabel: string; icon: typeof Sparkle }> = [
   { id: "canvas", label: "Design canvas", shortLabel: "Design", icon: Selection },
@@ -83,49 +82,6 @@ function ModeBadge({ mode, model, trace }: { mode: "live" | "replay"; model: str
       <span className={`status-breathe size-2 rounded-full ${mode === "live" ? "bg-[var(--accent)]" : "bg-amber-500"}`} />
       {mode === "live" ? "Live model" : "Deterministic replay"}
       <span className="hidden font-mono font-normal text-[var(--faint)] 2xl:inline">{model}</span>
-    </div>
-  );
-}
-
-/* A single scaled-down frame that reuses the canvas node renderer, so every
-   preview in the product draws from one source of truth. */
-function PhonePreview({ graph, selectedScreen }: { graph: SemanticInterfaceGraph; selectedScreen: string }) {
-  const screen = graph.screens.find((item) => item.id === selectedScreen) ?? graph.screens[0];
-  if (!screen) return null;
-  const scale = 0.68;
-  const width = 375;
-  const height = 700;
-  const nodes = screen.nodes.filter((node) => isNodeVisible(node, "idle"));
-  const fixture = fixtureFor(graph, screen.id, "idle");
-  return (
-    <div className="relative grid min-h-[520px] place-items-center rounded-[32px] border border-[var(--line)] bg-[var(--inset)] p-6">
-      <div style={{ width: width * scale, height: height * scale }}>
-        <div
-          className="phone-shell flex flex-col overflow-hidden rounded-[40px] bg-[#fcfdfb] px-7 pb-7 pt-5"
-          style={{ width, height, transform: `scale(${scale})`, transformOrigin: "top left" }}
-        >
-          <div className="mb-4 flex items-center justify-between text-[12px] font-semibold text-[#2a2f2c]">
-            <span className="pl-1 font-mono tracking-[-.02em]">9:41</span>
-            <span className="flex items-center gap-1 pr-1" aria-hidden="true">
-              <span className="h-2 w-3.5 rounded-[2px] border border-[#2a2f2c]/70" />
-              <span className="h-2 w-2 rounded-full border border-[#2a2f2c]/70" />
-            </span>
-          </div>
-          <span className="text-[11px] font-bold uppercase tracking-[.16em] text-[var(--accent)]">{graph.product.name}</span>
-          <h3 className="mb-6 mt-1.5 text-[27px] font-semibold leading-[1.05] tracking-[-.045em]">{screen.title}</h3>
-          <div className="flex min-h-0 flex-1 flex-col" style={{ gap: 18 }}>
-            {nodes.map((node) => (
-              <div key={node.id} className={node.kind === "primary-action" && node.layout.placement?.compact === "persistent-bottom" ? "mt-auto" : ""}>
-                <NodePreview node={node} graph={graph} fixture={fixture} state="idle" />
-              </div>
-            ))}
-          </div>
-          <div className="mx-auto mt-5 h-[5px] w-28 shrink-0 rounded-full bg-[#1d211f]" />
-        </div>
-      </div>
-      <div className="absolute bottom-4 left-4 flex items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--float)] px-3 py-1.5 text-[10px] font-medium text-[var(--muted)] backdrop-blur-xl">
-        <DeviceMobile size={13} /> 375 × 667 · Compact
-      </div>
     </div>
   );
 }
@@ -589,203 +545,67 @@ export function Studio() {
               ) : null}
 
               {stage === "brief" ? (
-                <div className="mx-auto grid max-w-[1200px] gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(380px,.95fr)]">
-                  <div className="pt-3 md:pt-10">
-                    <span className="font-mono text-[11px] text-[var(--accent)]">01 / PRODUCT BRIEF</span>
-                    <h2 className="mt-4 max-w-[620px] text-3xl font-semibold leading-[1.03] tracking-[-.055em] md:text-5xl">Describe the product. Keep the intent.</h2>
-                    <p className="mt-5 max-w-[58ch] text-sm leading-relaxed text-[var(--muted)]">GPT‑5.6 turns a brief into a validated graph or proposes a narrow typed patch. React and SwiftUI are always compiled later by deterministic backends.</p>
-                    <div className="mt-8 inline-flex rounded-xl border border-[var(--line)] bg-[var(--hover)] p-1" aria-label="Intent operation">
-                      {(["create", "edit"] as const).map((operation) => (
-                        <button key={operation} type="button" onClick={() => setBriefOperation(operation)} className={`min-h-8 rounded-lg px-3 text-[10px] font-semibold capitalize ${briefOperation === operation ? "bg-[var(--seg-active)] text-[var(--ink)] shadow-sm" : "text-[var(--muted)]"}`}>{operation === "create" ? "New graph" : "Semantic edit"}</button>
-                      ))}
-                    </div>
-                    <label className="mt-10 grid gap-2 text-xs font-semibold">
-                      {briefOperation === "create" ? "Product brief" : "Edit instruction"}
-                      <textarea
-                        value={briefOperation === "create" ? brief : editInstruction}
-                        onChange={(event) => briefOperation === "create" ? setBrief(event.target.value) : setEditInstruction(event.target.value)}
-                        rows={8}
-                        className="resize-none rounded-[24px] border border-[var(--line)] bg-[var(--field)] p-5 text-sm font-normal leading-relaxed outline-none transition-shadow focus:border-[var(--accent)] focus:shadow-[0_0_0_4px_color-mix(in_oklab,var(--accent)_12%,transparent)]"
-                      />
-                      <span className="flex items-center justify-between font-normal text-[var(--muted)]">
-                        <span>{briefOperation === "create" ? "Describe audience, hierarchy, behavior and recovery." : "Describe one intent change. Only affected stable nodes will be patched."}</span>
-                        <span className="font-mono text-[10px] text-[var(--faint)]">{(briefOperation === "create" ? brief : editInstruction).length} chars</span>
-                      </span>
-                    </label>
-                    <div className="mt-4 flex flex-wrap items-center gap-2">
-                      <button type="button" onClick={() => compileBrief(briefOperation)} className="inline-flex min-h-12 items-center gap-3 rounded-2xl bg-[var(--accent-deep)] px-5 text-sm font-semibold text-white transition-transform active:translate-y-px">
-                        {briefOperation === "create" ? "Build semantic graph" : "Apply typed edit"} <ArrowRight size={16} />
-                      </button>
-                      <button type="button" onClick={() => setBrief(demoBrief)} className="inline-flex min-h-9 items-center rounded-xl border border-[var(--line)] bg-[var(--chip)] px-3 text-xs font-medium text-[var(--muted)] hover:text-[var(--ink)]">
-                        Use the verified sample brief
-                      </button>
-                    </div>
-                  </div>
-                  <PhonePreview graph={graph} selectedScreen={selectedScreen} />
-                </div>
+                <BriefStage
+                  brief={brief}
+                  setBrief={setBrief}
+                  editInstruction={editInstruction}
+                  setEditInstruction={setEditInstruction}
+                  briefOperation={briefOperation}
+                  setBriefOperation={setBriefOperation}
+                  compileBrief={compileBrief}
+                  graph={graph}
+                  selectedScreen={selectedScreen}
+                />
               ) : null}
 
               {stage === "graph" ? (
-                <div className="mx-auto grid max-w-[1360px] gap-5 xl:grid-cols-[250px_minmax(340px,.8fr)_minmax(320px,1fr)]">
-                  <div className="border-b border-[var(--line)] pb-5 xl:border-r xl:border-b-0 xl:pr-5">
-                    <span className="font-mono text-[10px] text-[var(--accent)]">SCREENS</span>
-                    <div className="mt-3 grid gap-2">
-                      {graph.screens.map((screen) => (
-                        <button key={screen.id} type="button" onClick={() => setSelectedScreen(screen.id)} className={`flex items-center justify-between rounded-xl px-3 py-3 text-left text-xs transition-colors ${selectedScreen === screen.id ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "hover:bg-[var(--hover)]"}`}>
-                          <span><strong className="block">{screen.title}</strong><small className="font-mono text-[9px] opacity-60">{screen.route}</small></span>
-                          <ArrowRight size={13} />
-                        </button>
-                      ))}
-                    </div>
-                    <div className="mt-6 rounded-xl border border-[var(--line)] bg-[var(--surface-strong)] p-3">
-                      <span className="font-mono text-[9px] text-[var(--accent)]">FLOWS</span>
-                      {graph.flows.flatMap((flow) => flow.steps).map((step) => (
-                        <div key={`${step.from}-${step.event}`} className="mt-2.5 grid gap-0.5 text-[10px]">
-                          <span className="font-mono text-[9px] text-[var(--faint)]">{step.event}</span>
-                          <span className="flex items-center gap-1.5 text-[var(--muted)]">{step.from} <ArrowRight size={9} /> {step.to}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <PhonePreview graph={graph} selectedScreen={selectedScreen} />
-                  <div className="min-w-0">
-                    <div className="flex items-center justify-between"><span className="font-mono text-[10px] text-[var(--accent)]">SEMANTIC OUTLINE</span><span className="rounded-full bg-[var(--accent-soft)] px-2 py-1 font-mono text-[9px]">valid · v{graph.schemaVersion}</span></div>
-                    <div className="mt-3 divide-y divide-[var(--line)] border-y border-[var(--line)]">
-                      {graph.screens.find((screen) => screen.id === selectedScreen)?.nodes.map((node, index) => (
-                        <motion.div layout key={node.id} className="grid grid-cols-[24px_1fr_auto] gap-3 py-3.5">
-                          <span className="font-mono text-[9px] text-[var(--faint)]">{String(index + 1).padStart(2, "0")}</span>
-                          <span className="min-w-0"><strong className="block truncate text-xs">{node.intent.label}</strong><small className="font-mono text-[9px] text-[var(--muted)]">{node.kind} · {node.id}</small></span>
-                          <span className="self-center rounded-full border border-[var(--line)] px-2 py-1 text-[8px] font-semibold uppercase tracking-wider text-[var(--muted)]">{node.intent.importance}</span>
-                        </motion.div>
-                      ))}
-                    </div>
-                    {(() => {
-                      const contract = graph.contracts.find((item) => item.screenId === selectedScreen);
-                      if (!contract) return null;
-                      return (
-                        <div className="mt-5 rounded-2xl border border-[var(--line)] bg-[var(--surface-strong)] p-4">
-                          <span className="font-mono text-[9px] text-[var(--accent)]">SCREEN CONTRACT</span>
-                          <div className="mt-3 grid gap-3 text-[10px]">
-                            <div><span className="text-[var(--faint)]">Data</span><div className="mt-1 flex flex-wrap gap-1.5">{contract.data.map((field) => <span key={field.name} className="rounded-md bg-[var(--hover)] px-1.5 py-0.5 font-mono text-[9px]">{field.name}: {field.type}</span>)}</div></div>
-                            <div><span className="text-[var(--faint)]">Events</span><div className="mt-1 flex flex-wrap gap-1.5">{contract.events.map((event) => <span key={event.name} className="rounded-md bg-[var(--hover)] px-1.5 py-0.5 font-mono text-[9px]">{event.name}</span>)}</div></div>
-                            <div><span className="text-[var(--faint)]">Visual states</span><div className="mt-1 flex flex-wrap gap-1.5">{contract.visualStates.map((state) => <span key={state} className="rounded-md bg-[var(--accent-soft)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--accent-dark)]">{state}</span>)}</div></div>
-                          </div>
-                        </div>
-                      );
-                    })()}
-                    <button type="button" onClick={() => setStage("outputs")} className="mt-5 inline-flex items-center gap-2 text-xs font-semibold text-[var(--accent-dark)]">Inspect generated code <ArrowRight size={14} /></button>
-                  </div>
-                </div>
+                <GraphStage
+                  graph={graph}
+                  selectedScreen={selectedScreen}
+                  setSelectedScreen={setSelectedScreen}
+                  onInspectOutputs={() => setStage("outputs")}
+                />
               ) : null}
 
               {stage === "outputs" ? (
-                <div className="mx-auto grid max-w-[1400px] gap-5 xl:grid-cols-[minmax(330px,.72fr)_minmax(0,1.28fr)]">
-                  <div>
-                    {outputTarget === "react" ? (
-                      <div className="overflow-hidden rounded-[32px] border border-[var(--line)] bg-[var(--inset)] p-4">
-                        <div className="mb-3 flex items-center justify-between px-1 text-[10px] text-[var(--muted)]">
-                          <span className="font-semibold text-[var(--accent-dark)]">Runnable golden artifact</span>
-                          <span className="font-mono">{previewVariant} · {reactOutput.fingerprint}</span>
-                        </div>
-                        <iframe
-                          key={`${previewVariant}-${selectedScreen}`}
-                          src={`/react-preview/index.html?variant=${previewVariant}&screen=${selectedScreen}`}
-                          title={`Generated React preview: ${selectedScreen}`}
-                          sandbox="allow-scripts allow-same-origin"
-                          className="h-[570px] w-full rounded-[22px] border border-[var(--line)] bg-white"
-                        />
-                      </div>
-                    ) : <PhonePreview graph={graph} selectedScreen={selectedScreen} />}
-                  </div>
-                  <div className="min-w-0 overflow-hidden rounded-[24px] border border-[#303a35] bg-[#1c211f] text-[#dce5df] shadow-[0_24px_50px_-34px_rgba(18,28,23,.8)]">
-                    <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-                      <div className="flex gap-1 rounded-lg bg-white/5 p-1">
-                        {(["react", "swiftui"] as const).map((target) => <button key={target} type="button" onClick={() => { setOutputTarget(target); setOutputFilePath(null); }} className={`rounded-md px-3 py-1.5 text-[10px] font-semibold capitalize ${outputTarget === target ? "bg-white/12 text-white" : "text-white/45 hover:text-white/70"}`}>{target}</button>)}
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <button type="button" onClick={copyGeneratedFile} className="inline-flex items-center gap-1.5 rounded-md bg-white/8 px-2.5 py-1.5 text-[10px] font-medium text-white/70 hover:bg-white/12 hover:text-white">
-                          {copied ? <CheckCircle size={12} weight="fill" className="text-emerald-300" /> : <Copy size={12} />}
-                          {copied ? "Copied" : "Copy file"}
-                        </button>
-                        <span className="hidden font-mono text-[9px] text-white/40 md:inline">sha {output.fingerprint}</span>
-                      </div>
-                    </div>
-                    <div className="grid md:grid-cols-[190px_minmax(0,1fr)]">
-                      <div className="hidden max-h-[590px] overflow-auto border-r border-white/10 p-2 md:block">
-                        {output.files.map((file) => (
-                          <button
-                            key={file.path}
-                            type="button"
-                            onClick={() => setOutputFilePath(file.path)}
-                            className={`block w-full truncate rounded-md px-2 py-1.5 text-left font-mono text-[9px] ${selectedCode?.path === file.path ? "bg-white/10 text-white" : "text-white/45 hover:bg-white/5 hover:text-white/75"}`}
-                          >
-                            {file.path}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="border-b border-white/10 px-4 py-2 font-mono text-[9px] text-[#8ea69b]">{selectedCode?.path}</div>
-                        <pre className="code-scroll max-h-[550px] overflow-auto p-5 text-[10.5px] leading-[1.7]"><code>{selectedCode?.content}</code></pre>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <OutputsStage
+                  outputTarget={outputTarget}
+                  setOutputTarget={setOutputTarget}
+                  setOutputFilePath={setOutputFilePath}
+                  output={output}
+                  reactOutput={reactOutput}
+                  selectedCode={selectedCode}
+                  copyGeneratedFile={copyGeneratedFile}
+                  copied={copied}
+                  previewVariant={previewVariant}
+                  graph={graph}
+                  selectedScreen={selectedScreen}
+                />
               ) : null}
 
               {stage === "verify" ? (
-                <div className="mx-auto grid max-w-[1200px] gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-                  <div>
-                    <div className="flex items-end justify-between border-b border-[var(--line)] pb-5">
-                      <div><span className="font-mono text-[10px] text-[var(--accent)]">NATIVE VERIFICATION</span><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">Evidence before claims.</h2></div>
-                      <span className={`rounded-full px-3 py-1.5 text-[10px] font-semibold ${verification.passed ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]" : "bg-[var(--danger-soft)] text-[var(--danger)]"}`}>{verification.passed ? "Passed" : `${verification.findings.length} findings`}</span>
-                    </div>
-                    <div className="mt-2 divide-y divide-[var(--line)]">
-                      {verification.findings.length === 0 ? (
-                        <div className="flex items-center gap-4 py-10"><CheckCircle size={34} weight="fill" className="text-[var(--accent)]" /><div><strong className="text-sm">All {scenario.label.toLowerCase()} assertions passed</strong><p className="mt-1 text-xs text-[var(--muted)]">The primary action remains reachable and both compiler outputs are structurally valid.</p></div></div>
-                      ) : verification.findings.map((finding) => (
-                        <div key={finding.id} className="grid gap-4 py-5 md:grid-cols-[30px_1fr_auto]">
-                          <Warning size={22} weight="fill" className={finding.severity === "error" ? "text-[var(--danger)]" : "text-amber-600"} />
-                          <div><strong className="text-sm">{finding.violatedIntent}</strong><p className="mt-1 font-mono text-[9px] text-[var(--muted)]">{finding.id} · layer: {finding.responsibleLayer}</p><div className="mt-3 flex flex-wrap gap-2">{finding.evidence.map((evidence) => <span key={evidence.label} className="rounded-lg bg-[var(--hover)] px-2 py-1 font-mono text-[9px]">{evidence.label}: {String(evidence.value)}</span>)}</div></div>
-                          {finding.severity === "error" ? <button type="button" onClick={() => repairFinding(finding)} disabled={isPending} className="self-start rounded-xl bg-[var(--accent-deep)] px-4 py-2.5 text-[10px] font-semibold text-white active:translate-y-px disabled:opacity-60">Plan repair</button> : null}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="rounded-[24px] border border-[var(--line)] bg-[var(--inset)] p-5">
-                    <span className="font-mono text-[9px] text-[var(--accent)]">SCENARIO</span>
-                    <div className="mt-3 grid grid-flow-col rounded-lg border border-[var(--line)] bg-[var(--field)] p-0.5">
-                      {(Object.entries(scenarios) as Array<[ScenarioId, typeof scenario]>).map(([id, item]) => (
-                        <button key={id} type="button" aria-pressed={scenarioId === id} onClick={() => setScenarioId(id)} className={`min-h-8 rounded-md px-2 text-[10px] font-medium ${scenarioId === id ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]" : "text-[var(--muted)] hover:text-[var(--t-strong)]"}`}>
-                          {item.label}
-                        </button>
-                      ))}
-                    </div>
-                    <dl className="mt-6 grid grid-cols-2 gap-y-5 text-xs"><div><dt className="text-[var(--muted)]">Viewport</dt><dd className="mt-1 font-mono">{scenario.viewport.width} × {scenario.viewport.height}</dd></div><div><dt className="text-[var(--muted)]">Target</dt><dd className="mt-1 font-mono">SwiftUI</dd></div><div><dt className="text-[var(--muted)]">Build</dt><dd className="mt-1 text-[var(--accent)]">Passed</dd></div><div><dt className="text-[var(--muted)]">Rule set</dt><dd className="mt-1 font-mono">intentform/0.1</dd></div></dl>
-                    <p className="mt-7 border-t border-[var(--line)] pt-5 text-xs leading-relaxed text-[var(--muted)]">Verification is scenario-dependent and independent from generation. A repair is only accepted after the same rule passes again.</p>
-                  </div>
-                </div>
+                <VerifyStage
+                  verification={verification}
+                  scenario={scenario}
+                  scenarioId={scenarioId}
+                  setScenarioId={setScenarioId}
+                  scenarios={scenarios}
+                  repairFinding={repairFinding}
+                  isPending={isPending}
+                />
               ) : null}
 
               {stage === "report" ? (
-                <div className="mx-auto grid max-w-[1200px] gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(330px,.8fr)]">
-                  <div>
-                    <span className="font-mono text-[10px] text-[var(--accent)]">PROOF REPORT</span>
-                    <h2 className="mt-3 max-w-[700px] text-3xl font-semibold tracking-[-.05em] md:text-4xl">The intent survived two compilers and one repair.</h2>
-                    <div className="mt-8 border-y border-[var(--line)]">
-                      {[{ label: "Graph validated", detail: `${graph.screens.length} screens · ${graph.screens.flatMap((screen) => screen.nodes).length} semantic nodes`, icon: TreeStructure }, { label: "React compiled", detail: `Fingerprint ${reactOutput.fingerprint}`, icon: Code }, { label: "SwiftUI compiled", detail: `Fingerprint ${swiftOutput.fingerprint}`, icon: DeviceMobile }, { label: `${scenario.label} verified`, detail: verification.passed ? "No blocking findings remain" : `${verification.findings.length} findings remain`, icon: ShieldCheck }].map((item, index) => {
-                        const Icon = item.icon; return <div key={item.label} className="grid grid-cols-[26px_1fr_auto] items-center gap-4 border-b border-[var(--line)] py-4 last:border-0"><Icon size={18} className="text-[var(--accent)]" /><span><strong className="block text-sm">{item.label}</strong><small className="font-mono text-[9px] text-[var(--muted)]">{item.detail}</small></span><CheckCircle size={18} weight="fill" className={index === 3 && !verification.passed ? "text-[var(--faint)]" : "text-[var(--accent)]"} /></div>;
-                      })}
-                    </div>
-                    <button type="button" onClick={exportGraph} className="mt-6 inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--field)] px-4 py-2.5 text-xs font-semibold text-[var(--accent-dark)] hover:border-[var(--accent)]">
-                      <DownloadSimple size={14} /> Export canonical graph
-                    </button>
-                  </div>
-                  <div className="rounded-[24px] bg-[var(--accent-deep)] p-6 text-white shadow-[0_24px_50px_-34px_rgba(18,59,49,.85)]">
-                    <div className="flex items-center justify-between"><span className="font-mono text-[9px] text-emerald-100/60">SEMANTIC DIFF</span><GitDiff size={18} /></div>
-                    {changes.length > 0 ? <div className="mt-5 grid max-h-[420px] gap-4 overflow-auto">{changes.map((change) => <div key={change.path} className="border-t border-white/12 pt-4"><strong className="font-mono text-[10px] text-emerald-100">{change.path}</strong><div className="mt-2 grid gap-1 font-mono text-[9px]"><span className="text-red-200/70">− {JSON.stringify(change.before)}</span><span className="text-emerald-200">+ {JSON.stringify(change.after)}</span></div></div>)}</div> : <div className="mt-10 text-center"><GitDiff size={28} className="mx-auto text-emerald-100/40" /><p className="mt-3 text-xs text-emerald-50/70">Run the controlled repair to produce an evidence-backed semantic diff.</p><button type="button" onClick={() => setStage("verify")} className="mt-4 rounded-xl bg-white px-4 py-2 text-[10px] font-semibold text-[var(--accent-deep)]">Open verification</button></div>}
-                    <p className="mt-8 border-t border-white/12 pt-5 text-xs leading-relaxed text-emerald-50/65">IntentForm does not translate pixels. It preserves product intent.</p>
-                  </div>
-                </div>
+                <ReportStage
+                  graph={graph}
+                  reactOutput={reactOutput}
+                  swiftOutput={swiftOutput}
+                  scenario={scenario}
+                  verification={verification}
+                  changes={changes}
+                  exportGraph={exportGraph}
+                  onOpenVerify={() => setStage("verify")}
+                />
               ) : null}
             </motion.div>
           </AnimatePresence>

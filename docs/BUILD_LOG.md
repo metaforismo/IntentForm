@@ -143,3 +143,9 @@ The public macOS run completed on an iPhone 16 Pro Simulator, uploaded the nativ
 - Added a persisted Sun/Moon theme toggle with a no-flash inline script, plus premium shared primitives: `.menu-pop` (translucent, blurred, layered shadows) for every menu, and `.select-control` (custom caret, accent focus ring) for native selects.
 - Verified the dark palette with live computed-style probes and raw pixel sampling of fresh screenshots, and added a smoke assertion that the toggle switches `data-theme` both ways plus a dark full-page screenshot artifact.
 - Ignored `.claude/` in git (local agent settings never get committed).
+
+## 2026-07-14 — Frontend structure round (parallel agents)
+
+- Split the studio orchestrator into per-stage modules (`components/stages/`: brief, graph, outputs, verify, report, phone-preview) with narrow typed props, shrinking `studio.tsx` from ~800 to ~616 lines with byte-identical rendering.
+- Extracted shared UI primitives (`components/ui/controls.tsx`: IconButton, Keycap, SectionLabel, MenuItem) and adopted them across the inspector, layers panel and overlays where class output stayed character-identical.
+- Both refactors were executed by parallel subagents with strict no-behavior-change contracts, then verified centrally: workspace typecheck, 29 vitest cases, production build and the full five-part Playwright smoke suite.
