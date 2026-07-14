@@ -78,7 +78,7 @@ interface TraceSummary {
 
 function ModeBadge({ mode, model, trace }: { mode: "live" | "replay"; model: string; trace: TraceSummary | null }) {
   return (
-    <div title={trace ? `${trace.requestFingerprint} · ${trace.attempts} attempt(s)${trace.usage ? ` · ${trace.usage.totalTokens} tokens` : ""}` : undefined} className="inline-flex min-h-8 items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--chip)] px-2.5 text-[10px] font-medium text-[var(--muted)] shadow-[inset_0_1px_0_var(--float-inset)]">
+    <div title={trace ? `${trace.requestFingerprint} · ${trace.attempts} attempt(s)${trace.usage ? ` · ${trace.usage.totalTokens} tokens` : ""}` : undefined} className="inline-flex min-h-8 items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--chip)] px-2.5 text-[11px] font-medium text-[var(--muted)] shadow-[inset_0_1px_0_var(--float-inset)]">
       <span className={`status-breathe size-2 rounded-full ${mode === "live" ? "bg-[var(--accent)]" : "bg-amber-500"}`} />
       {mode === "live" ? "Live model" : "Deterministic replay"}
       <span className="hidden font-mono font-normal text-[var(--faint)] 2xl:inline">{model}</span>
@@ -417,20 +417,20 @@ export function Studio() {
                   <button type="button" aria-label="Close project menu" onClick={() => setMenuOpen(false)} className="fixed inset-0 z-[5] cursor-default" tabIndex={-1} />
                   <div className="menu-pop absolute left-0 top-10 z-[6] w-64 p-1.5">
                     <div className="border-b border-[var(--line)] px-2.5 pb-2 pt-1.5">
-                      <strong className="block text-[11px]">{graph.product.name}</strong>
-                      <span className="mt-0.5 block font-mono text-[9px] text-[var(--faint)]">payment-flow.intentform · v{graph.schemaVersion}</span>
+                      <strong className="block text-[12px]">{graph.product.name}</strong>
+                      <span className="mt-0.5 block font-mono text-[10px] text-[var(--faint)]">payment-flow.intentform · v{graph.schemaVersion}</span>
                     </div>
-                    <button type="button" onClick={openLocalProject} className="mt-1 flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[11px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
+                    <button type="button" onClick={openLocalProject} className="mt-1 flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
                       <FolderOpen size={13} /> Open local project
                     </button>
-                    <button type="button" onClick={saveLocalProject} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[11px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
+                    <button type="button" onClick={saveLocalProject} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
                       <FloppyDisk size={13} /> Save to local project
                     </button>
                     <div className="my-1 border-t border-[var(--line)]" />
-                    <button type="button" onClick={exportGraph} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[11px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
+                    <button type="button" onClick={exportGraph} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
                       <DownloadSimple size={13} /> Export graph as JSON
                     </button>
-                    <button type="button" onClick={resetProject} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[11px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
+                    <button type="button" onClick={resetProject} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
                       <ArrowsCounterClockwise size={13} /> Reset to verified sample
                     </button>
                   </div>
@@ -438,10 +438,10 @@ export function Studio() {
               ) : null}
             </div>
             <div className="hidden min-w-0 sm:block">
-              <div className="flex items-center gap-1 text-[11px] font-semibold tracking-[-.01em]">
+              <div className="flex items-center gap-1 text-[13px] font-semibold tracking-[-.01em]">
                 <span className="truncate">{graph.product.name}</span><CaretDown size={10} className="text-[var(--muted)]" />
               </div>
-              <span className="block truncate font-mono text-[9px] text-[var(--muted)]">payment-flow.intentform</span>
+              <span className="block truncate font-mono text-[10px] text-[var(--muted)]">payment-flow.intentform</span>
             </div>
           </div>
 
@@ -457,12 +457,12 @@ export function Studio() {
                   aria-label={item.label}
                   aria-current={active ? "page" : undefined}
                   onClick={() => setStage(item.id)}
-                  className={`group relative flex min-h-8 items-center justify-center gap-1.5 rounded-lg px-2 text-[10px] font-medium transition-[background,color,box-shadow,transform] duration-200 active:scale-[.97] lg:px-2.5 ${active ? "bg-[var(--seg-active)] text-[var(--ink)] shadow-[0_5px_14px_-10px_var(--shadow-strong),inset_0_0_0_1px_var(--float-inset)]" : "text-[var(--muted)] hover:bg-[var(--seg-hover)] hover:text-[var(--ink)]"}`}
+                  className={`group relative flex min-h-8 items-center justify-center gap-1.5 rounded-lg px-2 text-[12px] font-medium transition-[background,color,box-shadow,transform] duration-200 active:scale-[.97] lg:px-2.5 ${active ? "bg-[var(--seg-active)] text-[var(--ink)] shadow-[0_5px_14px_-10px_var(--shadow-strong),inset_0_0_0_1px_var(--float-inset)]" : "text-[var(--muted)] hover:bg-[var(--seg-hover)] hover:text-[var(--ink)]"}`}
                 >
                   <Icon size={14} weight={active ? "fill" : "regular"} />
                   <span className="hidden xl:inline">{item.shortLabel}</span>
                   {item.id === "verify" && errorCount > 0 ? (
-                    <span className="absolute -right-0.5 -top-0.5 grid size-3.5 place-items-center rounded-full bg-[var(--danger)] font-mono text-[8px] font-bold text-white">{errorCount}</span>
+                    <span className="absolute -right-0.5 -top-0.5 grid size-3.5 place-items-center rounded-full bg-[var(--danger)] font-mono text-[10px] font-bold text-white">{errorCount}</span>
                   ) : null}
                 </button>
               );
@@ -485,13 +485,13 @@ export function Studio() {
               </button>
               {noticeOpen ? (
                 <div className="menu-pop absolute right-0 top-10 z-[6] w-80 overflow-hidden">
-                  <div role="status" aria-live="polite" className="border-b border-[var(--line)] p-3 text-[11px] leading-relaxed text-[var(--ink)]">{notice}</div>
+                  <div role="status" aria-live="polite" className="border-b border-[var(--line)] p-3 text-[12px] leading-relaxed text-[var(--ink)]">{notice}</div>
                   {activity.length > 1 ? (
                     <div className="max-h-56 overflow-auto p-1.5">
-                      <span className="block px-1.5 pb-1 pt-0.5 text-[8.5px] font-semibold uppercase tracking-[.12em] text-[var(--faint)]">Recent activity</span>
+                      <span className="block px-1.5 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-[.12em] text-[var(--faint)]">Recent activity</span>
                       {activity.slice(1).map((entry, index) => (
-                        <div key={`${entry.at}-${index}`} className="grid grid-cols-[auto_1fr] gap-2 rounded-md px-1.5 py-1.5 text-[10px] leading-relaxed text-[var(--muted)]">
-                          <span className="font-mono text-[8.5px] text-[var(--faint)]">{entry.at}</span>
+                        <div key={`${entry.at}-${index}`} className="grid grid-cols-[auto_1fr] gap-2 rounded-md px-1.5 py-1.5 text-[11px] leading-relaxed text-[var(--muted)]">
+                          <span className="font-mono text-[10px] text-[var(--faint)]">{entry.at}</span>
                           <span>{entry.text}</span>
                         </div>
                       ))}
@@ -505,7 +505,7 @@ export function Studio() {
               type="button"
               onClick={() => compileBrief("create")}
               disabled={isPending}
-              className="inline-flex min-h-8 items-center gap-2 rounded-lg bg-[var(--accent)] px-3 text-[10.5px] font-semibold text-white shadow-[0_8px_18px_-14px_rgba(36,84,68,.9)] transition-[transform,background] hover:bg-[var(--accent-dark)] active:scale-[.97] disabled:cursor-wait disabled:opacity-70"
+              className="inline-flex min-h-8 items-center gap-2 rounded-lg bg-[var(--accent)] px-3 text-[12px] font-semibold text-white shadow-[0_8px_18px_-14px_rgba(36,84,68,.9)] transition-[transform,background] hover:bg-[var(--accent-dark)] active:scale-[.97] disabled:cursor-wait disabled:opacity-70"
             >
               {isPending ? <CircleNotch className="animate-spin" size={14} /> : <Lightning size={14} weight="fill" />}
               <span className="hidden sm:inline">{stage === "canvas" ? "Recompile" : "Compile intent"}</span>

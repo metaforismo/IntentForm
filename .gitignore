@@ -20,3 +20,5 @@ apps/react-preview/dist/
 apps/studio-web/public/react-preview/
 .intentform/
 .claude/
+.playwright-mcp/
+audit-*.png

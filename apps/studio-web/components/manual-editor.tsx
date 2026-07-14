@@ -625,7 +625,7 @@ export function ManualEditor({
 
   if (!screen) return null;
 
-  const floatingButton = "inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-[10.5px] font-medium text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]";
+  const floatingButton = "inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-[12px] font-medium text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]";
 
   return (
     <div
@@ -736,7 +736,7 @@ export function ManualEditor({
               <Stack size={13} /> Layers
             </button>
             <button type="button" aria-label="Open command menu" title="Commands · ⌘K" aria-expanded={commandOpen} onClick={() => { setCommandOpen((open) => !open); setCommandQuery(""); }} className={floatingButton}>
-              <Command size={13} /> <span className="hidden 2xl:inline">Commands</span><kbd className="ml-0.5 hidden rounded border border-[var(--line)] bg-[var(--chip)] px-1 font-mono text-[8px] text-[var(--faint)] 2xl:inline">⌘K</kbd>
+              <Command size={13} /> <span className="hidden 2xl:inline">Commands</span><kbd className="ml-0.5 hidden rounded border border-[var(--line)] bg-[var(--chip)] px-1 font-mono text-[10px] text-[var(--faint)] 2xl:inline">⌘K</kbd>
             </button>
           </div>
 
@@ -763,13 +763,13 @@ export function ManualEditor({
               </button>
               {insertOpen ? (
                 <div className="menu-pop absolute left-1/2 top-10 z-[3] w-[300px] -translate-x-1/2 p-1.5">
-                  <span className="block px-2.5 pb-1 pt-1.5 text-[9px] font-semibold uppercase tracking-[.12em] text-[var(--faint)]">Semantic components</span>
+                  <span className="block px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-[.12em] text-[var(--faint)]">Semantic components</span>
                   {nodeCatalog.map((preset) => {
                     const PresetIcon = catalogIcons[preset.kind];
                     return (
                       <button key={preset.kind} type="button" onClick={() => insertNode(preset.kind)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-[var(--hover)]">
                         <span className="grid size-8 shrink-0 place-items-center rounded-md border border-[var(--line)] bg-[var(--chip)] text-[var(--t-strong)]"><PresetIcon size={14} /></span>
-                        <span className="min-w-0"><strong className="block text-[11px] font-semibold">{nodeNames[preset.kind]}</strong><small className="block truncate text-[9.5px] text-[var(--muted)]">{preset.description}</small></span>
+                        <span className="min-w-0"><strong className="block text-[11px] font-semibold">{nodeNames[preset.kind]}</strong><small className="block truncate text-[11px] text-[var(--muted)]">{preset.description}</small></span>
                       </button>
                     );
                   })}
@@ -779,7 +779,7 @@ export function ManualEditor({
           </div>
 
           <div className="floating-chrome pointer-events-auto flex items-center gap-0.5 rounded-xl p-1">
-            <button type="button" aria-label="Toggle preview mode" aria-pressed={previewMode} onClick={() => setPreviewMode((current) => !current)} className={`inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2.5 text-[10.5px] font-medium ${previewMode ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
+            <button type="button" aria-label="Toggle preview mode" aria-pressed={previewMode} onClick={() => setPreviewMode((current) => !current)} className={`inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium ${previewMode ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
               <MonitorPlay size={13} weight={previewMode ? "fill" : "regular"} /> Preview
             </button>
             <button
@@ -800,7 +800,7 @@ export function ManualEditor({
             <label className="relative flex items-center gap-1.5 text-[var(--muted)]">
               <DeviceMobile size={12} aria-hidden="true" />
               <span className="sr-only">Preview device</span>
-              <select aria-label="Preview device" value={activeProfile.id} onChange={(event) => setDeviceId(event.target.value)} className="min-h-7 max-w-36 appearance-none rounded-md bg-transparent pr-4 text-[10px] font-semibold outline-none hover:bg-[var(--hover)]">
+              <select aria-label="Preview device" value={activeProfile.id} onChange={(event) => setDeviceId(event.target.value)} className="min-h-7 max-w-36 appearance-none rounded-md bg-transparent pr-4 text-[12px] font-semibold outline-none hover:bg-[var(--hover)]">
                 {deviceProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label} · {profile.detail}</option>)}
               </select>
               <CaretDown size={9} className="pointer-events-none absolute right-0 text-[var(--faint)]" />
@@ -809,12 +809,12 @@ export function ManualEditor({
             <label className="relative flex items-center gap-1.5 text-[var(--muted)]">
               <span className="size-1.5 rounded-full bg-[var(--accent)]" aria-hidden="true" />
               <span className="sr-only">Visual state</span>
-              <select aria-label="Visual state" value={activeVisualState} onChange={(event) => selectVisualState(event.target.value as VisualState)} className="min-h-7 appearance-none rounded-md bg-transparent pr-4 text-[10px] font-semibold capitalize outline-none hover:bg-[var(--hover)]">
+              <select aria-label="Visual state" value={activeVisualState} onChange={(event) => selectVisualState(event.target.value as VisualState)} className="min-h-7 appearance-none rounded-md bg-transparent pr-4 text-[12px] font-semibold capitalize outline-none hover:bg-[var(--hover)]">
                 {availableStates.map((state) => <option key={state} value={state}>{state}</option>)}
               </select>
               <CaretDown size={9} className="pointer-events-none absolute right-0 text-[var(--faint)]" />
             </label>
-            <span className="hidden pl-1 pr-2 font-mono text-[9px] text-[var(--faint)] 2xl:inline">
+            <span className="hidden pl-1 pr-2 font-mono text-[11px] text-[var(--faint)] 2xl:inline">
               {previewMode ? "Preview · click actions to follow the flow" : spaceHeld ? "Panning · release Space to select" : tool === "select" ? "Drag the primary action to anchor it" : "Drag to pan the board"}
             </span>
           </div>
@@ -823,7 +823,7 @@ export function ManualEditor({
             <button type="button" aria-label="Fit canvas" title="Fit board · 0" onClick={() => canvasApi.current?.fitAll(true)} className="grid size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)]"><ArrowsOutSimple size={12} /></button>
             <button type="button" aria-label="Zoom out" onClick={() => canvasApi.current?.zoomBy(0.8)} className="grid size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)]"><Minus size={11} /></button>
             <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
-              <button type="button" aria-label="Zoom level" aria-expanded={zoomMenuOpen} onClick={() => setZoomMenuOpen((open) => !open)} className="min-h-7 w-12 rounded-md text-center font-mono text-[10px] text-[var(--t-strong)] hover:bg-[var(--hover)]">{zoomPct}%</button>
+              <button type="button" aria-label="Zoom level" aria-expanded={zoomMenuOpen} onClick={() => setZoomMenuOpen((open) => !open)} className="min-h-7 w-12 rounded-md text-center font-mono text-[11px] text-[var(--t-strong)] hover:bg-[var(--hover)]">{zoomPct}%</button>
               {zoomMenuOpen ? (
                 <div className="menu-pop absolute bottom-9 right-0 z-[3] w-36 p-1">
                   {([
@@ -833,9 +833,9 @@ export function ManualEditor({
                     { label: "150%", run: () => canvasApi.current?.zoomTo(1.5) },
                     { label: "200%", shortcut: "2", run: () => canvasApi.current?.zoomTo(2) },
                   ]).map((item) => (
-                    <button key={item.label} type="button" onClick={() => { item.run(); setZoomMenuOpen(false); }} className="flex min-h-7 w-full items-center justify-between rounded-md px-2 text-left text-[10.5px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
+                    <button key={item.label} type="button" onClick={() => { item.run(); setZoomMenuOpen(false); }} className="flex min-h-7 w-full items-center justify-between rounded-md px-2 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
                       {item.label}
-                      {item.shortcut ? <kbd className="font-mono text-[9px] text-[var(--faint)]">{item.shortcut}</kbd> : null}
+                      {item.shortcut ? <kbd className="font-mono text-[10px] text-[var(--faint)]">{item.shortcut}</kbd> : null}
                     </button>
                   ))}
                 </div>

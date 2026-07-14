@@ -127,6 +127,8 @@ export function CanvasStage({
       : "none";
     viewport.style.backgroundPosition = `${next.x}px ${next.y}px`;
     viewport.style.backgroundSize = `${24 * next.scale}px ${24 * next.scale}px`;
+    // The dot grid reads as noise once frames are small; fade it out.
+    viewport.style.backgroundImage = next.scale < 0.45 ? "none" : "";
     onZoomChange(Math.round(next.scale * 100));
   }, [onZoomChange]);
 
@@ -212,25 +214,35 @@ export function CanvasStage({
     return () => viewport.removeEventListener("wheel", onWheel);
   }, [applyView, zoomAt]);
 
+  const selectedScreenRef = useRef(selectedScreen);
+  selectedScreenRef.current = selectedScreen;
+  const fitScreenRef = useRef(fitScreen);
+  fitScreenRef.current = fitScreen;
+
+  /* Open on the selected frame at a readable zoom (neighbors peeking in)
+     instead of a distant fit-all — the board invites editing immediately.
+     Refit only when the device or the number of frames changes; ordinary
+     graph edits must never move the camera. */
   useLayoutEffect(() => {
-    fitAll(false);
+    fitScreenRef.current(selectedScreenRef.current, false);
     // The initial framing runs once; later dependency changes refit below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    fitAll(true);
-  }, [profile.id, frames.length, fitAll]);
+    fitScreenRef.current(selectedScreenRef.current, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile.id, frames.length]);
 
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
     const observer = new ResizeObserver(() => {
-      if (!interacted.current) fitAll(false);
+      if (!interacted.current) fitScreenRef.current(selectedScreenRef.current, false);
     });
     observer.observe(viewport);
     return () => observer.disconnect();
-  }, [fitAll]);
+  }, []);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -278,6 +290,9 @@ export function CanvasStage({
   };
 
   const accent = tokenColor(graph, "color.accent", "#397461");
+  /* Parent re-renders on every integer zoom change (zoom readout state), so
+     reading the live scale here stays in sync without an extra prop. */
+  const headerCompact = viewRef.current.scale < 0.55;
 
   const flowEdges = useMemo(() => {
     const index = new Map(frames.map((frame, position) => [frame.screen.id, position]));
@@ -386,9 +401,9 @@ export function CanvasStage({
                   onDoubleClick={() => fitScreen(screen.id, true)}
                   className={`flex min-w-0 items-baseline gap-2 rounded-md px-1.5 py-1 text-left text-[12px] font-semibold tracking-[-.01em] ${isSelectedScreen ? "text-[var(--accent-dark)]" : "text-[var(--muted)] hover:text-[var(--ink)]"}`}
                 >
-                  <span className="truncate">{screen.title}</span>
-                  {isSelectedScreen ? <span className="shrink-0 font-mono text-[10px] font-normal text-[var(--faint)]">{screen.route}</span> : null}
-                  {state !== "idle" ? <span className="shrink-0 rounded-full bg-[var(--chip)] px-1.5 py-0.5 font-mono text-[9px] font-medium capitalize text-[var(--muted)]">{state}</span> : null}
+                  <span className="min-w-0 truncate">{screen.title}</span>
+                  {isSelectedScreen && !headerCompact ? <span className="shrink-0 font-mono text-[10px] font-normal text-[var(--faint)]">{screen.route}</span> : null}
+                  {state !== "idle" && !headerCompact ? <span className="shrink-0 rounded-full bg-[var(--chip)] px-1.5 py-0.5 font-mono text-[10px] font-medium capitalize text-[var(--muted)]">{state}</span> : null}
                 </button>
                 {status.errors > 0 ? (
                   <button type="button" onClick={onOpenVerify} className="flex shrink-0 items-center gap-1 rounded-full bg-[var(--danger-soft)] px-2 py-1 text-[10px] font-semibold text-[var(--danger)] hover:brightness-95">

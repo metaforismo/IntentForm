@@ -8,6 +8,28 @@ import { PhonePreview } from "./phone-preview";
 
 type GeneratedFileSet = ReturnType<typeof compileReact>;
 
+type FileRow =
+  | { kind: "header"; key: string; label: string }
+  | { kind: "file"; key: string; file: GeneratedFileSet["files"][number]; label: string };
+
+function buildFileRows(files: GeneratedFileSet["files"], target: OutputTarget): FileRow[] {
+  const prefix = target === "react" ? "src/generated/" : "Generated/";
+  let lastDirectory: string | null = null;
+  const rows: FileRow[] = [];
+  for (const file of files) {
+    const stripped = file.path.startsWith(prefix) ? file.path.slice(prefix.length) : file.path;
+    const slashIndex = stripped.lastIndexOf("/");
+    const directory = slashIndex === -1 ? null : stripped.slice(0, slashIndex + 1);
+    const name = slashIndex === -1 ? stripped : stripped.slice(slashIndex + 1);
+    if (directory !== lastDirectory) {
+      if (directory) rows.push({ kind: "header", key: `dir:${file.path}`, label: directory });
+      lastDirectory = directory;
+    }
+    rows.push({ kind: "file", key: file.path, file, label: name });
+  }
+  return rows;
+}
+
 interface OutputsStageProps {
   outputTarget: OutputTarget;
   setOutputTarget: (target: OutputTarget) => void;
@@ -67,18 +89,24 @@ export function OutputsStage({
             <span className="hidden font-mono text-[9px] text-white/40 md:inline">sha {output.fingerprint}</span>
           </div>
         </div>
-        <div className="grid md:grid-cols-[190px_minmax(0,1fr)]">
+        <div className="grid md:grid-cols-[210px_minmax(0,1fr)]">
           <div className="hidden max-h-[590px] overflow-auto border-r border-white/10 p-2 md:block">
-            {output.files.map((file) => (
-              <button
-                key={file.path}
-                type="button"
-                onClick={() => setOutputFilePath(file.path)}
-                className={`block w-full truncate rounded-md px-2 py-1.5 text-left font-mono text-[9px] ${selectedCode?.path === file.path ? "bg-white/10 text-white" : "text-white/45 hover:bg-white/5 hover:text-white/75"}`}
-              >
-                {file.path}
-              </button>
-            ))}
+            {buildFileRows(output.files, outputTarget).map((row) =>
+              row.kind === "header" ? (
+                <div key={row.key} className="truncate px-2 pt-2 pb-1 text-[9px] uppercase tracking-[.12em] text-white/30">
+                  {row.label}
+                </div>
+              ) : (
+                <button
+                  key={row.key}
+                  type="button"
+                  onClick={() => setOutputFilePath(row.file.path)}
+                  className={`block min-h-7 w-full truncate rounded-md px-2 py-1.5 text-left font-mono text-[11px] ${selectedCode?.path === row.file.path ? "bg-white/10 text-white" : "text-white/45 hover:bg-white/5 hover:text-white/75"}`}
+                >
+                  {row.label}
+                </button>
+              ),
+            )}
           </div>
           <div className="min-w-0">
             <div className="border-b border-white/10 px-4 py-2 font-mono text-[9px] text-[#8ea69b]">{selectedCode?.path}</div>

@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  CaretRight,
   Copy,
   DotsSixVertical,
   Eye,
@@ -17,7 +16,7 @@ import {
 } from "@phosphor-icons/react";
 import type { SemanticInterfaceGraph, SemanticNode } from "@intentform/semantic-schema";
 import { Reorder } from "motion/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { IconButton } from "../ui/controls";
 import { isNodeVisible, nodeNames, type RailTab, type VisualState } from "./support";
 
@@ -46,9 +45,18 @@ interface LayersPanelProps {
 }
 
 function layerIcon(node: SemanticNode) {
-  if (node.kind === "primary-action" || node.kind === "secondary-action") return <Selection size={12} />;
-  if (node.kind === "money-input") return <TextT size={12} />;
-  return <Stack size={12} />;
+  if (node.kind === "primary-action" || node.kind === "secondary-action") return <Selection size={13} />;
+  if (node.kind === "money-input") return <TextT size={13} />;
+  return <Stack size={13} />;
+}
+
+function PanelHeading({ label, action }: { label: string; action?: React.ReactNode }) {
+  return (
+    <div className="flex min-h-8 items-center justify-between pl-1">
+      <span className="text-[11px] font-semibold tracking-[.01em] text-[var(--muted)]">{label}</span>
+      {action}
+    </div>
+  );
 }
 
 function TokenNumberField({
@@ -61,8 +69,8 @@ function TokenNumberField({
   onCommit(next: number): void;
 }) {
   return (
-    <label className="grid grid-cols-[1fr_72px] items-center gap-2 text-[10.5px] text-[var(--muted)]">
-      <span className="truncate font-mono">{label}</span>
+    <label className="grid grid-cols-[1fr_76px] items-center gap-2 text-[11px] text-[var(--muted)]">
+      <span className="truncate font-mono text-[11px]">{label}</span>
       <input
         key={`${label}-${value}`}
         type="number"
@@ -73,7 +81,7 @@ function TokenNumberField({
           if (Number.isFinite(next) && next >= 0 && next !== value) onCommit(next);
         }}
         onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); }}
-        className="min-h-7 rounded-md border border-[var(--line-strong)] bg-[var(--field)] px-2 text-right font-mono text-[10.5px] text-[var(--t-strong)] outline-none focus:border-[var(--accent)]"
+        className="min-h-8 rounded-lg border border-[var(--line)] bg-[var(--field)] px-2 text-right font-mono text-[11px] text-[var(--t-strong)] outline-none transition-colors hover:border-[var(--line-strong)] focus:border-[var(--accent)]"
       />
     </label>
   );
@@ -104,6 +112,8 @@ export function LayersPanel({
 }: LayersPanelProps) {
   const [order, setOrder] = useState<string[]>(() => screen.nodes.map((node) => node.id));
   const [pageOrder, setPageOrder] = useState<string[]>(() => graph.screens.map((item) => item.id));
+  const pagesListRef = useRef<HTMLDivElement>(null);
+  const layersListRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setOrder(screen.nodes.map((node) => node.id));
@@ -141,14 +151,14 @@ export function LayersPanel({
         onClick={() => { onSelectNode(node.id); onDismissMobile(); }}
         onMouseEnter={() => onHoverNode(node.id)}
         onMouseLeave={() => onHoverNode(null)}
-        className={`group flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] ${node.id === selectedNodeId ? "bg-[var(--accent-soft)] font-medium text-[var(--accent-text)]" : nodeVisible ? "text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]" : "text-[var(--faint)] hover:bg-[var(--hover)] hover:text-[var(--muted)]"}`}
+        className={`group flex h-8 w-full items-center gap-2 rounded-lg pl-1.5 pr-2 text-left text-[12px] ${node.id === selectedNodeId ? "bg-[var(--accent-soft)] font-medium text-[var(--accent-text)]" : nodeVisible ? "text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]" : "text-[var(--faint)] hover:bg-[var(--hover)]"}`}
       >
-        <DotsSixVertical size={12} className={draggable ? "cursor-grab opacity-40" : "opacity-15"} />
-        {layerIcon(node)}
+        <DotsSixVertical size={12} className={`shrink-0 ${draggable ? "cursor-grab opacity-0 group-hover:opacity-40" : "opacity-0"}`} />
+        <span className="shrink-0 opacity-70">{layerIcon(node)}</span>
         <span className="min-w-0 flex-1 truncate">{node.intent.label ?? nodeNames[node.kind]}</span>
         {nodeVisible
-          ? <Eye size={11} className="opacity-0 group-hover:opacity-55" />
-          : <EyeSlash size={11} aria-label={`Hidden in ${activeVisualState} state`} />}
+          ? <Eye size={12} className="shrink-0 opacity-0 group-hover:opacity-50" />
+          : <EyeSlash size={12} aria-label={`Hidden in ${activeVisualState} state`} className="shrink-0 opacity-60" />}
       </button>
     );
   };
@@ -159,7 +169,7 @@ export function LayersPanel({
       aria-label="Pages and layers"
       className={`${visible ? "grid" : "hidden"} ${desktopVisible ? "xl:grid" : "xl:hidden"} absolute inset-y-0 left-0 z-[3] w-[268px] min-h-0 grid-rows-[auto_1fr] border-r border-[var(--line)] bg-[var(--chrome)] shadow-[24px_0_52px_-32px_var(--shadow-strong)] xl:relative xl:z-[1] xl:w-auto xl:shadow-none`}
     >
-      <div className="flex items-center justify-between border-b border-[var(--line)] px-2 pt-1.5">
+      <div className="flex items-center justify-between border-b border-[var(--line)] px-2 pt-1">
         <div className="flex gap-0.5" role="tablist" aria-label="Left panel sections">
           {([["layers", "Layers"], ["tokens", "Tokens"]] as const).map(([tab, label]) => (
             <button
@@ -168,7 +178,7 @@ export function LayersPanel({
               role="tab"
               aria-selected={railTab === tab}
               onClick={() => onRailTab(tab)}
-              className={`min-h-8 rounded-t-md border-b-2 px-2.5 text-[11px] font-medium ${railTab === tab ? "border-[var(--accent)] text-[var(--ink)]" : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"}`}
+              className={`min-h-9 border-b-2 px-3 text-[12px] font-medium transition-colors ${railTab === tab ? "border-[var(--accent)] text-[var(--ink)]" : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"}`}
             >
               {label}
             </button>
@@ -179,30 +189,39 @@ export function LayersPanel({
 
       {railTab === "layers" ? (
         <div className="grid min-h-0 grid-rows-[auto_auto_1fr]">
-          <div className="border-b border-[var(--line)] p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-[var(--t-strong)]">Pages</span>
-              <IconButton ariaLabel="Add screen" onClick={onAddScreen}><Plus size={13} /></IconButton>
-            </div>
-            <Reorder.Group axis="y" as="div" values={pageOrder} onReorder={setPageOrder} className="mt-2 grid gap-0.5">
+          <div className="border-b border-[var(--line)] px-2 pb-2 pt-1.5">
+            <PanelHeading
+              label="Pages"
+              action={<IconButton ariaLabel="Add screen" onClick={onAddScreen}><Plus size={13} /></IconButton>}
+            />
+            <Reorder.Group ref={pagesListRef} axis="y" as="div" values={pageOrder} onReorder={setPageOrder} className="relative mt-0.5 grid grid-cols-1 gap-px">
               {pageOrder.map((screenId) => {
                 const item = graph.screens.find((candidate) => candidate.id === screenId);
                 if (!item) return null;
+                const active = item.id === screen.id;
                 return (
-                  <Reorder.Item key={screenId} value={screenId} as="div" onDragEnd={commitPageOrder} className="relative">
-                    <div className={`group flex min-h-8 items-center gap-1 rounded-md pr-1 ${item.id === screen.id ? "bg-[var(--accent-soft)]" : "hover:bg-[var(--hover)]"}`}>
+                  <Reorder.Item
+                    key={screenId}
+                    value={screenId}
+                    as="div"
+                    dragConstraints={pagesListRef}
+                    dragElastic={0.03}
+                    onDragEnd={commitPageOrder}
+                    className="relative"
+                  >
+                    <div className={`group relative flex h-8 items-center overflow-hidden rounded-lg ${active ? "bg-[var(--accent-soft)]" : "hover:bg-[var(--hover)]"}`}>
                       <button
                         type="button"
                         onClick={() => { onSelectScreen(item.id); onSelectNode(item.nodes[0]?.id ?? null); onDismissMobile(); }}
-                        className={`flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-[11px] ${item.id === screen.id ? "font-medium text-[var(--accent-text)]" : "text-[var(--muted)] group-hover:text-[var(--ink)]"}`}
+                        className={`flex h-8 min-w-0 flex-1 items-center gap-2 pl-2 pr-2 text-left text-[12px] ${active ? "font-medium text-[var(--accent-text)]" : "text-[var(--muted)] group-hover:text-[var(--ink)]"}`}
                       >
-                        <FrameCorners size={13} />
+                        <FrameCorners size={13} className="shrink-0 opacity-70" />
                         <span className="min-w-0 flex-1 truncate">{item.title}</span>
-                        <span className="font-mono text-[9px] text-[var(--faint)] group-hover:hidden">{item.nodes.length}</span>
+                        <span className="shrink-0 font-mono text-[10px] text-[var(--faint)] transition-opacity group-hover:opacity-0">{item.nodes.length}</span>
                       </button>
-                      <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
-                        <button type="button" aria-label={`Duplicate screen ${item.title}`} onClick={() => onDuplicateScreen(item.id)} className="grid size-6 place-items-center rounded text-[var(--muted)] hover:bg-[var(--field)] hover:text-[var(--ink)]"><Copy size={11} /></button>
-                        <button type="button" aria-label={`Delete screen ${item.title}`} disabled={graph.screens.length <= 1} onClick={() => onDeleteScreen(item.id)} className="grid size-6 place-items-center rounded text-[var(--muted)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] disabled:opacity-25"><Trash size={11} /></button>
+                      <span className={`absolute inset-y-0 right-0 hidden items-center gap-0.5 pl-3 pr-1 group-hover:flex ${active ? "bg-gradient-to-l from-[var(--accent-soft)] via-[var(--accent-soft)] to-transparent" : "bg-gradient-to-l from-[var(--hover)] via-[var(--hover)] to-transparent"}`}>
+                        <button type="button" aria-label={`Duplicate screen ${item.title}`} onClick={() => onDuplicateScreen(item.id)} className="grid size-6 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--field)] hover:text-[var(--ink)]"><Copy size={12} /></button>
+                        <button type="button" aria-label={`Delete screen ${item.title}`} disabled={graph.screens.length <= 1} onClick={() => onDeleteScreen(item.id)} className="grid size-6 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] disabled:opacity-25"><Trash size={12} /></button>
                       </span>
                     </div>
                   </Reorder.Item>
@@ -211,30 +230,37 @@ export function LayersPanel({
             </Reorder.Group>
           </div>
 
-          <div className="border-b border-[var(--line)] px-3 py-2.5">
-            <span className="text-[11px] font-semibold text-[var(--t-strong)]">Layers</span>
-            <label className="mt-2 flex min-h-8 items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--field)] px-2.5 text-[var(--muted)] focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_rgba(57,116,97,.08)]">
-              <MagnifyingGlass size={12} aria-hidden="true" />
+          <div className="px-2 pb-1 pt-1.5">
+            <PanelHeading label="Layers" />
+            <label className="mt-0.5 flex h-8 items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--field)] px-2.5 text-[var(--muted)] transition-colors focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_color-mix(in_oklab,var(--accent)_12%,transparent)] hover:border-[var(--line-strong)]">
+              <MagnifyingGlass size={13} aria-hidden="true" className="shrink-0" />
               <span className="sr-only">Search layers</span>
-              <input aria-label="Search layers" value={layerQuery} onChange={(event) => onLayerQuery(event.target.value)} placeholder="Find a layer" className="min-w-0 flex-1 bg-transparent text-[10.5px] text-[var(--t-strong)] outline-none placeholder:text-[var(--faint)]" />
-              {layerQuery ? <button type="button" aria-label="Clear layer search" onClick={() => onLayerQuery("")} className="grid size-5 place-items-center rounded hover:bg-[var(--hover)]"><X size={10} /></button> : null}
+              <input aria-label="Search layers" value={layerQuery} onChange={(event) => onLayerQuery(event.target.value)} placeholder="Find a layer" className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--t-strong)] outline-none placeholder:text-[var(--faint)]" />
+              {layerQuery ? <button type="button" aria-label="Clear layer search" onClick={() => onLayerQuery("")} className="grid size-5 shrink-0 place-items-center rounded hover:bg-[var(--hover)]"><X size={11} /></button> : null}
             </label>
           </div>
 
-          <div className="min-h-0 overflow-auto px-2 py-2">
-            <div className="mb-1 flex items-center gap-1.5 px-1.5 py-1.5 text-[11px] text-[var(--muted)]"><CaretRight size={11} weight="bold" /><FrameCorners size={12} /><strong>{screen.title}</strong></div>
+          <div className="min-h-0 overflow-y-auto overflow-x-hidden px-2 pb-2 pt-1">
             {filteredNodes ? (
-              <>
+              <div className="grid grid-cols-1 gap-px">
                 {filteredNodes.map((node) => layerRow(node, false))}
-                {filteredNodes.length === 0 ? <div className="mx-1 mt-3 rounded-lg border border-dashed border-[var(--line-strong)] px-3 py-5 text-center text-[10.5px] leading-relaxed text-[var(--muted)]">No layers match “{layerQuery}”.</div> : null}
-              </>
+                {filteredNodes.length === 0 ? <div className="mx-1 mt-3 rounded-lg border border-dashed border-[var(--line-strong)] px-3 py-5 text-center text-[11px] leading-relaxed text-[var(--muted)]">No layers match “{layerQuery}”.</div> : null}
+              </div>
             ) : (
-              <Reorder.Group axis="y" as="div" values={order} onReorder={setOrder} className="grid gap-0.5">
+              <Reorder.Group ref={layersListRef} axis="y" as="div" values={order} onReorder={setOrder} className="relative grid grid-cols-1 gap-px">
                 {order.map((nodeId) => {
                   const node = nodesById.get(nodeId);
                   if (!node) return null;
                   return (
-                    <Reorder.Item key={nodeId} value={nodeId} as="div" onDragEnd={commitOrder} className="relative">
+                    <Reorder.Item
+                      key={nodeId}
+                      value={nodeId}
+                      as="div"
+                      dragConstraints={layersListRef}
+                      dragElastic={0.03}
+                      onDragEnd={commitOrder}
+                      className="relative"
+                    >
                       {layerRow(node, true)}
                     </Reorder.Item>
                   );
@@ -244,21 +270,21 @@ export function LayersPanel({
           </div>
         </div>
       ) : (
-        <div className="min-h-0 overflow-auto">
-          <section className="border-b border-[var(--line)] p-3">
-            <h3 className="text-[11px] font-semibold text-[var(--t-strong)]">Color tokens</h3>
-            <p className="mt-1 text-[10px] leading-relaxed text-[var(--muted)]">Bound to every frame and compiled into both platforms.</p>
+        <div className="min-h-0 overflow-y-auto overflow-x-hidden">
+          <section className="border-b border-[var(--line)] px-3 pb-3 pt-2">
+            <PanelHeading label="Color tokens" />
+            <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--faint)]">Bound to every frame and compiled into both platforms.</p>
             <div className="mt-3 grid gap-2">
               {Object.entries(graph.tokens.colors).map(([key, value]) => (
-                <div key={key} className="grid grid-cols-[26px_1fr_64px] items-center gap-2">
+                <div key={key} className="grid grid-cols-[28px_1fr_68px] items-center gap-2">
                   <input
                     type="color"
                     aria-label={`Pick ${key}`}
                     value={/^#[0-9a-fA-F]{6}$/.test(value) ? value : "#397461"}
                     onChange={(event) => onUpdateTokens((tokens) => { tokens.colors[key] = event.target.value; }, `Set ${key}.`)}
-                    className="h-7 w-full cursor-pointer rounded-md border border-[var(--line)] bg-[var(--field)] p-0.5"
+                    className="h-8 w-full cursor-pointer rounded-lg border border-[var(--line)] bg-[var(--field)] p-0.5"
                   />
-                  <span className="truncate font-mono text-[10.5px] text-[var(--muted)]">{key}</span>
+                  <span className="truncate font-mono text-[11px] text-[var(--muted)]">{key}</span>
                   <input
                     key={`${key}-${value}`}
                     aria-label={`Hex for ${key}`}
@@ -268,28 +294,28 @@ export function LayersPanel({
                       if (/^#[0-9a-fA-F]{3,8}$/.test(next) && next !== value) onUpdateTokens((tokens) => { tokens.colors[key] = next; }, `Set ${key}.`);
                     }}
                     onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); }}
-                    className="min-h-7 rounded-md border border-[var(--line-strong)] bg-[var(--field)] px-1.5 font-mono text-[10px] text-[var(--t-strong)] outline-none focus:border-[var(--accent)]"
+                    className="min-h-8 rounded-lg border border-[var(--line)] bg-[var(--field)] px-2 font-mono text-[11px] text-[var(--t-strong)] outline-none transition-colors hover:border-[var(--line-strong)] focus:border-[var(--accent)]"
                   />
                 </div>
               ))}
             </div>
           </section>
-          <section className="border-b border-[var(--line)] p-3">
-            <h3 className="text-[11px] font-semibold text-[var(--t-strong)]">Radii</h3>
-            <div className="mt-3 grid gap-2">
+          <section className="border-b border-[var(--line)] px-3 pb-3 pt-2">
+            <PanelHeading label="Radii" />
+            <div className="mt-2 grid gap-2">
               {Object.entries(graph.tokens.radii).map(([key, value]) => (
                 <TokenNumberField key={key} label={key} value={value} onCommit={(next) => onUpdateTokens((tokens) => { tokens.radii[key] = next; }, `Set ${key} to ${next}.`)} />
               ))}
             </div>
           </section>
-          <section className="p-3">
-            <h3 className="text-[11px] font-semibold text-[var(--t-strong)]">Spacing</h3>
-            <div className="mt-3 grid gap-2">
+          <section className="px-3 pb-3 pt-2">
+            <PanelHeading label="Spacing" />
+            <div className="mt-2 grid gap-2">
               {Object.entries(graph.tokens.spacing).map(([key, value]) => (
                 <TokenNumberField key={key} label={key} value={value} onCommit={(next) => onUpdateTokens((tokens) => { tokens.spacing[key] = next; }, `Set ${key} to ${next}.`)} />
               ))}
             </div>
-            <div className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--hover)] p-3 text-[10px] leading-relaxed text-[var(--muted)]">
+            <div className="mt-4 rounded-lg bg-[var(--accent-soft)] p-3 text-[11px] leading-relaxed text-[var(--accent-text)]">
               Token edits are semantic changes: they land in the graph diff and recompile React and SwiftUI deterministically.
             </div>
           </section>

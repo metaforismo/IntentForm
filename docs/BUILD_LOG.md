@@ -149,3 +149,11 @@ The public macOS run completed on an iPhone 16 Pro Simulator, uploaded the nativ
 - Split the studio orchestrator into per-stage modules (`components/stages/`: brief, graph, outputs, verify, report, phone-preview) with narrow typed props, shrinking `studio.tsx` from ~800 to ~616 lines with byte-identical rendering.
 - Extracted shared UI primitives (`components/ui/controls.tsx`: IconButton, Keycap, SectionLabel, MenuItem) and adopted them across the inspector, layers panel and overlays where class output stayed character-identical.
 - Both refactors were executed by parallel subagents with strict no-behavior-change contracts, then verified centrally: workspace typecheck, 29 vitest cases, production build and the full five-part Playwright smoke suite.
+
+## 2026-07-14 — From-scratch chrome rebuild after a live UX audit
+
+- Audited the running studio with browser automation before rebuilding: measured a 228px layer-label overflow past the panel edge (implicit grid tracks sizing to max-content — the root cause of clipped panel content), frame titles squeezed out by route/state chips, an unusable outputs file list, sub-10px cramped type, and a distant 39% initial fit.
+- Rebuilt the layers panel and inspector from scratch: 12px rows with real padding and ellipsis, `minmax(0,1fr)` list tracks, drag-reorder constrained to its own list, gradient-shielded hover actions, cleaner tabs, sections and fields on the shared select/field primitives.
+- Canvas: opens centered on the selected screen at a readable zoom (camera never moves on ordinary edits), frame titles always beat route/state chips (chips hide below 55% zoom), the dot grid fades below 45%, and the Next.js dev indicator is disabled.
+- Parallel subagents redesigned the outputs file tree (directory-grouped, prefix-stripped names, selection by full path) and executed a typography floor across the top bar and floating chrome (nothing below 10px; primary controls at 12px).
+- Verified end to end: live overflow re-measured at +37px clearance, full typecheck/tests/build, all five Playwright smoke suites, and fresh light/dark screenshots reviewed at 1280×800.
