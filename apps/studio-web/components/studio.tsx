@@ -585,6 +585,7 @@ export function Studio() {
 
               {stage === "verify" ? (
                 <VerifyStage
+                  graph={graph}
                   verification={verification}
                   scenario={scenario}
                   scenarioId={scenarioId}

@@ -99,6 +99,8 @@ interface InspectorProps {
   visible: boolean;
   desktopVisible: boolean;
   updateNode(mutate: (node: SemanticNode) => void, notice: string): void;
+  onSetActionEvent(nodeId: string, eventName: string | null): void;
+  onSetFlowTarget(fromScreenId: string, eventName: string, targetScreenId: string | null): void;
   onDuplicate(): void;
   onReorder(direction: -1 | 1): void;
   onDelete(): void;
@@ -115,6 +117,8 @@ export function Inspector({
   visible,
   desktopVisible,
   updateNode,
+  onSetActionEvent,
+  onSetFlowTarget,
   onDuplicate,
   onReorder,
   onDelete,
@@ -259,16 +263,29 @@ export function Inspector({
                 Emits event
                 <select
                   value={selectedNode.interactions[0]?.event ?? ""}
-                  onChange={(event) => updateNode((node) => {
-                    node.interactions = event.target.value ? [{ event: event.target.value, requires: [] }] : [];
-                  }, event.target.value ? `Bound the action to ${event.target.value}.` : "Detached the action from its event.")}
+                  onChange={(event) => onSetActionEvent(selectedNode.id, event.target.value || null)}
                   className="select-control font-mono text-[11px] font-normal"
                 >
                   <option value="">No event</option>
                   {contract.events.map((event) => <option key={event.name} value={event.name}>{event.name}</option>)}
                 </select>
               </label>
-              <p className="text-[11px] leading-relaxed text-[var(--faint)]">Events are typed in the screen contract and drive flow navigation in preview mode.</p>
+              {selectedNode.interactions[0] ? (
+                <label className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">
+                  Navigates to
+                  <select
+                    value={graph.flows.flatMap((flow) => flow.steps).find((step) => step.from === screen.id && step.event === selectedNode.interactions[0]?.event)?.to ?? ""}
+                    onChange={(event) => onSetFlowTarget(screen.id, selectedNode.interactions[0]!.event, event.target.value || null)}
+                    className="select-control text-[11px] font-normal"
+                  >
+                    <option value="">No navigation</option>
+                    {graph.screens.filter((item) => item.id !== screen.id).map((item) => (
+                      <option key={item.id} value={item.id}>{item.title}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              <p className="text-[11px] leading-relaxed text-[var(--faint)]">Events are typed in the screen contract. Navigation becomes a flow edge on the board and drives preview mode.</p>
             </Section>
           ) : null}
 

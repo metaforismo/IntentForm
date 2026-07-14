@@ -157,3 +157,14 @@ The public macOS run completed on an iPhone 16 Pro Simulator, uploaded the nativ
 - Canvas: opens centered on the selected screen at a readable zoom (camera never moves on ordinary edits), frame titles always beat route/state chips (chips hide below 55% zoom), the dot grid fades below 45%, and the Next.js dev indicator is disabled.
 - Parallel subagents redesigned the outputs file tree (directory-grouped, prefix-stripped names, selection by full path) and executed a typography floor across the top bar and floating chrome (nothing below 10px; primary controls at 12px).
 - Verified end to end: live overflow re-measured at +37px clearance, full typecheck/tests/build, all five Playwright smoke suites, and fresh light/dark screenshots reviewed at 1280×800.
+
+## 2026-07-14 — Stage-by-stage redesign round and flow editing
+
+- Audited every workflow stage in the running app, then dispatched a four-agent team with audit-based briefs (graph, verify, report, brief) while implementing flow editing centrally.
+- Graph stage: compact screens rail with inline routes, a quiet table outline (kind chips, importance dots instead of shouting pills), the screen contract merged into the outline card, flows as readable step lines.
+- Verify stage: a "Rules evaluated" checklist derived deterministically from the finding ids — every rule that ran is listed per screen and for the token layer, so passing rules are finally visible; findings use structured evidence grids; a real success state replaces the empty void.
+- Report stage: proof steps as a connected timeline with keycap fingerprint chips and an adaptive headline; diff rows with proper −/+ gutters.
+- Brief stage: segmented-control convention, comfortable 14px writing surface with placeholders, balanced preview column.
+- New feature (plan: navigation & flows): action nodes gained a "Navigates to" control that writes validated flow steps into the graph — board arrows and preview-mode navigation react immediately, event detachment cleans stale steps, all undoable; covered by a new smoke assertion.
+- Fixed post-redesign nits found in review: flows-card chip clipping in the 230px rail and a cryptic step chip in the report timeline.
+- Verified: full typecheck, 29 tests, production build, all five Playwright suites (including the new flow-editing check), and screenshot review of every stage in both themes.

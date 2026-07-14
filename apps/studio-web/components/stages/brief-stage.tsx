@@ -33,10 +33,10 @@ export function BriefStage({
       <div className="pt-3 md:pt-10">
         <span className="font-mono text-[11px] text-[var(--accent)]">01 / PRODUCT BRIEF</span>
         <h2 className="mt-4 max-w-[620px] text-3xl font-semibold leading-[1.03] tracking-[-.055em] md:text-5xl">Describe the product. Keep the intent.</h2>
-        <p className="mt-5 max-w-[58ch] text-sm leading-relaxed text-[var(--muted)]">GPT‑5.6 turns a brief into a validated graph or proposes a narrow typed patch. React and SwiftUI are always compiled later by deterministic backends.</p>
-        <div className="mt-8 inline-flex rounded-xl border border-[var(--line)] bg-[var(--hover)] p-1" aria-label="Intent operation">
+        <p className="mt-5 max-w-[60ch] text-sm leading-relaxed text-[var(--muted)]">GPT‑5.6 turns a brief into a validated graph or proposes a narrow typed patch. React and SwiftUI are always compiled later by deterministic backends.</p>
+        <div className="mt-8 inline-flex rounded-lg bg-[var(--hover)] p-0.5" aria-label="Intent operation">
           {(["create", "edit"] as const).map((operation) => (
-            <button key={operation} type="button" onClick={() => setBriefOperation(operation)} className={`min-h-8 rounded-lg px-3 text-[10px] font-semibold capitalize ${briefOperation === operation ? "bg-[var(--seg-active)] text-[var(--ink)] shadow-sm" : "text-[var(--muted)]"}`}>{operation === "create" ? "New graph" : "Semantic edit"}</button>
+            <button key={operation} type="button" onClick={() => setBriefOperation(operation)} className={`min-h-8 rounded-md px-3 text-[11px] font-semibold capitalize transition-colors ${briefOperation === operation ? "bg-[var(--seg-active)] text-[var(--ink)] shadow-[0_1px_4px_-2px_var(--shadow-strong)]" : "text-[var(--muted)] hover:text-[var(--ink)]"}`}>{operation === "create" ? "New graph" : "Semantic edit"}</button>
           ))}
         </div>
         <label className="mt-10 grid gap-2 text-xs font-semibold">
@@ -45,9 +45,10 @@ export function BriefStage({
             value={briefOperation === "create" ? brief : editInstruction}
             onChange={(event) => briefOperation === "create" ? setBrief(event.target.value) : setEditInstruction(event.target.value)}
             rows={8}
-            className="resize-none rounded-[24px] border border-[var(--line)] bg-[var(--field)] p-5 text-sm font-normal leading-relaxed outline-none transition-shadow focus:border-[var(--accent)] focus:shadow-[0_0_0_4px_color-mix(in_oklab,var(--accent)_12%,transparent)]"
+            placeholder={briefOperation === "create" ? "Describe the product: audience, screens, hierarchy, primary actions, and recovery paths…" : "Describe one intent change, e.g. \"Move the CTA above the fold on the pricing screen.\""}
+            className="resize-none rounded-[24px] border border-[var(--line)] bg-[var(--field)] p-5 text-[14px] font-normal leading-relaxed text-[var(--ink)] outline-none transition-shadow placeholder:text-[var(--faint)] focus:border-[var(--accent)] focus:shadow-[0_0_0_4px_color-mix(in_oklab,var(--accent)_12%,transparent)]"
           />
-          <span className="flex items-center justify-between font-normal text-[var(--muted)]">
+          <span className="flex items-center justify-between text-[11px] font-normal text-[var(--muted)]">
             <span>{briefOperation === "create" ? "Describe audience, hierarchy, behavior and recovery." : "Describe one intent change. Only affected stable nodes will be patched."}</span>
             <span className="font-mono text-[10px] text-[var(--faint)]">{(briefOperation === "create" ? brief : editInstruction).length} chars</span>
           </span>
@@ -61,7 +62,9 @@ export function BriefStage({
           </button>
         </div>
       </div>
-      <PhonePreview graph={graph} selectedScreen={selectedScreen} />
+      <div className="self-start md:pt-10">
+        <PhonePreview graph={graph} selectedScreen={selectedScreen} />
+      </div>
     </div>
   );
 }

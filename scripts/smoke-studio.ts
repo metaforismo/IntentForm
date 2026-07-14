@@ -204,7 +204,13 @@ try {
   await page.getByTestId("canvas-node-payment-request.confirm").click();
   await page.locator('[data-testid="device-frame"][data-screen-id="receipt"]').waitFor();
   await page.getByRole("button", { name: "Toggle preview mode" }).click();
-  console.log("Studio board, design tokens and flow preview: passed");
+
+  await page.getByTestId("layer-receipt.confirm").click();
+  await page.getByLabel("Navigates to").selectOption("home");
+  await page.locator(".editor-world svg text", { hasText: "onDone" }).waitFor();
+  await page.getByRole("button", { name: "Undo" }).click();
+  await page.locator(".editor-world svg text", { hasText: "onDone" }).waitFor({ state: "detached" });
+  console.log("Studio board, design tokens, flow preview and flow editing: passed");
 
   const adaptivePage = await browser.newPage({ viewport: { width: 1100, height: 900 } });
   adaptivePage.setDefaultTimeout(10_000);

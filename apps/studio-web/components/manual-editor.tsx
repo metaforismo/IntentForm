@@ -407,6 +407,45 @@ export function ManualEditor({
     commitDraft(draft, notice);
   };
 
+  /* Flow editing: an action's event and its navigation target live in the
+     graph (interactions + flows), so the board's arrows update immediately. */
+  const setActionEvent = useCallback((nodeId: string, eventName: string | null) => {
+    const draft = structuredClone(graph);
+    const found = findNode(draft, nodeId);
+    if (!found) return;
+    const previous = found.node.interactions[0]?.event ?? null;
+    found.node.interactions = eventName ? [{ event: eventName, requires: [] }] : [];
+    found.node.provenance = { author: "human", revision: found.node.provenance.revision + 1 };
+    if (previous && previous !== eventName) {
+      for (const flow of draft.flows) {
+        flow.steps = flow.steps.flatMap((step) => {
+          if (step.from !== found.screen.id || step.event !== previous) return [step];
+          return eventName ? [{ ...step, event: eventName }] : [];
+        });
+      }
+      draft.flows = draft.flows.filter((flow) => flow.steps.length > 0);
+    }
+    commitDraft(draft, eventName ? `Bound the action to ${eventName}.` : "Detached the action from its event.");
+  }, [commitDraft, graph]);
+
+  const setFlowTarget = useCallback((fromScreenId: string, eventName: string, targetScreenId: string | null) => {
+    const draft = structuredClone(graph);
+    for (const flow of draft.flows) {
+      flow.steps = flow.steps.filter((step) => !(step.from === fromScreenId && step.event === eventName));
+    }
+    draft.flows = draft.flows.filter((flow) => flow.steps.length > 0);
+    if (!targetScreenId) {
+      commitDraft(draft, `Removed the navigation for ${eventName}.`);
+      return;
+    }
+    const target = draft.screens.find((item) => item.id === targetScreenId);
+    if (!target) return;
+    const flow = draft.flows[0];
+    if (flow) flow.steps.push({ from: fromScreenId, event: eventName, to: targetScreenId });
+    else draft.flows.push({ id: "main", steps: [{ from: fromScreenId, event: eventName, to: targetScreenId }] });
+    commitDraft(draft, `Routed ${eventName} to ${target.title}.`);
+  }, [commitDraft, graph]);
+
   const handleNodeCommand = (command: NodeCommand, nodeId: string) => {
     if (command === "duplicate") duplicateNodeById(nodeId);
     else if (command === "delete") deleteNodeById(nodeId);
@@ -856,6 +895,8 @@ export function ManualEditor({
         visible={mobilePanel === "inspector"}
         desktopVisible={desktopPanels.inspector}
         updateNode={updateNode}
+        onSetActionEvent={setActionEvent}
+        onSetFlowTarget={setFlowTarget}
         onDuplicate={() => { if (selectedNode) duplicateNodeById(selectedNode.id); }}
         onReorder={(direction) => { if (selectedNode) moveNode(selectedNode.id, direction); }}
         onDelete={() => { if (selectedNode) deleteNodeById(selectedNode.id); }}
