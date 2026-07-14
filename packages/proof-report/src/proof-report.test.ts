@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { compileReact } from "@intentform/compiler-react";
 import { compileSwiftUI } from "@intentform/compiler-swiftui";
-import { parseGraph, stableSerialize } from "@intentform/semantic-schema";
+import { parseGraph, semanticDiff, stableSerialize } from "@intentform/semantic-schema";
 import { demoGraph } from "./demo";
 import { buildProofReport } from "./index";
 import { verifyRenderedPrimaryAction } from "@intentform/verifier";
@@ -114,6 +114,33 @@ describe("IntentForm proof pipeline", () => {
       screenshotPath: "artifacts/swiftui/payment-request-compact.png",
       graphExpectsPersistent: true,
     })).toHaveLength(0);
+  });
+
+  it("resolves design tokens into both platform outputs", () => {
+    const themed = structuredClone(demoGraph);
+    themed.tokens.colors["color.accent"] = "#7a4b9e";
+    themed.tokens.radii["radius.control"] = 12;
+    const graph = parseGraph(themed);
+
+    const css = compileReact(graph).files.find((file) => file.path.endsWith("styles.css"));
+    expect(css?.content).toContain("--if-color-accent: #7a4b9e;");
+    expect(css?.content).toContain("--if-radius-control: 12px;");
+    expect(css?.content).toContain("background: var(--if-accent);");
+
+    const components = compileSwiftUI(graph).files.find((file) => file.path.endsWith("IntentFormComponents.swift"));
+    expect(components?.content).toContain("static let controlRadius: CGFloat = 12");
+    expect(components?.content).toContain("static let accent = Color(red: 0.478, green: 0.294, blue: 0.620)");
+
+    expect(compileReact(graph).fingerprint).not.toBe(compileReact(demoGraph).fingerprint);
+    expect(compileSwiftUI(graph).fingerprint).not.toBe(compileSwiftUI(demoGraph).fingerprint);
+  });
+
+  it("surfaces token edits in the semantic diff", () => {
+    const themed = structuredClone(demoGraph);
+    themed.tokens.colors["color.accent"] = "#7a4b9e";
+    expect(semanticDiff(demoGraph, parseGraph(themed))).toEqual([
+      { path: "tokens.colors.color.accent", before: "#397461", after: "#7a4b9e" },
+    ]);
   });
 
   it("rejects graph references that cannot be resolved", () => {

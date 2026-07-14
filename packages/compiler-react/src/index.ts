@@ -152,32 +152,64 @@ ${branches}
 `;
 }
 
-const styles = `:root { color-scheme: light; font-family: ui-sans-serif, system-ui, sans-serif; }
+const cssVarName = (key: string): string => `--if-${key.replace(/[^a-zA-Z0-9]+/g, "-")}`;
+
+/* Token resolution: every graph token becomes a CSS custom property, and the
+   semantic classes consume them. Editing a token in the graph deterministically
+   changes the generated stylesheet on the next compile. */
+function stylesSource(ir: PlatformIR): string {
+  const declarations = [
+    ...Object.entries(ir.tokens.colors).map(([key, value]) => [cssVarName(key), value] as const),
+    ...Object.entries(ir.tokens.spacing).map(([key, value]) => [cssVarName(key), `${value}px`] as const),
+    ...Object.entries(ir.tokens.radii).map(([key, value]) => [cssVarName(key), `${value}px`] as const),
+  ]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, value]) => `  ${name}: ${value};`)
+    .join("\n");
+
+  return `:root {
+  color-scheme: light;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+${declarations}
+  --if-accent: var(--if-color-accent, #397461);
+  --if-ink: var(--if-color-ink, #181c1a);
+  --if-canvas: var(--if-color-canvas, #f3f5f1);
+  --if-surface: var(--if-color-surface, #fbfcf9);
+  --if-accent-deep: color-mix(in oklab, var(--if-accent) 62%, var(--if-ink));
+  --if-accent-soft: color-mix(in oklab, var(--if-accent) 14%, #ffffff);
+  --if-hairline: color-mix(in oklab, var(--if-ink) 12%, #ffffff);
+  --if-control-radius: var(--if-radius-control, 18px);
+  --if-surface-radius: var(--if-radius-surface, 28px);
+}
 * { box-sizing: border-box; }
-body { margin: 0; color: #181c1a; background: #f3f5f1; }
-.screen { min-height: 100dvh; max-width: 440px; margin: auto; padding: 28px 22px 110px; background: #fbfcf9; }
-.eyebrow { color: #397461; font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+body { margin: 0; color: var(--if-ink); background: var(--if-canvas); }
+.screen { min-height: 100dvh; max-width: 440px; margin: auto; padding: 28px 22px 110px; background: var(--if-surface); }
+.eyebrow { color: var(--if-accent); font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 h1 { margin: 8px 0 28px; font-size: 32px; letter-spacing: -.04em; }
 .screen-content { display: grid; gap: 18px; }
-.balance, .receipt { display: grid; gap: 6px; padding: 24px; border-radius: 28px; background: #173c32; color: #f7fbf8; }
-.balance strong, .receipt strong { font-size: 36px; letter-spacing: -.04em; }
-.balance small, .receipt small { color: #a8c7bc; }
-.transactions { padding: 0; list-style: none; border-top: 1px solid #dce2dd; }
-.transactions li { display: flex; justify-content: space-between; padding: 16px 0; border-bottom: 1px solid #dce2dd; }
+.balance { display: grid; gap: 6px; padding: 24px; border-radius: var(--if-surface-radius); background: var(--if-accent-deep); color: #ffffff; }
+.balance strong { font-size: 36px; letter-spacing: -.04em; }
+.balance small { color: rgb(255 255 255 / .62); }
+.receipt { display: grid; gap: 6px; padding: 24px; border-radius: var(--if-surface-radius); background: var(--if-accent-soft); text-align: center; }
+.receipt strong { font-size: 36px; letter-spacing: -.04em; }
+.receipt small { color: color-mix(in oklab, var(--if-ink) 55%, #ffffff); }
+.transactions { padding: 0; list-style: none; border-top: 1px solid var(--if-hairline); }
+.transactions li { display: flex; justify-content: space-between; padding: 16px 0; border-bottom: 1px solid var(--if-hairline); }
 .money-field { display: grid; gap: 8px; }
-.money-field input { width: 100%; padding: 20px; border: 1px solid #cfd8d1; border-radius: 20px; font: inherit; font-size: 28px; }
+.money-field input { width: 100%; padding: 20px; border: 1px solid var(--if-hairline); border-radius: var(--if-control-radius); font: inherit; font-size: 28px; }
 .recipient { display: flex; align-items: center; gap: 12px; padding: 14px 0; }
 .recipient span:last-child { display: grid; gap: 3px; }
-.recipient small { color: #69736e; }
-.avatar { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: #dcebe4; color: #285a49; font-weight: 700; }
-button { min-height: 48px; border: 0; border-radius: 18px; font: inherit; font-weight: 700; cursor: pointer; }
-button:focus-visible, input:focus-visible { outline: 3px solid #79a995; outline-offset: 3px; }
-.primary { padding: 16px 20px; color: white; background: #397461; }
+.recipient small { color: color-mix(in oklab, var(--if-ink) 58%, #ffffff); }
+.avatar { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--if-accent-soft); color: var(--if-accent-deep); font-weight: 700; }
+button { min-height: 48px; border: 0; border-radius: var(--if-control-radius); font: inherit; font-weight: 700; cursor: pointer; }
+button:focus-visible, input:focus-visible { outline: 3px solid color-mix(in oklab, var(--if-accent) 55%, #ffffff); outline-offset: 3px; }
+.primary { padding: 16px 20px; color: white; background: var(--if-accent); }
 .primary.persistent { position: fixed; right: max(22px, calc((100vw - 396px) / 2)); bottom: max(18px, env(safe-area-inset-bottom)); left: max(22px, calc((100vw - 396px) / 2)); }
-.secondary { color: #397461; background: #e7eee9; }
+.secondary { color: var(--if-accent-deep); background: var(--if-accent-soft); }
 .status { padding: 14px; border-left: 3px solid #b65e46; background: #f8e9e3; }
 @media (min-width: 700px) { .primary.persistent { position: static; } }
 `;
+}
 
 export class ReactCompiler implements CompilerBackend {
   readonly id = "react" as const;
@@ -194,7 +226,7 @@ export class ReactCompiler implements CompilerBackend {
     const files = [
       ...ir.screens.map((_, index) => ({ path: `src/generated/screens/${ir.screens[index]?.id}.tsx`, content: screenSource(ir, index) })),
       ...ir.screens.map((_, index) => ({ path: `src/generated/contracts/${ir.screens[index]?.id}.ts`, content: contractSource(ir, index) })),
-      { path: "src/generated/styles.css", content: styles },
+      { path: "src/generated/styles.css", content: stylesSource(ir) },
       { path: "src/generated/App.tsx", content: appSource(ir) },
     ];
     return { target: this.id, files, fingerprint: fingerprintFiles(files) };

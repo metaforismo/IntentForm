@@ -1,17 +1,25 @@
 @import "tailwindcss";
 
 :root {
-  --canvas: #e9ece8;
-  --surface: #fafbf8;
+  --canvas: #e7eae7;
+  --surface: #fafbf9;
   --surface-strong: #ffffff;
-  --ink: #181c1a;
+  --chrome: #fbfcfa;
+  --ink: #1c211e;
   --muted: #67706b;
-  --line: #dce1dc;
+  --faint: #98a19b;
+  --line: #e0e4e0;
+  --line-strong: #cdd3ce;
   --accent: #397461;
   --accent-dark: #245444;
-  --accent-soft: #dfece5;
-  --danger: #a24c39;
-  --danger-soft: #f5e5df;
+  --accent-deep: #17372d;
+  --accent-soft: #e2ece6;
+  --select: #3787f0;
+  --select-deep: #1769ce;
+  --danger: #a4432c;
+  --danger-soft: #f6e7e1;
+  --warn: #8f6d1c;
+  --warn-soft: #f5eedb;
 }
 
 * { box-sizing: border-box; }
@@ -23,6 +31,7 @@ body {
   color: var(--ink);
   background: var(--canvas);
   font-family: var(--font-geist-sans), sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 button, input, select, textarea { font: inherit; }
@@ -37,16 +46,21 @@ button { cursor: pointer; }
   box-shadow: 0 28px 70px -24px rgba(28, 45, 37, 0.28), inset 0 0 0 1px rgba(255,255,255,.18);
 }
 
-.editor-canvas {
-  background-color: #e1e4e1;
-  background-image:
-    linear-gradient(rgba(72, 82, 76, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(72, 82, 76, 0.035) 1px, transparent 1px),
-    radial-gradient(circle, rgba(72, 82, 76, 0.17) 0.7px, transparent 0.8px);
-  background-size: 96px 96px, 96px 96px, 16px 16px;
+/* Infinite canvas viewport. The dot grid is positioned imperatively so it
+   travels and scales with the world transform. */
+.editor-viewport {
+  background-color: #e3e6e3;
+  background-image: radial-gradient(circle, rgba(70, 80, 74, 0.22) 1px, transparent 1.1px);
+  background-size: 24px 24px;
   overscroll-behavior: contain;
-  scrollbar-color: #9da59f transparent;
-  scrollbar-width: thin;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.editor-world {
+  transform-origin: 0 0;
+  will-change: transform;
 }
 
 .studio-grain {
@@ -60,6 +74,13 @@ button { cursor: pointer; }
   box-shadow: 0 10px 30px -28px rgba(22, 34, 27, 0.55);
 }
 
+.floating-chrome {
+  border: 1px solid var(--line-strong);
+  background: rgba(252, 253, 251, 0.94);
+  box-shadow: 0 10px 30px -18px rgba(20, 30, 25, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(14px);
+}
+
 .command-menu {
   animation: command-in 180ms cubic-bezier(.16, 1, .3, 1) both;
   transform-origin: top center;
@@ -70,11 +91,21 @@ button { cursor: pointer; }
   to { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
 
+.menu-pop {
+  animation: menu-in 150ms cubic-bezier(.16, 1, .3, 1) both;
+  transform-origin: top left;
+}
+
+@keyframes menu-in {
+  from { opacity: 0; transform: translateY(-4px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 .editor-shell button,
 .editor-shell input,
 .editor-shell select,
 .editor-shell [role="button"] {
-  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease, opacity 160ms ease, transform 160ms ease;
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, opacity 150ms ease, box-shadow 150ms ease;
 }
 
 .editor-shell button:active:not(:disabled) { transform: scale(.97); }
@@ -83,10 +114,28 @@ button { cursor: pointer; }
 .editor-shell button:focus-visible,
 .editor-shell input:focus-visible,
 .editor-shell select:focus-visible,
-.editor-shell [role="button"]:focus-visible {
+.editor-shell [role="button"]:focus-visible,
+.editor-shell [contenteditable]:focus-visible {
   outline: 2px solid #5b9de9;
   outline-offset: 2px;
 }
+
+/* Canvas nodes show a quiet hover ring before selection commits. */
+.canvas-node { position: relative; }
+.canvas-node::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 18px;
+  border: 1.5px solid transparent;
+  pointer-events: none;
+  transition: border-color 120ms ease;
+}
+[data-preview-mode="false"] .canvas-node:hover::after,
+.canvas-node[data-cross-hover="true"]::after {
+  border-color: rgba(55, 135, 240, 0.55);
+}
+.canvas-node[data-selected="true"]::after { border-color: transparent; }
 
 .status-breathe { animation: breathe 2.2s ease-in-out infinite; }
 
@@ -94,4 +143,5 @@ button { cursor: pointer; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+  .editor-world { transition: none !important; }
 }

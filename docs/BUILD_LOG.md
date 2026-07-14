@@ -96,3 +96,14 @@ The public macOS run completed on an iPhone 16 Pro Simulator, uploaded the nativ
 - Fixed undo and redo selection reconciliation after a duplicated selected node disappears from the graph.
 - Fixed a Linux Chromium stacking-context difference that allowed the canvas to intercept clicks from the visible Layers search controls.
 - Expanded production browser coverage for command search, focused-input Escape handling, preview mode, layer filtering, duplication/undo, responsive drawers and screenshots at 1440 × 1000 and 1100 × 900.
+
+## 2026-07-14 — Infinite verified board and end-to-end design tokens
+
+- Rebuilt the canvas as a Penpot-style infinite board: every screen renders as a frame with pointer-anchored pinch/`Cmd`+wheel zoom (12–250%), two-finger panning, Space-bar hand tool, animated fit and a grid that travels with the world transform.
+- Drew the graph's flow definitions as arrows between frames and put a live verification badge on every frame header, so compiler-rule failures are visible on the design surface itself.
+- Split the monolithic editor into `editor/` modules (canvas, layers panel, inspector, overlays, node previews) and raised in-frame rendering to realistic mobile proportions.
+- Bound the canvas node previews, the generated React stylesheet and the generated SwiftUI theme to the graph's design tokens; a token edit now repaints the board, lands in the semantic diff and deterministically changes both platform outputs.
+- Added a Tokens panel (colors, spacing, radii), layer drag-reordering, a right-click layer menu, double-click inline rename, visual-state bindings, contract-event wiring and an interactive preview mode that follows flow edges between frames.
+- Added an activity log, graph JSON export, reset-to-sample recovery for broken drafts, undo coalescing for rapid token edits, schema-guarded commits, and richer command-menu coverage (stages, devices, tokens, project actions).
+- Extended `semanticDiff` to cover tokens, purpose, importance, emphasis, state bindings, interactions and node removals; added compiler tests pinning token resolution on both targets.
+- Verified with the full suite: `pnpm typecheck`, 12 vitest cases, production build, `xcodebuild` on the regenerated SwiftUI, React render evidence, and an extended Playwright smoke run covering the board, token repaint and flow preview.

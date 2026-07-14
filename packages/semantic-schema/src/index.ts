@@ -229,7 +229,25 @@ export function semanticDiff(
   after: SemanticInterfaceGraph,
 ): SemanticChange[] {
   const changes: SemanticChange[] = [];
+
+  for (const group of ["colors", "spacing", "radii"] as const) {
+    const beforeTokens: Record<string, unknown> = before.tokens[group];
+    const afterTokens: Record<string, unknown> = after.tokens[group];
+    for (const key of new Set([...Object.keys(beforeTokens), ...Object.keys(afterTokens)])) {
+      if (beforeTokens[key] !== afterTokens[key]) {
+        changes.push({ path: `tokens.${group}.${key}`, before: beforeTokens[key], after: afterTokens[key] });
+      }
+    }
+  }
+
   const beforeNodes = new Map(before.screens.flatMap((screen) => screen.nodes).map((node) => [node.id, node]));
+  const afterNodeIds = new Set(after.screens.flatMap((screen) => screen.nodes).map((node) => node.id));
+
+  for (const node of before.screens.flatMap((screen) => screen.nodes)) {
+    if (!afterNodeIds.has(node.id)) {
+      changes.push({ path: node.id, before: node, after: undefined });
+    }
+  }
 
   for (const node of after.screens.flatMap((screen) => screen.nodes)) {
     const previous = beforeNodes.get(node.id);
@@ -240,11 +258,34 @@ export function semanticDiff(
     if (previous.intent.label !== node.intent.label) {
       changes.push({ path: `${node.id}.intent.label`, before: previous.intent.label, after: node.intent.label });
     }
+    if (previous.intent.purpose !== node.intent.purpose) {
+      changes.push({ path: `${node.id}.intent.purpose`, before: previous.intent.purpose, after: node.intent.purpose });
+    }
+    if (previous.intent.importance !== node.intent.importance) {
+      changes.push({ path: `${node.id}.intent.importance`, before: previous.intent.importance, after: node.intent.importance });
+    }
+    if (previous.style.emphasis !== node.style.emphasis) {
+      changes.push({ path: `${node.id}.style.emphasis`, before: previous.style.emphasis, after: node.style.emphasis });
+    }
     if (JSON.stringify(previous.layout.placement) !== JSON.stringify(node.layout.placement)) {
       changes.push({
         path: `${node.id}.layout.placement`,
         before: previous.layout.placement,
         after: node.layout.placement,
+      });
+    }
+    if (JSON.stringify(previous.states) !== JSON.stringify(node.states)) {
+      changes.push({
+        path: `${node.id}.states`,
+        before: previous.states.map((state) => state.name),
+        after: node.states.map((state) => state.name),
+      });
+    }
+    if (JSON.stringify(previous.interactions) !== JSON.stringify(node.interactions)) {
+      changes.push({
+        path: `${node.id}.interactions`,
+        before: previous.interactions.map((interaction) => interaction.event),
+        after: node.interactions.map((interaction) => interaction.event),
       });
     }
   }

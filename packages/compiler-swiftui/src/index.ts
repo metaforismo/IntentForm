@@ -96,23 +96,69 @@ ${content}${primary?.compactPlacement === "inline" ? inlineAction : ""}
             .padding(20)
         }${safeArea}
         .navigationTitle("${escapeSwift(screen.title)}")
+        .tint(IntentFormTheme.accent)
     }
 }
 `;
 }
 
-const components = `import SwiftUI
+interface Rgb {
+  r: number;
+  g: number;
+  b: number;
+}
+
+const parseHex = (value: string | undefined, fallback: Rgb): Rgb => {
+  if (typeof value !== "string") return fallback;
+  const hex = value.replace("#", "");
+  const expanded = hex.length === 3 ? hex.split("").map((char) => char + char).join("") : hex;
+  if (!/^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(expanded)) return fallback;
+  return {
+    r: parseInt(expanded.slice(0, 2), 16) / 255,
+    g: parseInt(expanded.slice(2, 4), 16) / 255,
+    b: parseInt(expanded.slice(4, 6), 16) / 255,
+  };
+};
+
+const mix = (a: Rgb, b: Rgb, weight: number): Rgb => ({
+  r: a.r * weight + b.r * (1 - weight),
+  g: a.g * weight + b.g * (1 - weight),
+  b: a.b * weight + b.b * (1 - weight),
+});
+
+const swiftColor = (color: Rgb): string =>
+  `Color(red: ${color.r.toFixed(3)}, green: ${color.g.toFixed(3)}, blue: ${color.b.toFixed(3)})`;
+
+/* Token resolution: the theme is computed from the graph's design tokens, so a
+   token edit deterministically changes the generated Swift on recompile. */
+function componentsSource(ir: PlatformIR): string {
+  const accent = parseHex(ir.tokens.colors["color.accent"], { r: 0.224, g: 0.455, b: 0.38 });
+  const ink = parseHex(ir.tokens.colors["color.ink"], { r: 0.094, g: 0.11, b: 0.102 });
+  const white: Rgb = { r: 1, g: 1, b: 1 };
+  const controlRadius = ir.tokens.radii["radius.control"] ?? 18;
+  const surfaceRadius = ir.tokens.radii["radius.surface"] ?? 28;
+
+  return `import SwiftUI
+
+enum IntentFormTheme {
+    static let accent = ${swiftColor(accent)}
+    static let accentDeep = ${swiftColor(mix(accent, ink, 0.62))}
+    static let accentSoft = ${swiftColor(mix(accent, white, 0.14))}
+    static let controlRadius: CGFloat = ${controlRadius}
+    static let surfaceRadius: CGFloat = ${surfaceRadius}
+}
 
 struct BalanceSummary: View {
     let balance: String
-    var body: some View { VStack(alignment: .leading) { Text("Available balance"); Text(balance).font(.system(size: 36, weight: .bold)); Text("Updated just now").font(.caption) }.frame(maxWidth: .infinity, alignment: .leading).padding(24).foregroundStyle(.white).background(Color(red: 0.09, green: 0.24, blue: 0.20), in: RoundedRectangle(cornerRadius: 28)) }
+    var body: some View { VStack(alignment: .leading) { Text("Available balance"); Text(balance).font(.system(size: 36, weight: .bold)); Text("Updated just now").font(.caption) }.frame(maxWidth: .infinity, alignment: .leading).padding(24).foregroundStyle(.white).background(IntentFormTheme.accentDeep, in: RoundedRectangle(cornerRadius: IntentFormTheme.surfaceRadius)) }
 }
 struct TransactionList: View { var body: some View { VStack { LabeledContent("Riva Studio", value: "−€84.20"); Divider(); LabeledContent("Northline Market", value: "−€32.70") } } }
 struct MoneyInput: View { let label: String; @Binding var amount: String; var body: some View { TextField(label, text: $amount).keyboardType(.decimalPad).textFieldStyle(.roundedBorder) } }
-struct RecipientIdentity: View { let name: String; let handle: String; var body: some View { HStack { Text("MR").font(.caption.bold()).frame(width: 44, height: 44).background(.green.opacity(0.15), in: Circle()); VStack(alignment: .leading) { Text(name).bold(); Text(handle).font(.caption).foregroundStyle(.secondary) } } } }
+struct RecipientIdentity: View { let name: String; let handle: String; var body: some View { HStack { Text("MR").font(.caption.bold()).foregroundStyle(IntentFormTheme.accentDeep).frame(width: 44, height: 44).background(IntentFormTheme.accentSoft, in: Circle()); VStack(alignment: .leading) { Text(name).bold(); Text(handle).font(.caption).foregroundStyle(.secondary) } } } }
 struct StatusMessage: View { let text: String; var body: some View { Text(text).frame(maxWidth: .infinity, alignment: .leading).padding().background(.orange.opacity(0.12)) } }
-struct ReceiptSummary: View { let amount: String; let reference: String; var body: some View { VStack { Text("Payment complete"); Text(amount).font(.largeTitle.bold()); Text(reference).font(.caption) }.frame(maxWidth: .infinity).padding(24).background(.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 28)) } }
+struct ReceiptSummary: View { let amount: String; let reference: String; var body: some View { VStack { Text("Payment complete"); Text(amount).font(.largeTitle.bold()); Text(reference).font(.caption) }.frame(maxWidth: .infinity).padding(24).background(IntentFormTheme.accentSoft, in: RoundedRectangle(cornerRadius: IntentFormTheme.surfaceRadius)) } }
 `;
+}
 
 export class SwiftUICompiler implements CompilerBackend {
   readonly id = "swiftui" as const;
@@ -128,7 +174,7 @@ export class SwiftUICompiler implements CompilerBackend {
   generate(ir: PlatformIR): GeneratedFileSet {
     const files = [
       ...ir.screens.map((screen, index) => ({ path: `Generated/Screens/${swiftIdentifier(screen.id)}.swift`, content: swiftScreen(ir, index) })),
-      { path: "Generated/Components/IntentFormComponents.swift", content: components },
+      { path: "Generated/Components/IntentFormComponents.swift", content: componentsSource(ir) },
     ];
     return { target: this.id, files, fingerprint: fingerprintFiles(files) };
   }

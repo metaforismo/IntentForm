@@ -157,6 +157,40 @@ try {
   console.log("Studio embedded generated React flow: passed");
   console.log("Studio state, device and keyboard command model: passed");
 
+  await page.getByRole("button", { name: "Design canvas" }).click();
+  await page.getByTestId("canvas-viewport").waitFor();
+  if (await page.getByTestId("canvas-node-home.balance").count() !== 1
+    || await page.getByTestId("canvas-node-receipt.summary").count() !== 1) {
+    throw new Error("The board did not render every semantic screen as a frame");
+  }
+
+  await page.getByTestId("canvas-node-payment-request.recipient").click();
+  await page.getByTestId("canvas-node-payment-request.recipient").click({ button: "right" });
+  await page.getByRole("menu", { name: "Layer actions" }).waitFor();
+  await page.getByRole("menuitem", { name: "Duplicate" }).click();
+  await page.getByTestId("layer-payment-request.recipient-copy").waitFor();
+  await page.getByRole("button", { name: "Undo" }).click();
+  await page.getByTestId("layer-payment-request.recipient-copy").waitFor({ state: "detached" });
+
+  await page.getByRole("tab", { name: "Tokens" }).click();
+  const accentHex = page.getByLabel("Hex for color.accent");
+  await accentHex.fill("#7a4b9e");
+  await accentHex.press("Enter");
+  await page.getByRole("tab", { name: "Layers" }).click();
+  const paintedAccent = await page.getByTestId("canvas-node-payment-request.confirm")
+    .locator("> div").first()
+    .evaluate((element) => getComputedStyle(element).backgroundColor);
+  if (paintedAccent !== "rgb(122, 75, 158)") {
+    throw new Error(`Design-token edit did not repaint the board (got ${paintedAccent})`);
+  }
+  await page.getByRole("button", { name: "Undo" }).click();
+
+  await page.getByRole("button", { name: "Toggle preview mode" }).click();
+  await page.getByTestId("canvas-node-payment-request.confirm").click();
+  await page.locator('[data-testid="device-frame"][data-screen-id="receipt"]').waitFor();
+  await page.getByRole("button", { name: "Toggle preview mode" }).click();
+  console.log("Studio board, design tokens and flow preview: passed");
+
   const adaptivePage = await browser.newPage({ viewport: { width: 1100, height: 900 } });
   adaptivePage.setDefaultTimeout(10_000);
   await adaptivePage.goto(origin, { waitUntil: "networkidle" });
