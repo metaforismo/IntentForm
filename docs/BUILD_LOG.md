@@ -31,7 +31,7 @@
 - Removed shared generated-directory coupling from preview sync so React and SwiftUI validation jobs cannot invalidate each other's inputs.
 - Added a production Studio smoke test that exercises the generated flow inside the sandboxed iframe.
 
-Known honest boundary: SwiftUI builds for iOS Simulator, but native screenshot and accessibility-frame capture are not yet implemented.
+Known honest boundary at this checkpoint: SwiftUI built for iOS Simulator, while native render evidence was still pending.
 
 ## 2026-07-14 — Manual semantic canvas
 
@@ -42,4 +42,16 @@ Known honest boundary: SwiftUI builds for iOS Simulator, but native screenshot a
 - Added direct vertical manipulation of primary actions; the gesture produces safe-area placement rather than absolute coordinates.
 - Extended the production smoke test to prove manual canvas edits reach generated React code.
 
-Known honest boundary: this is a finite browser Instant Canvas. Infinite pan, general resize inference, multi-select, native SwiftUI screenshot capture and the desktop shell remain future work.
+Known honest boundary: this is a finite browser Instant Canvas. Infinite pan, general resize inference, multi-select and the desktop shell remain future work.
+
+## 2026-07-14 — Native Simulator evidence
+
+- Added a compiler-authored accessibility identifier for the primary SwiftUI action.
+- Added state-aware SwiftUI rendering so failed-only nodes do not appear in the idle fixture.
+- Removed the duplicated screen title revealed by the first native frame.
+- Launched the generated package in an iPhone 17 Pro Simulator and verified the frame through a browser-visible live stream.
+- Captured screenshot plus accessibility tree from the same foreground preview host.
+- Measured the native application viewport at `402 × 874 pt` and the primary action at `157.3 × 49.3 pt`, fully inside the viewport.
+- Added `capture:swiftui-evidence`, which resolves `intentform.payment-request.confirm`, captures a PNG, hashes it, records bounds and runs the shared rendered verifier.
+
+The measured local verdict is `verified`. Hosted CI still build-verifies SwiftUI but does not yet launch the preview host or capture its accessibility tree.

@@ -23,24 +23,38 @@ const escapeSwift = (value: string): string => value.replaceAll("\\", "\\\\").re
 
 function swiftNode(node: PlatformIRNode): string {
   const label = escapeSwift(node.label);
+  let source: string;
   switch (node.kind) {
     case "balance-summary":
-      return `BalanceSummary(balance: "€8,420.16")`;
+      source = `BalanceSummary(balance: "€8,420.16")`;
+      break;
     case "transaction-list":
-      return `TransactionList()`;
+      source = `TransactionList()`;
+      break;
     case "money-input":
-      return `MoneyInput(label: "${label}", amount: $amount)`;
+      source = `MoneyInput(label: "${label}", amount: $amount)`;
+      break;
     case "recipient-identity":
-      return `RecipientIdentity(name: "Mara Rinaldi", handle: "mara@northline.test")`;
+      source = `RecipientIdentity(name: "Mara Rinaldi", handle: "mara@northline.test")`;
+      break;
     case "primary-action":
-      return `Button("${label}") { events.onConfirm() }\n                    .buttonStyle(.borderedProminent)\n                    .controlSize(.large)\n                    .frame(maxWidth: .infinity)\n                    .accessibilityLabel("${escapeSwift(node.accessibilityLabel)}")`;
+      source = `Button("${label}") { events.onConfirm() }\n                    .buttonStyle(.borderedProminent)\n                    .controlSize(.large)\n                    .frame(maxWidth: .infinity)\n                    .accessibilityLabel("${escapeSwift(node.accessibilityLabel)}")\n                    .accessibilityIdentifier("intentform.${node.id}")`;
+      break;
     case "secondary-action":
-      return `Button("${label}") { events.onCancel() }\n                    .buttonStyle(.bordered)`;
+      source = `Button("${label}") { events.onCancel() }\n                    .buttonStyle(.bordered)`;
+      break;
     case "status-message":
-      return `StatusMessage(text: "${label}")`;
+      source = `StatusMessage(text: "${label}")`;
+      break;
     case "receipt-summary":
-      return `ReceiptSummary(amount: "€120.00", reference: "IF-2048")`;
+      source = `ReceiptSummary(amount: "€120.00", reference: "IF-2048")`;
+      break;
   }
+
+  if (node.visibleStates.length > 0) {
+    return `if ${JSON.stringify(node.visibleStates)}.contains(data.status) {\n                    ${source}\n                }`;
+  }
+  return source;
 }
 
 function swiftScreen(ir: PlatformIR, screenIndex: number): string {
@@ -77,8 +91,6 @@ struct ${name}: View {
                 Text("${escapeSwift(ir.productName)}")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.tint)
-                Text("${escapeSwift(screen.title)}")
-                    .font(.largeTitle.bold())
 ${content}${primary?.compactPlacement === "inline" ? inlineAction : ""}
             }
             .padding(20)

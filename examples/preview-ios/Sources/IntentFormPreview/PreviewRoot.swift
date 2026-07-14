@@ -12,3 +12,7 @@ public struct IntentFormPreviewRoot: View {
         }
     }
 }
+
+#Preview("Payment request · compact") {
+    IntentFormPreviewRoot()
+}

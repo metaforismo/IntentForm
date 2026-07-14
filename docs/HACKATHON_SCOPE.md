@@ -21,12 +21,13 @@ brief -> structured graph -> two deterministic compilers -> real build
 - Semantic diff, generated code, build status, findings and proof report.
 - Browser-based manual semantic canvas with direct action placement, inspector editing and undo/redo.
 - Playwright screenshot, computed-style, bounds and navigation-flow evidence for generated React.
+- Local iOS Simulator screenshot and accessibility-frame evidence for generated SwiftUI.
 - Linux web CI and macOS iOS Simulator build CI.
 
 ## Explicitly deferred
 
 - Expo, Compose, the desktop shell and infinite/freeform canvas.
-- SwiftUI Simulator screenshot capture and cross-platform pixel comparison.
+- Hosted-CI launch of the SwiftUI preview host and cross-platform pixel comparison.
 - Arbitrary source import or round-trip editing.
 - Backend and business-logic generation.
 - Cloud collaboration, marketplace and production runtime.

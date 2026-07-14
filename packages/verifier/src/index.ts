@@ -1,7 +1,7 @@
 import type { PlatformTarget, SemanticInterfaceGraph } from "@intentform/semantic-schema";
 
 export interface Evidence {
-  kind: "viewport" | "node" | "build" | "rule" | "screenshot" | "bounds";
+  kind: "viewport" | "node" | "build" | "rule" | "screenshot" | "bounds" | "accessibility";
   label: string;
   value: string | number | boolean;
 }
@@ -23,7 +23,9 @@ export function verifyRenderedPrimaryAction(
   if (!compact) return [];
 
   const findings: VerificationFinding[] = [];
-  const persistent = observation.position === "fixed" || observation.position === "sticky";
+  const persistent = observation.position === "fixed"
+    || observation.position === "sticky"
+    || observation.position === "safe-area-inset";
   const actionBottom = observation.primaryAction.y + observation.primaryAction.height;
   const insideViewport = observation.primaryAction.x >= 0
     && observation.primaryAction.y >= 0

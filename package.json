@@ -20,7 +20,8 @@
     "verify:react-preview": "pnpm prepare:react-preview && pnpm capture:react-evidence",
     "smoke:studio": "node --experimental-strip-types scripts/smoke-studio.ts",
     "sync:swift-preview": "node --experimental-strip-types scripts/sync-swift-preview.ts",
-    "verify:swiftui": "pnpm sync:swift-preview && node scripts/verify-swiftui.mjs"
+    "verify:swiftui": "pnpm sync:swift-preview && node scripts/verify-swiftui.mjs",
+    "capture:swiftui-evidence": "node --experimental-strip-types scripts/capture-swiftui-evidence.ts"
   },
   "devDependencies": {
     "@types/node": "^25.0.0",

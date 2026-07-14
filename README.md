@@ -23,6 +23,7 @@ This repository is the OpenAI Build Week vertical slice. It intentionally proves
 - Typed repair proposal, semantic diff and independent verification rerun.
 - Hosted-studio-ready Next.js experience across Brief, Graph, Outputs, Verification and Proof Report.
 - Native SwiftUI build harness validated with `xcodebuild` for iOS Simulator.
+- Native Simulator evidence adapter for screenshots, accessibility identifiers and point-accurate action bounds.
 
 ## The proof
 
@@ -60,6 +61,14 @@ pnpm generate:demo
 pnpm verify:react-preview
 pnpm verify:swiftui
 ```
+
+With the generated SwiftUI preview running in a booted Simulator and `serve-sim` exposing its accessibility endpoint:
+
+```bash
+INTENTFORM_SIMULATOR_UDID=<UDID> pnpm capture:swiftui-evidence
+```
+
+This writes a native screenshot and `evidence.json` under `artifacts/swiftui/`. See [docs/NATIVE_EVIDENCE.md](docs/NATIVE_EVIDENCE.md) for the reproducible workflow and its current CI boundary.
 
 Generated evidence is written to `generated/` and excluded from Git because it is reproducible from the canonical graph.
 

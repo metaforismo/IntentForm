@@ -44,6 +44,9 @@ describe("IntentForm proof pipeline", () => {
 
     expect(reactScreen?.content).toContain('className="primary persistent"');
     expect(swiftScreen?.content).toContain(".safeAreaInset(edge: .bottom)");
+    expect(swiftScreen?.content).toContain('.accessibilityIdentifier("intentform.payment-request.confirm")');
+    expect(swiftScreen?.content).toContain('if ["failed"].contains(data.status)');
+    expect(swiftScreen?.content).not.toContain('Text("Request payment")');
     expect(swiftScreen?.content).not.toContain(".position(");
   });
 
@@ -98,6 +101,18 @@ describe("IntentForm proof pipeline", () => {
       primaryAction: { x: 314, y: 329, width: 396, height: 50 },
       position: "static",
       screenshotPath: "artifacts/react/after-1024x768.png",
+    })).toHaveLength(0);
+  });
+
+  it("accepts native safe-area placement measured through accessibility", () => {
+    expect(verifyRenderedPrimaryAction({
+      target: "swiftui",
+      screenId: "payment-request",
+      viewport: { width: 402, height: 874 },
+      primaryAction: { x: 122.33, y: 778.67, width: 157.33, height: 49.33 },
+      position: "safe-area-inset",
+      screenshotPath: "artifacts/swiftui/payment-request-compact.png",
+      graphExpectsPersistent: true,
     })).toHaveLength(0);
   });
 
