@@ -94,4 +94,5 @@ The public macOS run completed on an iPhone 16 Pro Simulator, uploaded the nativ
 - Added validated browser-local draft recovery with safe fallback when storage is invalid or unavailable.
 - Added a persistent workspace-status control and a non-blocking compilation progress indicator.
 - Fixed undo and redo selection reconciliation after a duplicated selected node disappears from the graph.
+- Fixed a Linux Chromium stacking-context difference that allowed the canvas to intercept clicks from the visible Layers search controls.
 - Expanded production browser coverage for command search, focused-input Escape handling, preview mode, layer filtering, duplication/undo, responsive drawers and screenshots at 1440 × 1000 and 1100 × 900.

@@ -527,7 +527,7 @@ export function ManualEditor({
       <aside
         id="editor-structure-panel"
         aria-label="Pages and layers"
-        className={`${mobilePanel === "structure" ? "grid" : "hidden"} ${desktopPanels.structure ? "xl:grid" : "xl:hidden"} absolute inset-y-0 left-0 z-[3] w-[260px] min-h-0 grid-rows-[auto_auto_1fr] border-r border-[#d7dbd8] bg-[#f8f9f7] shadow-[24px_0_52px_-32px_rgba(24,34,28,.32)] xl:static xl:z-auto xl:w-auto xl:shadow-none`}
+        className={`${mobilePanel === "structure" ? "grid" : "hidden"} ${desktopPanels.structure ? "xl:grid" : "xl:hidden"} absolute inset-y-0 left-0 z-[3] w-[260px] min-h-0 grid-rows-[auto_auto_1fr] border-r border-[#d7dbd8] bg-[#f8f9f7] shadow-[24px_0_52px_-32px_rgba(24,34,28,.32)] xl:relative xl:z-[1] xl:w-auto xl:shadow-none`}
       >
         <div className="border-b border-[#dde1de] p-3">
           <div className="flex items-center justify-between">
@@ -764,7 +764,7 @@ export function ManualEditor({
       <aside
         id="editor-inspector-panel"
         aria-label="Design inspector"
-        className={`${mobilePanel === "inspector" ? "block" : "hidden"} ${desktopPanels.inspector ? "xl:block" : "xl:hidden"} absolute inset-y-0 right-0 z-[3] w-[310px] min-h-0 overflow-auto border-l border-[#d7dbd8] bg-[#f8f9f7] text-[#29302c] shadow-[-24px_0_52px_-32px_rgba(24,34,28,.32)] xl:static xl:z-auto xl:w-auto xl:shadow-none`}
+        className={`${mobilePanel === "inspector" ? "block" : "hidden"} ${desktopPanels.inspector ? "xl:block" : "xl:hidden"} absolute inset-y-0 right-0 z-[3] w-[310px] min-h-0 overflow-auto border-l border-[#d7dbd8] bg-[#f8f9f7] text-[#29302c] shadow-[-24px_0_52px_-32px_rgba(24,34,28,.32)] xl:relative xl:z-[1] xl:w-auto xl:shadow-none`}
       >
         <div className="flex h-11 items-center justify-between border-b border-[#dde1de] px-3">
           <div className="flex items-center gap-2"><span className="text-[10px] font-semibold text-[#303632]">Design</span><span className="rounded-md bg-[#e2ebe6] px-1.5 py-0.5 font-mono text-[7px] text-[#356652]">semantic</span></div>
