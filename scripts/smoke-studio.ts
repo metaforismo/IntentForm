@@ -58,6 +58,43 @@ try {
   page.setDefaultTimeout(10_000);
   await page.goto(origin, { waitUntil: "networkidle" });
 
+  await page.keyboard.press("Alt+l");
+  const desktopLayersTrigger = page.getByRole("button", { name: "Open pages and layers" });
+  await desktopLayersTrigger.waitFor();
+  await desktopLayersTrigger.click();
+  await page.getByTestId("layer-payment-request.amount").waitFor();
+  await page.getByRole("button", { name: "Close design inspector" }).click();
+  const desktopInspectorTrigger = page.getByRole("button", { name: "Open design inspector" });
+  await desktopInspectorTrigger.waitFor();
+  await desktopInspectorTrigger.click();
+  await page.getByTestId("semantic-inspector").waitFor();
+
+  if (await page.getByTestId("canvas-node-payment-request.failure").count() !== 0) {
+    throw new Error("Idle canvas rendered a node bound only to the failed visual state");
+  }
+  if (await page.getByTestId("layer-payment-request.failure").getAttribute("data-state-visible") !== "false") {
+    throw new Error("Layers panel did not expose state-bound visibility");
+  }
+  await page.getByLabel("Visual state").selectOption("failed");
+  await page.getByTestId("canvas-node-payment-request.failure").waitFor();
+  await page.getByLabel("Visual state").selectOption("idle");
+  await page.getByTestId("canvas-node-payment-request.failure").waitFor({ state: "detached" });
+
+  await page.getByLabel("Preview device").selectOption("regular-phone");
+  if (await page.getByTestId("device-frame").getAttribute("data-breakpoint") !== "regular") {
+    throw new Error("Device profile did not switch the semantic preview breakpoint");
+  }
+  await page.keyboard.press("h");
+  if (await page.getByRole("button", { name: "Pan", exact: true }).getAttribute("aria-pressed") !== "true") {
+    throw new Error("Hand-tool keyboard shortcut did not update the active tool");
+  }
+  await page.keyboard.press("v");
+  await page.keyboard.type("?");
+  await page.getByRole("region", { name: "Keyboard shortcuts" }).waitFor();
+  await page.keyboard.press("Escape");
+  await page.getByRole("region", { name: "Keyboard shortcuts" }).waitFor({ state: "detached" });
+  await page.getByLabel("Preview device").selectOption("compact-phone");
+
   await page.getByTestId("layer-payment-request.confirm").click();
   const action = page.getByTestId("canvas-node-payment-request.confirm");
   const bounds = await action.boundingBox();
@@ -68,7 +105,7 @@ try {
   await page.mouse.down();
   for (const delta of [8, 18, 30, 44, 60, 76]) await page.mouse.move(x, y + delta);
   await page.mouse.up();
-  await page.getByText("Bottom safe area · semantic", { exact: true }).waitFor();
+  await page.getByText("Bottom safe area · compact", { exact: true }).waitFor();
 
   const label = page.getByLabel("Label", { exact: true });
   await label.fill("Send verified request");
@@ -83,6 +120,7 @@ try {
   await preview.getByRole("button", { name: "Confirm request" }).click();
   await preview.getByRole("heading", { name: "Request sent" }).waitFor();
   console.log("Studio embedded generated React flow: passed");
+  console.log("Studio state, device and keyboard command model: passed");
 
   const adaptivePage = await browser.newPage({ viewport: { width: 1100, height: 900 } });
   adaptivePage.setDefaultTimeout(10_000);
@@ -91,6 +129,10 @@ try {
   const inspectorTrigger = adaptivePage.getByRole("button", { name: "Open design inspector" });
   await layersTrigger.waitFor();
   await inspectorTrigger.waitFor();
+  const contextBar = await adaptivePage.getByLabel("Preview device").boundingBox();
+  if (!contextBar || contextBar.y + contextBar.height > 900) {
+    throw new Error("Adaptive device and state controls are outside the visible workspace");
+  }
   await layersTrigger.click();
   await adaptivePage.locator("#editor-structure-panel").waitFor();
   await adaptivePage.getByTestId("layer-payment-request.confirm").click();

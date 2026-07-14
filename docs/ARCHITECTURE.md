@@ -45,7 +45,9 @@ Each backend implements capabilities, lowering, file generation and diagnostics.
 
 ## Manual canvas boundary
 
-The browser Studio now exposes the graph through a direct semantic editor: pages and layers, selectable canvas nodes, contextual content/layout/style controls, component insertion, ordering and undo/redo. Dragging a primary action vertically does not persist a `y` coordinate; crossing the gesture threshold changes compact placement between the semantic stack and `persistent-bottom` safe-area anchoring. Every accepted edit is parsed again before it becomes canonical and immediately changes deterministic compiler output.
+The browser Studio now exposes the graph through a direct semantic editor: pages and layers, selectable canvas nodes, contextual content/layout/style controls, component insertion, ordering and undo/redo. The workspace panels collapse on wide viewports and become scoped drawers when space is tighter, without removing graph operations from keyboard navigation.
+
+The canvas resolves node state bindings against the selected visual fixture before rendering, so a failed-only recovery message never leaks into the idle preview. Compact and regular device profiles select the corresponding placement relation. Dragging a primary action vertically does not persist a `y` coordinate; crossing the gesture threshold changes the currently previewed breakpoint between the semantic stack and `persistent-bottom` safe-area anchoring. Every accepted edit is parsed again before it becomes canonical and immediately changes deterministic compiler output.
 
 This is an Instant Canvas, not a native rendering claim. The checked-in runnable React artifact remains the golden sample, while SwiftUI Simulator rendering remains the authority for native output.
 

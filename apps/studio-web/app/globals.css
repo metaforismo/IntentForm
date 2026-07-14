@@ -16,7 +16,7 @@
 
 * { box-sizing: border-box; }
 
-html { background: var(--canvas); }
+html { background: var(--canvas); scroll-behavior: smooth; }
 
 body {
   margin: 0;
@@ -25,7 +25,7 @@ body {
   font-family: var(--font-geist-sans), sans-serif;
 }
 
-button, textarea { font: inherit; }
+button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 
 ::selection { color: #fff; background: var(--accent); }
@@ -43,6 +43,23 @@ button { cursor: pointer; }
     linear-gradient(rgba(74, 84, 78, 0.055) 1px, transparent 1px),
     linear-gradient(90deg, rgba(74, 84, 78, 0.055) 1px, transparent 1px);
   background-size: 24px 24px;
+  overscroll-behavior: contain;
+  scrollbar-color: #9da59f transparent;
+  scrollbar-width: thin;
+}
+
+.studio-grain {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(255,255,255,.78), transparent 28rem),
+    radial-gradient(circle at 88% 92%, rgba(57,116,97,.07), transparent 34rem),
+    var(--canvas);
+}
+
+.editor-shell button,
+.editor-shell input,
+.editor-shell select,
+.editor-shell [role="button"] {
+  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease, opacity 160ms ease, transform 160ms ease;
 }
 
 .editor-shell button:focus-visible,

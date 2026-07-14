@@ -259,55 +259,55 @@ export function Studio() {
   const errorFinding = verification.findings.find((finding) => finding.severity === "error");
 
   return (
-    <main className="studio-grain min-h-[100dvh] px-3 py-3 text-[var(--ink)] md:px-5 md:py-5">
-      <div className="mx-auto grid min-h-[calc(100dvh-40px)] max-w-[1500px] overflow-hidden rounded-[30px] border border-white/70 bg-[var(--surface)] shadow-[0_32px_90px_-46px_rgba(21,36,29,.32)] md:grid-cols-[238px_1fr]">
-        <aside className="flex flex-col border-b border-[var(--line)] bg-[#eef1ed] p-4 md:border-r md:border-b-0 md:p-5">
-          <div className="flex items-center gap-3 px-1 py-2">
+    <main className="studio-grain min-h-[100dvh] p-2 text-[var(--ink)]">
+      <div className="mx-auto grid min-h-[calc(100dvh-16px)] max-w-[1680px] overflow-hidden rounded-[18px] border border-white/70 bg-[var(--surface)] shadow-[0_32px_90px_-46px_rgba(21,36,29,.32)] md:grid-cols-[92px_1fr]">
+        <aside className="flex flex-col border-b border-[var(--line)] bg-[#eef1ed] p-2 md:border-r md:border-b-0">
+          <div className="flex items-center gap-3 px-1 py-2 md:flex-col md:gap-1">
             <div className="grid size-9 place-items-center rounded-xl bg-[#183b31] text-white shadow-[inset_0_1px_0_rgba(255,255,255,.16)]"><BracketsCurly size={19} weight="bold" /></div>
-            <div><strong className="block tracking-[-.03em]">IntentForm</strong><span className="text-[10px] text-[var(--muted)]">Build Week · 0.1</span></div>
+            <div className="md:text-center"><strong className="block tracking-[-.03em] md:text-[10px]">IntentForm</strong><span className="text-[10px] text-[var(--muted)] md:hidden">Build Week · 0.1</span></div>
           </div>
 
-          <nav aria-label="Workflow" className="mt-5 grid grid-cols-6 gap-1 md:mt-10 md:grid-cols-1 md:gap-1.5">
-            {stages.map((item, index) => {
+          <nav aria-label="Workflow" className="mt-3 grid grid-cols-6 gap-1 md:mt-7 md:grid-cols-1 md:gap-1.5">
+            {stages.map((item) => {
               const Icon = item.icon;
               const active = stage === item.id;
               return (
                 <button
                   key={item.id}
                   type="button"
+                  title={item.label}
                   onClick={() => setStage(item.id)}
-                  className={`group flex min-h-11 items-center justify-center gap-3 rounded-xl px-2 text-left text-xs font-medium transition-[background,color,transform] duration-300 active:translate-y-px md:justify-start md:px-3 ${active ? "bg-white text-[var(--ink)] shadow-[0_10px_24px_-18px_rgba(21,36,29,.45)]" : "text-[var(--muted)] hover:bg-white/60 hover:text-[var(--ink)]"}`}
+                  className={`group flex min-h-11 items-center justify-center gap-3 rounded-xl px-2 text-left text-xs font-medium transition-[background,color,transform] duration-200 active:scale-[.98] md:min-h-[58px] md:flex-col md:gap-1 md:px-1 md:py-2 ${active ? "bg-white text-[var(--ink)] shadow-[0_10px_24px_-18px_rgba(21,36,29,.45)]" : "text-[var(--muted)] hover:bg-white/60 hover:text-[var(--ink)]"}`}
                 >
-                  <span className={`hidden size-5 place-items-center rounded-md font-mono text-[9px] md:grid ${active ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]" : "bg-[#e3e7e3]"}`}>{index + 1}</span>
                   <Icon size={17} weight={active ? "fill" : "regular"} />
-                  <span className="hidden md:inline">{item.label}</span>
+                  <span className="hidden max-w-[72px] text-center text-[9px] leading-[1.15] md:block">{item.label}</span>
                 </button>
               );
             })}
           </nav>
 
-          <div className="mt-auto hidden border-t border-[var(--line)] pt-4 md:block">
-            <ModeBadge mode={mode} model={model} />
-            <p className="mt-3 text-[11px] leading-relaxed text-[var(--muted)]">The graph is the source of truth. Generated code is readable, deterministic and disposable.</p>
+          <div className="mt-auto hidden border-t border-[var(--line)] px-1 pt-3 md:block">
+            <div className="flex items-center justify-center gap-1.5 text-[8px] font-semibold text-[var(--muted)]"><span className={`status-breathe size-1.5 rounded-full ${mode === "live" ? "bg-[var(--accent)]" : "bg-amber-500"}`} />{mode === "live" ? "Live" : "Replay"}</div>
           </div>
         </aside>
 
         <section className="min-w-0">
-          <header className="flex min-h-20 flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] px-5 py-4 md:px-8">
+          <header className="flex min-h-[68px] flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] px-4 py-3 md:px-5">
             <div>
-              <span className="text-[10px] font-semibold uppercase tracking-[.15em] text-[var(--accent)]">{stage === "canvas" ? "Semantic design workspace" : "Semantic interface compiler"}</span>
-              <h1 className="mt-1 text-xl font-semibold tracking-[-.045em] md:text-2xl">{stage === "canvas" ? "Manipulate intent. Compile relationships." : "Product intent, rendered as evidence."}</h1>
+              <span className="font-mono text-[9px] text-[var(--muted)]">{graph.product.name} / payment-flow.intentform</span>
+              <h1 className="mt-0.5 text-base font-semibold tracking-[-.035em]">{stages.find((item) => item.id === stage)?.label}</h1>
             </div>
             <div className="flex items-center gap-2">
-              <div role="status" aria-live="polite" className="hidden rounded-full border border-[var(--line)] bg-white px-3 py-2 text-[10px] text-[var(--muted)] lg:block">{notice}</div>
+              <div className="hidden xl:block"><ModeBadge mode={mode} model={model} /></div>
+              <div role="status" aria-live="polite" className="hidden max-w-[360px] truncate rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-[9px] text-[var(--muted)] 2xl:block">{notice}</div>
               <button
                 type="button"
                 onClick={compileBrief}
                 disabled={isPending}
-                className="shimmer inline-flex min-h-10 items-center gap-2 rounded-xl bg-[var(--accent)] px-4 text-xs font-semibold text-white transition-transform active:translate-y-px disabled:cursor-wait disabled:opacity-70"
+                className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-[var(--accent)] px-3.5 text-[10px] font-semibold text-white transition-[transform,background] hover:bg-[var(--accent-dark)] active:scale-[.98] disabled:cursor-wait disabled:opacity-70"
               >
                 {isPending ? <CircleNotch className="animate-spin" size={15} /> : <Play size={15} weight="fill" />}
-                Compile intent
+                {stage === "canvas" ? "Recompile" : "Compile intent"}
               </button>
             </div>
           </header>
@@ -319,7 +319,7 @@ export function Studio() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ type: "spring", stiffness: 120, damping: 20 }}
-              className={stage === "canvas" ? "p-3 md:p-4" : "p-5 md:p-8"}
+              className={stage === "canvas" ? "p-2" : "p-5 md:p-8"}
             >
               {stage === "canvas" ? (
                 <ManualEditor

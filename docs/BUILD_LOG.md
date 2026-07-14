@@ -73,3 +73,14 @@ The public macOS run completed on an iPhone 16 Pro Simulator, uploaded the nativ
 - Added toolbar triggers and scoped overlay drawers so structure and semantic properties remain editable without compressing the device canvas.
 - Kept the full three-pane layout unchanged on wide desktops and removed closed drawer controls from keyboard navigation.
 - Extended the production browser smoke test to select a semantic layer and open its inspector at 1100 × 900.
+
+## 2026-07-14 — Workspace interaction model
+
+- Replaced the nested dashboard treatment with an immersive editor rail and a canvas-dominant workspace.
+- Used Penpot's public [workspace documentation](https://help.penpot.app/user-guide/first-steps/the-interface/) and [source structure](https://github.com/penpot/penpot/tree/develop/frontend/src/app/main/ui/workspace) as ergonomic references for collapsible panels, command-driven tools and a persistent viewport; no Penpot code was copied.
+- Added real wide-screen panel collapse and narrow-screen drawers without leaving empty grid columns.
+- Added compact (`375 × 667`) and regular (`402 × 874`) device profiles; the Inspector and direct drag gesture edit the active breakpoint.
+- Added visual-state selection and state-aware node rendering, fixing failed-only content appearing in the idle canvas.
+- Added fit-to-canvas, bounded zoom, Select/Hand commands, undo/redo and panel keyboard shortcuts with a discoverable shortcut sheet.
+- Fixed a CSS Grid min-content overflow that pushed Device/State/Zoom controls below the visible 1100 × 900 workspace.
+- Extended the production smoke test across state visibility, breakpoint switching, keyboard commands, desktop focus mode and adaptive control reachability.
