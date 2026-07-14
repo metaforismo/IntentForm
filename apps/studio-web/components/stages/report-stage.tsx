@@ -36,6 +36,8 @@ export function ReportStage({
   exportGraph,
   onOpenVerify,
 }: ReportStageProps) {
+  const blockingFindings = verification.findings.filter((finding) => finding.severity === "error");
+  const buildPending = verification.scenario.buildStatus === "not-run";
   const steps = [
     {
       label: "Graph validated",
@@ -43,21 +45,29 @@ export function ReportStage({
       icon: TreeStructure,
     },
     {
-      label: "React compiled",
-      detail: "Deterministic compiler output, byte-stable across runs",
+      label: "React source generated",
+      detail: "Deterministic source output, byte-stable across runs",
       chip: reactOutput.fingerprint,
       icon: Code,
     },
     {
-      label: "SwiftUI compiled",
-      detail: "Deterministic compiler output, byte-stable across runs",
+      label: "SwiftUI source generated",
+      detail: "Deterministic source output, byte-stable across runs",
       chip: swiftOutput.fingerprint,
       icon: DeviceMobile,
     },
     {
-      label: `${scenario.label} verified`,
-      detail: verification.passed ? "No blocking findings remain" : `${verification.findings.length} findings remain`,
-      chip: verification.passed ? "PASS" : `${verification.findings.length} OPEN`,
+      label: verification.passed ? `${scenario.label} verified` : `${scenario.label} verification incomplete`,
+      detail: verification.passed
+        ? "Current build evidence exists and no blocking findings remain"
+        : buildPending
+          ? blockingFindings.length > 0
+            ? `Build not run; ${blockingFindings.length} blocking findings remain`
+            : "Build evidence has not run for the current graph"
+          : `${verification.findings.length} findings remain`,
+      chip: verification.passed
+        ? "PASS"
+        : buildPending && blockingFindings.length === 0 ? "NOT RUN" : `${verification.findings.length} OPEN`,
       icon: ShieldCheck,
     },
   ];
@@ -67,7 +77,13 @@ export function ReportStage({
       <div>
         <span className="font-mono text-[10px] text-[var(--accent)]">PROOF REPORT</span>
         <h2 className="mt-3 max-w-[700px] text-3xl font-semibold tracking-[-.05em] md:text-4xl">
-          {changes.length === 0 ? "The intent is compiled and verified." : "The intent survived two compilers and one repair."}
+          {verification.passed
+            ? changes.length === 0
+              ? "The current SwiftUI output is built and verified."
+              : "The repaired SwiftUI output is built and verified."
+            : changes.length === 0
+              ? "Source generated. Build evidence is still pending."
+              : "The repair changed both outputs. Verification is still pending."}
         </h2>
         <div className="mt-8">
           {steps.map((item, index) => {

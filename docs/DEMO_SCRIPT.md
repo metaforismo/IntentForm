@@ -1,31 +1,31 @@
-# Demo Script — maximum 3:00
+# Demo Script — target 2:45, hard maximum 3:00
 
-## 0:00–0:20 — Problem
+Use an English voiceover. Record only the current deployed revision after the clean-browser gate passes. Any cut over a native build must say **“Build time shortened; evidence captured from this revision.”** Do not show private Devpost pages, API keys, local planning files or third-party music/trademarks.
+
+## 0:00–0:15 — Problem
 
 “Prompt-to-code can generate an interface, but the product intent disappears inside unrelated files. A responsive change becomes a rewrite on every platform.”
 
-## 0:20–0:40 — Thesis
+## 0:15–0:35 — Thesis and GPT-5.6
 
-Show Brief and Graph. “IntentForm keeps the interface as a validated semantic graph. GPT-5.6 interprets intent; deterministic compilers generate code.”
+Show Brief, the Replay badge and Graph. “IntentForm keeps the interface as a validated semantic graph. GPT-5.6 interprets briefs, scoped edits and repair intent; deterministic compilers—not the model—generate React and SwiftUI. This public demo uses the free deterministic replay path and labels it honestly.”
 
-## 0:40–1:10 — Two outputs
+## 0:35–1:05 — Direct semantic manipulation
 
-Compile the sample. Show the same payment request in React and readable SwiftUI. Point to fingerprints and native build status.
+Open Design, show the three-screen flow, switch compact/regular, edit the primary action to “Send verified request,” then drag it across the compact safe-area threshold. Point out that the diff stores `persistent-bottom`, not a device coordinate.
 
-## 1:10–1:40 — Semantic change
+## 1:05–1:35 — Active output
 
-Show the compact placement relation and semantic diff. Explain that no device coordinate is stored.
+Open Native outputs. Point to the React source fingerprint and the active compiled preview's matching fingerprint. Click “Send verified request” in the preview and show navigation to Request sent. Briefly show readable SwiftUI containing the safe-area relation.
 
-## 1:40–2:15 — Proof loop
+## 1:35–2:05 — Evidence without overclaiming
 
-Run verification. Show the compact viewport, inline placement and violated reachability intent. Apply repair, rebuild and rerun. Show the finding as verified.
+Open Verification and Proof report. “Studio intentionally says build evidence pending: generating source is not a build.” Cut to the current React evidence result and the native Simulator screenshot/accessibility bounds produced by `pnpm verify:react-preview` and `pnpm verify:swiftui-render`. Label the native time cut.
 
-## 2:15–2:40 — Code and determinism
+## 2:05–2:30 — Codex contribution and reliability
 
-Show React persistent behavior and SwiftUI `.safeAreaInset`. Show schema validation and golden test result.
+Show the repository and final checks. “Codex accelerated the schema, compiler backends, editor, native harness, security review and test matrix. Human decisions kept the graph canonical, code generation deterministic, proof fail-closed and the public deployment replay-only.” Show 63 tests and the seven named browser scenarios passing.
 
-## 2:40–3:00 — Tools and future
+## 2:30–2:45 — Close
 
-“Codex built and tested the repository. GPT-5.6 interprets and judges, but never replaces the compilers. Next, the same graph powers Expo Adaptive and direct semantic manipulation.”
-
-Close: **“IntentForm does not translate pixels. It preserves product intent.”**
+“IntentForm does not translate pixels. It preserves product intent—across platforms, code and proof.”

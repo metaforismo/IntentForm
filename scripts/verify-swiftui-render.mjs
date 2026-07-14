@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const root = process.cwd();
@@ -9,6 +9,7 @@ const derivedData = join(hostRoot, ".build/ci-derived");
 const appPath = join(derivedData, "Build/Products/Debug-iphonesimulator/IntentFormNativePreview.app");
 const bundleId = "dev.intentform.native-preview";
 const serveSim = join(root, "node_modules/.bin/serve-sim");
+const contentSize = process.env.INTENTFORM_NATIVE_CONTENT_SIZE ?? "medium";
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -48,26 +49,67 @@ function selectSimulator() {
   return selected;
 }
 
-async function waitForAccessibility(axUrl) {
-  for (let attempt = 0; attempt < 12; attempt += 1) {
+async function waitForAccessibility(axUrl, simulator) {
+  let lastTree = [];
+  let dismissedVoiceOverIntro = false;
+  for (let attempt = 0; attempt < 24; attempt += 1) {
     try {
       const response = await fetch(axUrl, { signal: AbortSignal.timeout(15_000) });
       if (response.ok) {
         const tree = await response.json();
+        lastTree = tree;
         const serialized = JSON.stringify(tree);
         if (serialized.includes("intentform.payment-request.confirm")) return;
+        if (!dismissedVoiceOverIntro && serialized.includes("VoiceOver")) {
+          const nodes = [];
+          const collect = (items) => {
+            for (const item of items) {
+              nodes.push(item);
+              collect(item.children ?? []);
+            }
+          };
+          collect(tree);
+          const app = nodes.find((node) => node.type === "Application");
+          const ok = nodes.find((node) => node.type === "Button" && node.AXLabel === "OK");
+          if (app?.frame && ok?.frame) {
+            const x = (ok.frame.x + ok.frame.width / 2) / app.frame.width;
+            const y = (ok.frame.y + ok.frame.height / 2) / app.frame.height;
+            run(serveSim, ["tap", String(x), String(y), "-d", simulator]);
+            run(serveSim, ["tap", String(x), String(y), "-d", simulator]);
+            run(serveSim, ["tap", String(x), String(y), "-d", simulator]);
+            dismissedVoiceOverIntro = true;
+          }
+        }
       }
     } catch {
       // The helper or application is still becoming ready.
     }
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
-  throw new Error("Native preview did not expose the semantic primary action through accessibility.");
+  const identifiers = [];
+  const summary = [];
+  const visit = (nodes) => {
+    for (const node of nodes) {
+      if (node.AXUniqueId) identifiers.push(node.AXUniqueId);
+      if (summary.length < 30 && (node.type || node.AXLabel || node.AXValue)) {
+        summary.push({ type: node.type, label: node.AXLabel, value: node.AXValue, frame: node.frame });
+      }
+      visit(node.children ?? []);
+    }
+  };
+  visit(lastTree);
+  const diagnosticRoot = join(root, "artifacts/swiftui");
+  mkdirSync(diagnosticRoot, { recursive: true });
+  writeFileSync(join(diagnosticRoot, "accessibility-diagnostic.json"), `${JSON.stringify(lastTree, null, 2)}\n`, "utf8");
+  tryRun("xcrun", ["simctl", "io", simulator, "screenshot", join(diagnosticRoot, `accessibility-diagnostic-${Date.now()}.png`)]);
+  throw new Error(`Native preview did not expose the semantic primary action through accessibility. Observed identifiers: ${identifiers.join(", ") || "none"}. Tree summary: ${JSON.stringify(summary)}.`);
 }
 
 const simulator = selectSimulator();
 const wasBooted = simulator.state === "Booted";
 let helperStarted = false;
+let voiceOverWasOn = false;
+let previousContentSize = "medium";
 
 console.log(`Native evidence Simulator: ${simulator.name} · ${simulator.runtime} · ${simulator.udid}`);
 
@@ -75,7 +117,10 @@ try {
   if (!wasBooted) run("xcrun", ["simctl", "boot", simulator.udid]);
   run("xcrun", ["simctl", "bootstatus", simulator.udid, "-b"]);
   run("xcrun", ["simctl", "ui", simulator.udid, "appearance", "light"]);
-  run("xcrun", ["simctl", "ui", simulator.udid, "content_size", "medium"]);
+  previousContentSize = run(serveSim, ["ui", "text-size", "-d", simulator.udid], { capture: true }) || "medium";
+  run(serveSim, ["ui", "text-size", contentSize, "-d", simulator.udid]);
+  voiceOverWasOn = run(serveSim, ["ui", "voiceover", "-d", simulator.udid], { capture: true }) === "on";
+  if (!voiceOverWasOn) run(serveSim, ["ui", "voiceover", "on", "-d", simulator.udid]);
 
   run(process.execPath, ["--experimental-strip-types", join(root, "scripts/sync-swift-preview.ts")]);
   run("xcodebuild", [
@@ -98,7 +143,9 @@ try {
   const streamUrl = new URL(helper.streamUrl);
   const axUrl = new URL(streamUrl.pathname.replace(/stream\.mjpeg$/, "ax"), streamUrl.origin).href;
   console.log(`Native accessibility endpoint: ${axUrl}`);
-  await waitForAccessibility(axUrl);
+  await waitForAccessibility(axUrl, simulator.udid);
+  run(serveSim, ["ui", "voiceover", "off", "-d", simulator.udid]);
+  await waitForAccessibility(axUrl, simulator.udid);
 
   run(process.execPath, ["--experimental-strip-types", join(root, "scripts/capture-swiftui-evidence.ts")], {
     env: {
@@ -110,5 +157,7 @@ try {
 } finally {
   if (helperStarted) tryRun(serveSim, ["--kill", simulator.udid]);
   tryRun("xcrun", ["simctl", "terminate", simulator.udid, bundleId]);
+  tryRun(serveSim, ["ui", "voiceover", voiceOverWasOn ? "on" : "off", "-d", simulator.udid]);
+  tryRun(serveSim, ["ui", "text-size", previousContentSize, "-d", simulator.udid]);
   if (!wasBooted) tryRun("xcrun", ["simctl", "shutdown", simulator.udid]);
 }

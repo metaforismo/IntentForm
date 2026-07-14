@@ -42,6 +42,7 @@ describe("IntentForm agent project store", () => {
     expect(summary.screens.map((screen) => screen.id)).toEqual(["home", "payment-request", "receipt"]);
     expect(summary.screens[1]?.nodes.map((node) => node.id)).toContain("payment-request.confirm");
     expect(summary.outputs.react).toBe(compileReact(demoGraph).fingerprint);
+    expect(summary.verification.buildStatus).toBe("not-run");
     expect(summary.verification.passed).toBe(false);
   });
 
@@ -54,7 +55,11 @@ describe("IntentForm agent project store", () => {
     expect(result.changes).toEqual([
       expect.objectContaining({ path: "payment-request.confirm.layout.placement" }),
     ]);
-    expect(result.verification.passed).toBe(true);
+    expect(result.verification.buildStatus).toBe("not-run");
+    expect(result.verification.passed).toBe(false);
+    expect(result.verification.findings).toContainEqual(expect.objectContaining({
+      id: "swiftui.build.not-run",
+    }));
     expect(result.revision?.reason).toContain("reachable");
     expect(projectRevisions(dir).revisions).toHaveLength(1);
   });
@@ -118,8 +123,15 @@ describe("IntentForm agent project store", () => {
   });
 
   it("verifies scenarios independently of generation", () => {
-    expect(verifyProject(dir, "compact").passed).toBe(false);
-    expect(verifyProject(dir, "regular").passed).toBe(true);
+    const compact = verifyProject(dir, "compact");
+    const regular = verifyProject(dir, "regular");
+    expect(compact.passed).toBe(false);
+    expect(compact.findings.some((finding) => finding.id.endsWith("primary.compact-reachability"))).toBe(true);
+    expect(regular.passed).toBe(false);
+    expect(regular.buildStatus).toBe("not-run");
+    expect(regular.findings).toEqual([
+      expect.objectContaining({ id: "swiftui.build.not-run" }),
+    ]);
   });
 
   it("compiles deterministically and can emit files to disk", () => {

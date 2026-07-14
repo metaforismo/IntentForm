@@ -35,6 +35,17 @@ Run the complete browser suite against a deployed URL instead of starting a loca
 STUDIO_ORIGIN=https://your-deployment.example pnpm smoke:studio
 ```
 
-The gate exercises the semantic canvas, fixture editing, shared device verification, generated React flow, flow editing, adaptive panels and replay disclosure from a clean browser context.
+The seven isolated scenarios exercise the semantic canvas, fixture editing, active React flow, keyboard navigation, adaptive and compact layouts, reduced motion, slow/failed request recovery, direct routes, refresh and invalid inputs from fresh browser contexts. They fail on unexpected console errors, page errors or failed requests and verify the production CSP/security headers. On failure, named screenshots and a Playwright trace are written under `output/playwright/failures/`.
 
 Before marking the submission checklist complete, confirm that the URL returns the Studio without an SSO redirect. Deployment protection must be changed only for the IntentForm project and only with explicit owner approval.
+
+Current production target: [intentform-metaforismos-projects.vercel.app](https://intentform-metaforismos-projects.vercel.app). At the latest verified checkpoint it returned a Vercel team-SSO redirect, so the public-access checkbox remains open.
+
+After any protection change, verify all of the following from a clean browser and the exact deployed revision:
+
+```bash
+curl -I https://intentform-metaforismos-projects.vercel.app
+STUDIO_ORIGIN=https://intentform-metaforismos-projects.vercel.app pnpm smoke:studio
+```
+
+The first response must reach IntentForm rather than `vercel.com/sso-api`; the second command must pass all seven scenarios with no unexpected browser errors. Keep `OPENAI_API_KEY` unset for the public replay deployment.

@@ -122,7 +122,10 @@ export const demoGraph: SemanticInterfaceGraph = parseGraph({
   contracts: [
     {
       screenId: "home",
-      data: [{ name: "balance", type: "money", required: true }],
+      data: [
+        { name: "balance", type: "money", required: true },
+        { name: "activitySummary", type: "string", required: true },
+      ],
       events: [{ name: "onRequestPayment" }],
       visualStates: ["idle", "loading"],
       fixtures: ["home.idle"],
@@ -132,6 +135,7 @@ export const demoGraph: SemanticInterfaceGraph = parseGraph({
       data: [
         { name: "amount", type: "money", required: true },
         { name: "recipientName", type: "string", required: true },
+        { name: "recipientHandle", type: "string", required: true },
         { name: "status", type: "status", required: true },
       ],
       events: [{ name: "onConfirm" }, { name: "onCancel" }, { name: "onRetry" }],
@@ -140,16 +144,19 @@ export const demoGraph: SemanticInterfaceGraph = parseGraph({
     },
     {
       screenId: "receipt",
-      data: [{ name: "reference", type: "string", required: true }],
+      data: [
+        { name: "reference", type: "string", required: true },
+        { name: "amount", type: "money", required: true },
+      ],
       events: [{ name: "onDone" }],
       visualStates: ["completed"],
       fixtures: ["receipt.completed"],
     },
   ],
   fixtures: [
-    { id: "home.idle", screenId: "home", state: "idle", data: { balance: "8420.16" } },
-    { id: "payment-request.idle", screenId: "payment-request", state: "idle", data: { amount: "120.00", recipientName: "Mara Rinaldi", status: "idle" } },
-    { id: "payment-request.failed", screenId: "payment-request", state: "failed", data: { amount: "120.00", recipientName: "Mara Rinaldi", status: "failed" } },
-    { id: "receipt.completed", screenId: "receipt", state: "completed", data: { reference: "IF-2048" } },
+    { id: "home.idle", screenId: "home", state: "idle", data: { balance: "8420.16", activitySummary: "Riva Studio −84.20 · Northline Market −32.70" } },
+    { id: "payment-request.idle", screenId: "payment-request", state: "idle", data: { amount: "120.00", recipientName: "Mara Rinaldi", recipientHandle: "mara@northline.test", status: "idle" } },
+    { id: "payment-request.failed", screenId: "payment-request", state: "failed", data: { amount: "120.00", recipientName: "Mara Rinaldi", recipientHandle: "mara@northline.test", status: "failed" } },
+    { id: "receipt.completed", screenId: "receipt", state: "completed", data: { reference: "IF-2048", amount: "120.00" } },
   ],
 });

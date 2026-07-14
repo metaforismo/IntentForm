@@ -3,7 +3,7 @@
 import { DeviceMobile } from "@phosphor-icons/react";
 import type { SemanticInterfaceGraph } from "@intentform/semantic-schema";
 import { NodePreview } from "../editor/node-preview";
-import { fixtureFor, isNodeVisible } from "../editor/support";
+import { deviceProfiles, fixtureFor, isNodeVisible } from "../editor/support";
 
 /* A single scaled-down frame that reuses the canvas node renderer, so every
    preview in the product draws from one source of truth. */
@@ -11,8 +11,8 @@ export function PhonePreview({ graph, selectedScreen }: { graph: SemanticInterfa
   const screen = graph.screens.find((item) => item.id === selectedScreen) ?? graph.screens[0];
   if (!screen) return null;
   const scale = 0.68;
-  const width = 375;
-  const height = 700;
+  const profile = deviceProfiles.find((item) => item.id === "compact-phone") ?? deviceProfiles[0]!;
+  const { width, height } = profile;
   const nodes = screen.nodes.filter((node) => isNodeVisible(node, "idle"));
   const fixture = fixtureFor(graph, screen.id, "idle");
   return (
@@ -33,7 +33,7 @@ export function PhonePreview({ graph, selectedScreen }: { graph: SemanticInterfa
           <h3 className="mb-6 mt-1.5 text-[27px] font-semibold leading-[1.05] tracking-[-.045em]">{screen.title}</h3>
           <div className="flex min-h-0 flex-1 flex-col" style={{ gap: 18 }}>
             {nodes.map((node) => (
-              <div key={node.id} className={node.kind === "primary-action" && node.layout.placement?.compact === "persistent-bottom" ? "mt-auto" : ""}>
+              <div key={node.id} className={node.kind === "primary-action" && node.layout.placement?.[profile.breakpoint] === "persistent-bottom" ? "mt-auto" : ""}>
                 <NodePreview node={node} graph={graph} fixture={fixture} state="idle" />
               </div>
             ))}
@@ -42,7 +42,7 @@ export function PhonePreview({ graph, selectedScreen }: { graph: SemanticInterfa
         </div>
       </div>
       <div className="absolute bottom-4 left-4 flex items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--float)] px-3 py-1.5 text-[10px] font-medium text-[var(--muted)] backdrop-blur-xl">
-        <DeviceMobile size={13} /> 375 × 667 · Compact
+        <DeviceMobile size={13} /> {profile.detail} · {profile.breakpoint === "compact" ? "Compact" : "Regular"}
       </div>
     </div>
   );

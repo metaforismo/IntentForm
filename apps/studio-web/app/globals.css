@@ -116,6 +116,17 @@ body {
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible,
+[role="menuitem"]:focus-visible,
+[role="separator"]:focus-visible {
+  outline: 2px solid #1769ce;
+  outline-offset: 2px;
+}
+
 ::selection { color: #fff; background: var(--accent); }
 
 .code-scroll { scrollbar-width: thin; scrollbar-color: #52635b transparent; }
@@ -216,6 +227,52 @@ button { cursor: pointer; }
 .select-control:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 14%, transparent);
+}
+
+/* Sandboxed active-graph preview. Every selector is scoped so the generated
+   product surface cannot leak styles back into the Studio chrome. */
+.runtime-preview-root {
+  min-height: 100dvh;
+  max-width: 440px;
+  margin: auto;
+  padding: 28px 22px 110px;
+  color: var(--runtime-ink);
+  background: var(--runtime-surface);
+}
+.runtime-preview-root * { box-sizing: border-box; }
+.runtime-preview-root header { display: block; }
+.runtime-eyebrow { color: var(--runtime-accent); font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.runtime-preview-root h1 { margin: 8px 0 28px; font-size: 32px; letter-spacing: -.04em; }
+.runtime-preview-root h2 { margin: 0 0 10px; font-size: 17px; }
+.runtime-screen-content { display: grid; gap: 18px; }
+.runtime-balance { display: grid; gap: 6px; padding: 24px; border-radius: var(--runtime-surface-radius); color: #fff; background: color-mix(in oklab, var(--runtime-accent) 62%, var(--runtime-ink)); }
+.runtime-balance strong { font-size: 36px; letter-spacing: -.04em; }
+.runtime-balance small { color: rgb(255 255 255 / .68); }
+.runtime-activity { margin: 0; color: color-mix(in oklab, var(--runtime-ink) 68%, #fff); line-height: 1.5; }
+.runtime-money { display: grid; gap: 8px; }
+.runtime-money input { width: 100%; padding: 20px; border: 1px solid color-mix(in oklab, var(--runtime-ink) 12%, #fff); border-radius: var(--runtime-control-radius); color: var(--runtime-ink); background: #fff; font: inherit; font-size: 28px; }
+.runtime-recipient { display: flex; align-items: center; gap: 12px; padding: 14px 0; }
+.runtime-recipient > span:last-child { display: grid; gap: 3px; }
+.runtime-recipient small { color: color-mix(in oklab, var(--runtime-ink) 58%, #fff); }
+.runtime-avatar { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; color: color-mix(in oklab, var(--runtime-accent) 62%, var(--runtime-ink)); background: color-mix(in oklab, var(--runtime-accent) 14%, #fff); font-weight: 700; }
+.runtime-preview-root button { min-height: 48px; border: 0; border-radius: var(--runtime-control-radius); font: inherit; font-weight: 700; }
+.runtime-preview-root button:focus-visible, .runtime-preview-root input:focus-visible { outline: 3px solid color-mix(in oklab, var(--runtime-accent) 55%, #fff); outline-offset: 3px; }
+.runtime-primary { padding: 16px 20px; color: #fff; background: var(--runtime-accent); }
+.runtime-primary.runtime-compact-persistent { position: fixed; right: max(22px, calc((100vw - 396px) / 2)); bottom: max(18px, env(safe-area-inset-bottom)); left: max(22px, calc((100vw - 396px) / 2)); }
+.runtime-secondary { color: color-mix(in oklab, var(--runtime-accent) 62%, var(--runtime-ink)); background: color-mix(in oklab, var(--runtime-accent) 14%, #fff); }
+.runtime-status { padding: 14px; border-left: 3px solid #b65e46; background: #f8e9e3; }
+.runtime-receipt { display: grid; gap: 6px; padding: 24px; border-radius: var(--runtime-surface-radius); background: color-mix(in oklab, var(--runtime-accent) 14%, #fff); text-align: center; }
+.runtime-receipt strong { font-size: 36px; letter-spacing: -.04em; }
+.runtime-receipt small { color: color-mix(in oklab, var(--runtime-ink) 55%, #fff); }
+.runtime-preview-state { display: flex; min-height: 100dvh; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 32px; color: #58635d; background: #fbfcf9; text-align: center; }
+.runtime-preview-spinner { width: 24px; height: 24px; border: 2px solid #dfe6e2; border-top-color: #397461; border-radius: 50%; animation: runtime-preview-spin 700ms linear infinite; }
+@keyframes runtime-preview-spin { to { transform: rotate(360deg); } }
+@media (min-width: 391px) and (min-height: 701px) {
+  .runtime-primary.runtime-compact-persistent { position: static; }
+  .runtime-primary.runtime-regular-persistent { position: fixed; right: max(22px, calc((100vw - 396px) / 2)); bottom: max(18px, env(safe-area-inset-bottom)); left: max(22px, calc((100vw - 396px) / 2)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .runtime-preview-spinner { animation-duration: 1.4s; }
 }
 
 @keyframes menu-in {

@@ -1,8 +1,15 @@
-import { setFixtureValue, type SemanticInterfaceGraph, type SemanticNode } from "@intentform/semantic-schema";
+import {
+  CANONICAL_DEVICE_VIEWPORTS,
+  classifyDevice,
+  setFixtureValue,
+  type DeviceClass,
+  type SemanticInterfaceGraph,
+  type SemanticNode,
+} from "@intentform/semantic-schema";
 
 export type EditorTool = "select" | "hand";
 export type MobilePanel = "structure" | "inspector" | null;
-export type PreviewBreakpoint = "compact" | "regular";
+export type PreviewBreakpoint = DeviceClass;
 export type DeviceId = "compact-phone" | "regular-phone" | "regular-tablet";
 export type VisualState = "idle" | "loading" | "empty" | "failed" | "completed";
 export type RailTab = "layers" | "tokens";
@@ -17,10 +24,22 @@ export interface DeviceProfile {
   breakpoint: PreviewBreakpoint;
 }
 
+const deviceProfile = (
+  id: DeviceId,
+  label: string,
+  viewport: { width: number; height: number },
+): DeviceProfile => ({
+  id,
+  label,
+  detail: `${viewport.width} × ${viewport.height}`,
+  ...viewport,
+  breakpoint: classifyDevice(viewport),
+});
+
 export const deviceProfiles: DeviceProfile[] = [
-  { id: "compact-phone", label: "Compact phone", detail: "375 × 667", width: 375, height: 667, breakpoint: "compact" },
-  { id: "regular-phone", label: "Regular phone", detail: "402 × 874", width: 402, height: 874, breakpoint: "regular" },
-  { id: "regular-tablet", label: "Regular tablet", detail: "768 × 1024", width: 768, height: 1024, breakpoint: "regular" },
+  deviceProfile("compact-phone", "Compact phone", CANONICAL_DEVICE_VIEWPORTS.compactPhone),
+  deviceProfile("regular-phone", "Regular phone", CANONICAL_DEVICE_VIEWPORTS.regularPhone),
+  deviceProfile("regular-tablet", "Regular tablet", CANONICAL_DEVICE_VIEWPORTS.regularTablet),
 ];
 
 export const nodeNames: Record<SemanticNode["kind"], string> = {

@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { compileReact } from "@intentform/compiler-react";
 import { compileSwiftUI } from "@intentform/compiler-swiftui";
 import {
+  CANONICAL_DEVICE_VIEWPORTS,
   applyGraphPatch,
   graphPatchSchema,
   parseGraph,
@@ -24,15 +25,16 @@ import {
 export type ScenarioId = "compact" | "regular";
 
 const scenarios: Record<ScenarioId, { width: number; height: number }> = {
-  compact: { width: 375, height: 667 },
-  regular: { width: 402, height: 874 },
+  compact: CANONICAL_DEVICE_VIEWPORTS.compactPhone,
+  regular: CANONICAL_DEVICE_VIEWPORTS.regularPhone,
 };
 
 function verificationSummary(graph: SemanticInterfaceGraph, scenario: ScenarioId) {
-  const result = verifyGraph(graph, { target: "swiftui", viewport: scenarios[scenario], buildPassed: true });
+  const result = verifyGraph(graph, { target: "swiftui", viewport: scenarios[scenario], buildStatus: "not-run" });
   return {
     scenario,
     viewport: scenarios[scenario],
+    buildStatus: result.scenario.buildStatus,
     passed: result.passed,
     findings: result.findings,
   };
@@ -69,7 +71,11 @@ export function describeProject(dir: string) {
       events: contract.events.map((event) => event.name),
       visualStates: contract.visualStates,
     })),
-    verification: { passed: verification.passed, findingCount: verification.findings.length },
+    verification: {
+      buildStatus: verification.buildStatus,
+      passed: verification.passed,
+      findingCount: verification.findings.length,
+    },
     outputs: {
       react: compileReact(graph).fingerprint,
       swiftui: compileSwiftUI(graph).fingerprint,
@@ -85,7 +91,11 @@ export interface MutationResult {
   changes: SemanticChange[];
   fingerprint: string;
   revision: RevisionEntry | null;
-  verification: { passed: boolean; findings: VerificationFinding[] };
+  verification: {
+    buildStatus: "passed" | "failed" | "not-run";
+    passed: boolean;
+    findings: VerificationFinding[];
+  };
 }
 
 function commit(
@@ -100,7 +110,11 @@ function commit(
     changes: semanticDiff(before, after),
     fingerprint: saved.fingerprint,
     revision: saved.revision,
-    verification: { passed: verification.passed, findings: verification.findings },
+    verification: {
+      buildStatus: verification.buildStatus,
+      passed: verification.passed,
+      findings: verification.findings,
+    },
   };
 }
 

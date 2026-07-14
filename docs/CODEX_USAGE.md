@@ -2,7 +2,9 @@
 
 ## Codex
 
-Codex was used as the implementation environment for repository initialization, architecture, TypeScript and SwiftUI code, schema and compiler tests, CI, documentation and repeated local validation. The development process preserves the evidence trail in Git commits and this build log.
+Codex was used as the implementation environment for repository initialization, architecture, TypeScript and SwiftUI code, schema and compiler tests, CI, documentation and repeated local validation. It accelerated the mechanical and investigative work: closing graph invariants, keeping React and SwiftUI lowering aligned, building the semantic editor, creating native/browser evidence harnesses, finding responsive and CORS regressions, and turning smoke coverage into isolated release gates. The development process preserves the evidence trail in Git commits and this build log.
+
+The human retained the key product and risk decisions: use semantic intent as canonical data; make compilers deterministic; keep model output out of generated application code; require real evidence before a pass; expose a no-login replay path; defer authentication/cloud scope; keep the public deployment keyless; and require explicit approval before changing Vercel protection or submitting to Devpost.
 
 Before submission, the primary Codex task will run `/feedback`; its Session ID will be recorded in the private Devpost draft and in `docs/SUBMISSION_CHECKLIST.md`, not fabricated in advance.
 

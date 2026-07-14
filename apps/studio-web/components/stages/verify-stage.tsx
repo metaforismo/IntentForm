@@ -29,8 +29,16 @@ function findingEndsWith(findings: VerificationFinding[], suffix: string) {
   return findings.some((finding) => finding.id.endsWith(suffix));
 }
 
-function evaluateRules(graph: SemanticInterfaceGraph, findings: VerificationFinding[]): EvaluatedRule[] {
-  const rules: EvaluatedRule[] = [];
+function evaluateRules(graph: SemanticInterfaceGraph, verification: VerificationResult): EvaluatedRule[] {
+  const { findings } = verification;
+  const rules: EvaluatedRule[] = [{
+    id: "build.evidence",
+    name: "Current SwiftUI output has build evidence",
+    target: verification.scenario.buildStatus === "not-run" ? "Not run" : verification.scenario.buildStatus,
+    status: verification.scenario.buildStatus === "passed"
+      ? "passed"
+      : verification.scenario.buildStatus === "failed" ? "failed" : "warning",
+  }];
 
   for (const screen of graph.screens) {
     const reachabilityFailed = findingEndsWith(findings, `${screen.id}.primary.compact-reachability`)
@@ -83,16 +91,25 @@ export function VerifyStage({
   repairFinding,
   isPending,
 }: VerifyStageProps) {
-  const rules = evaluateRules(graph, verification.findings);
+  const rules = evaluateRules(graph, verification);
   const hasFindings = verification.findings.length > 0;
   const hasErrorFindings = verification.findings.some((finding) => finding.severity === "error");
+  const evidencePending = verification.scenario.buildStatus === "not-run";
+  const verdictLabel = verification.passed
+    ? "Passed"
+    : evidencePending && !hasErrorFindings ? "Build evidence pending" : `${verification.findings.length} findings`;
+  const verdictTone = verification.passed
+    ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]"
+    : evidencePending && !hasErrorFindings
+      ? "bg-[var(--warn-soft)] text-[var(--warn)]"
+      : "bg-[var(--danger-soft)] text-[var(--danger)]";
 
   return (
     <div className="mx-auto grid max-w-[1200px] gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div>
-        <div className="flex items-end justify-between border-b border-[var(--line)] pb-5">
+        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--line)] pb-5">
           <div><span className="font-mono text-[10px] text-[var(--accent)]">NATIVE VERIFICATION</span><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">Evidence before claims.</h2></div>
-          <span className={`rounded-full px-3 py-1.5 text-[10px] font-semibold ${verification.passed ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]" : "bg-[var(--danger-soft)] text-[var(--danger)]"}`}>{verification.passed ? "Passed" : `${verification.findings.length} findings`}</span>
+          <span className={`rounded-full px-3 py-1.5 text-[10px] font-semibold ${verdictTone}`}>{verdictLabel}</span>
         </div>
 
         <div className="mt-6">
@@ -125,7 +142,7 @@ export function VerifyStage({
                     <dl className="mt-3 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-4 gap-y-1.5 rounded-xl border border-[var(--line)] bg-[var(--chip)] p-3">
                       {finding.evidence.flatMap((evidence) => [
                         <dt key={`${evidence.label}-label`} className="text-[11px] text-[var(--muted)]">{evidence.label}</dt>,
-                        <dd key={`${evidence.label}-value`} className="text-right font-mono text-[11px] text-[var(--t-strong)]">{String(evidence.value)}</dd>,
+                        <dd key={`${evidence.label}-value`} className="break-all text-right font-mono text-[11px] text-[var(--t-strong)]">{String(evidence.value)}</dd>,
                       ])}
                     </dl>
                   </div>
@@ -147,7 +164,7 @@ export function VerifyStage({
 
       <div className="rounded-[24px] border border-[var(--line)] bg-[var(--inset)] p-5">
         <span className="font-mono text-[9px] text-[var(--accent)]">SCENARIO</span>
-        <div className="mt-3 grid grid-flow-col rounded-lg border border-[var(--line)] bg-[var(--field)] p-0.5">
+        <div className="mt-3 grid grid-flow-col rounded-lg border border-[var(--line)] bg-[var(--field)] p-0.5" role="group" aria-label="Verification scenario">
           {(Object.entries(scenarios) as Array<[ScenarioId, typeof scenario]>).map(([id, item]) => (
             <button key={id} type="button" aria-pressed={scenarioId === id} onClick={() => setScenarioId(id)} className={`min-h-8 rounded-md px-2 text-[10px] font-medium ${scenarioId === id ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]" : "text-[var(--muted)] hover:text-[var(--t-strong)]"}`}>
               {item.label}
@@ -157,10 +174,15 @@ export function VerifyStage({
         <dl className="mt-6 grid grid-cols-2 gap-y-5">
           <div><dt className="text-[11px] text-[var(--muted)]">Viewport</dt><dd className="mt-1 font-mono text-[12px] text-[var(--t-strong)]">{scenario.viewport.width} × {scenario.viewport.height}</dd></div>
           <div><dt className="text-[11px] text-[var(--muted)]">Target</dt><dd className="mt-1 font-mono text-[12px] text-[var(--t-strong)]">SwiftUI</dd></div>
-          <div><dt className="text-[11px] text-[var(--muted)]">Build</dt><dd className="mt-1 text-[12px] text-[var(--accent)]">Passed</dd></div>
+          <div>
+            <dt className="text-[11px] text-[var(--muted)]">Build</dt>
+            <dd className={`mt-1 text-[12px] ${verification.scenario.buildStatus === "passed" ? "text-[var(--accent)]" : verification.scenario.buildStatus === "failed" ? "text-[var(--danger)]" : "text-[var(--warn)]"}`}>
+              {verification.scenario.buildStatus === "not-run" ? "Not run for this graph" : verification.scenario.buildStatus === "passed" ? "Passed" : "Failed"}
+            </dd>
+          </div>
           <div><dt className="text-[11px] text-[var(--muted)]">Rule set</dt><dd className="mt-1 font-mono text-[12px] text-[var(--t-strong)]">intentform/0.1</dd></div>
         </dl>
-        <p className="mt-7 border-t border-[var(--line)] pt-5 text-xs leading-relaxed text-[var(--muted)]">Verification is scenario-dependent and independent from generation. A repair is only accepted after the same rule passes again.</p>
+        <p className="mt-7 border-t border-[var(--line)] pt-5 text-xs leading-relaxed text-[var(--muted)]">Generation is not a build. Verification passes only after current build evidence exists and the same scenario rules run without blocking findings.</p>
       </div>
     </div>
   );

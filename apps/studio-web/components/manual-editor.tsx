@@ -146,6 +146,17 @@ export function ManualEditor({
     return { rail: 268, inspector: 304 };
   });
   const canvasApi = useRef<CanvasApi>(null);
+  const structureTriggerRef = useRef<HTMLButtonElement>(null);
+  const inspectorTriggerRef = useRef<HTMLButtonElement>(null);
+  const insertTriggerRef = useRef<HTMLButtonElement>(null);
+  const zoomTriggerRef = useRef<HTMLButtonElement>(null);
+  const previousMobilePanel = useRef<MobilePanel>(null);
+  const previousInsertOpen = useRef(false);
+  const previousZoomOpen = useRef(false);
+  const panelLimits = {
+    rail: { min: 220, max: 380 },
+    inspector: { min: 260, max: 420 },
+  } as const;
 
   useEffect(() => {
     try {
@@ -154,6 +165,55 @@ export function ManualEditor({
       // Persisting panel sizes is best-effort.
     }
   }, [panelWidths]);
+
+  useEffect(() => {
+    const previous = previousMobilePanel.current;
+    previousMobilePanel.current = mobilePanel;
+    if (mobilePanel) {
+      const panelId = mobilePanel === "structure" ? "editor-structure-panel" : "editor-inspector-panel";
+      requestAnimationFrame(() => {
+        const panel = document.getElementById(panelId);
+        const close = panel?.querySelector<HTMLElement>('button[aria-label^="Close"]');
+        const first = panel?.querySelector<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled)');
+        (close ?? first)?.focus();
+      });
+      const trapFocus = (event: KeyboardEvent) => {
+        if (event.key !== "Tab") return;
+        const panel = document.getElementById(panelId);
+        if (!panel) return;
+        const items = [...panel.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')]
+          .filter((item) => item.getClientRects().length > 0);
+        const first = items[0];
+        const last = items.at(-1);
+        if (!first || !last) return;
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      };
+      window.addEventListener("keydown", trapFocus);
+      return () => window.removeEventListener("keydown", trapFocus);
+    }
+    if (previous === "structure") structureTriggerRef.current?.focus();
+    if (previous === "inspector") inspectorTriggerRef.current?.focus();
+  }, [mobilePanel]);
+
+  useEffect(() => {
+    const previous = previousInsertOpen.current;
+    previousInsertOpen.current = insertOpen;
+    if (insertOpen) requestAnimationFrame(() => document.querySelector<HTMLElement>('[role="menu"][aria-label="Insert semantic component"] [role="menuitem"]')?.focus());
+    else if (previous) insertTriggerRef.current?.focus();
+  }, [insertOpen]);
+
+  useEffect(() => {
+    const previous = previousZoomOpen.current;
+    previousZoomOpen.current = zoomMenuOpen;
+    if (zoomMenuOpen) requestAnimationFrame(() => document.querySelector<HTMLElement>('[role="menu"][aria-label="Choose zoom level"] [role="menuitem"]')?.focus());
+    else if (previous) zoomTriggerRef.current?.focus();
+  }, [zoomMenuOpen]);
 
   const beginPanelResize = (side: "rail" | "inspector") => (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -164,7 +224,7 @@ export function ManualEditor({
       const next = side === "rail" ? startWidth + delta : startWidth - delta;
       setPanelWidths((current) => ({
         ...current,
-        [side]: Math.min(side === "rail" ? 380 : 420, Math.max(side === "rail" ? 220 : 260, next)),
+        [side]: Math.min(panelLimits[side].max, Math.max(panelLimits[side].min, next)),
       }));
     };
     const onUp = () => {
@@ -173,6 +233,23 @@ export function ManualEditor({
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+  };
+
+  const resizePanelWithKeyboard = (side: "rail" | "inspector") => (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const limits = panelLimits[side];
+    let next: number | null = null;
+    if (event.key === "Home") next = limits.min;
+    else if (event.key === "End") next = limits.max;
+    else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      const physicalDelta = event.key === "ArrowRight" ? 12 : -12;
+      next = panelWidths[side] + (side === "rail" ? physicalDelta : -physicalDelta);
+    }
+    if (next === null) return;
+    event.preventDefault();
+    setPanelWidths((current) => ({
+      ...current,
+      [side]: Math.min(limits.max, Math.max(limits.min, next!)),
+    }));
   };
 
   const screen = graph.screens.find((item) => item.id === selectedScreen) ?? graph.screens[0];
@@ -683,7 +760,7 @@ export function ManualEditor({
 
   return (
     <div
-      className={`editor-shell relative grid h-[calc(100dvh-56px)] min-h-[560px] grid-cols-1 overflow-hidden bg-[var(--workspace)] text-[var(--t-strong)] ${desktopGrid}`}
+      className={`editor-shell relative grid h-[calc(100dvh-56px)] min-h-0 grid-cols-1 overflow-hidden bg-[var(--workspace)] text-[var(--t-strong)] ${desktopGrid}`}
       data-preview-mode={previewMode}
       style={{ "--rail-w": `${panelWidths.rail}px`, "--insp-w": `${panelWidths.inspector}px` } as React.CSSProperties}
     >
@@ -696,6 +773,16 @@ export function ManualEditor({
         />
       ) : null}
 
+      {shortcutsOpen || commandOpen ? (
+        <button
+          type="button"
+          aria-label="Close editor dialog"
+          tabIndex={-1}
+          onClick={() => { setShortcutsOpen(false); setCommandOpen(false); setCommandQuery(""); }}
+          className="absolute inset-0 z-[3] bg-[var(--backdrop)]/35 backdrop-blur-[1px]"
+        />
+      ) : null}
+
       {shortcutsOpen ? <ShortcutsSheet onClose={() => setShortcutsOpen(false)} /> : null}
       {commandOpen ? (
         <CommandMenu
@@ -703,6 +790,7 @@ export function ManualEditor({
           commands={commands}
           onQuery={setCommandQuery}
           onRun={(command) => { command.action(); setCommandOpen(false); setCommandQuery(""); }}
+          onClose={() => { setCommandOpen(false); setCommandQuery(""); }}
         />
       ) : null}
 
@@ -736,7 +824,12 @@ export function ManualEditor({
             role="separator"
             aria-label="Resize pages and layers panel"
             aria-orientation="vertical"
+            aria-valuemin={panelLimits.rail.min}
+            aria-valuemax={panelLimits.rail.max}
+            aria-valuenow={panelWidths.rail}
+            tabIndex={0}
             onPointerDown={beginPanelResize("rail")}
+            onKeyDown={resizePanelWithKeyboard("rail")}
             className="absolute inset-y-0 left-0 z-[4] hidden w-1.5 cursor-col-resize hover:bg-[var(--accent)]/25 active:bg-[var(--accent)]/40 xl:block"
           />
         ) : null}
@@ -745,7 +838,12 @@ export function ManualEditor({
             role="separator"
             aria-label="Resize design inspector"
             aria-orientation="vertical"
+            aria-valuemin={panelLimits.inspector.min}
+            aria-valuemax={panelLimits.inspector.max}
+            aria-valuenow={panelWidths.inspector}
+            tabIndex={0}
             onPointerDown={beginPanelResize("inspector")}
+            onKeyDown={resizePanelWithKeyboard("inspector")}
             className="absolute inset-y-0 right-0 z-[4] hidden w-1.5 cursor-col-resize hover:bg-[var(--accent)]/25 active:bg-[var(--accent)]/40 xl:block"
           />
         ) : null}
@@ -777,9 +875,10 @@ export function ManualEditor({
           onZoomChange={setZoomPct}
         />
 
-        <div className="pointer-events-none absolute inset-x-3 top-3 z-[2] flex items-start justify-between gap-2">
-          <div className="floating-chrome pointer-events-auto flex items-center gap-0.5 rounded-xl p-1">
+        <div className="pointer-events-auto absolute inset-x-2 top-2 z-[2] flex flex-wrap items-start justify-between gap-2 sm:inset-x-3 sm:top-3 sm:flex-nowrap">
+          <div className="floating-chrome order-1 flex shrink-0 items-center gap-0.5 rounded-xl p-1 sm:order-none">
             <button
+              ref={structureTriggerRef}
               type="button"
               aria-label="Open pages and layers"
               aria-controls="editor-structure-panel"
@@ -794,7 +893,7 @@ export function ManualEditor({
             </button>
           </div>
 
-          <div className="floating-chrome pointer-events-auto flex items-center gap-0.5 rounded-xl p-1">
+          <div className="floating-chrome order-3 mx-auto flex shrink-0 items-center gap-0.5 rounded-xl p-1 sm:order-none sm:mx-0">
             {([
               { id: "select", label: "Select", icon: Cursor },
               { id: "hand", label: "Pan", icon: Hand },
@@ -812,16 +911,16 @@ export function ManualEditor({
             <button type="button" aria-label="Redo" disabled={!canRedo} onClick={onRedo} className="grid size-8 place-items-center rounded-lg text-[var(--muted)] hover:bg-[var(--hover)] disabled:opacity-25"><ArrowClockwise size={15} /></button>
             <span className="mx-1 h-4 w-px bg-[var(--line)]" />
             <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
-              <button type="button" aria-label="Insert component" aria-expanded={insertOpen} onClick={() => setInsertOpen((open) => !open)} className={`grid size-8 place-items-center rounded-lg ${insertOpen ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
+              <button ref={insertTriggerRef} type="button" aria-label="Insert component" aria-expanded={insertOpen} onClick={() => setInsertOpen((open) => !open)} className={`grid size-8 place-items-center rounded-lg ${insertOpen ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
                 <Plus size={15} weight="bold" />
               </button>
               {insertOpen ? (
-                <div className="menu-pop absolute left-1/2 top-10 z-[3] w-[300px] -translate-x-1/2 p-1.5">
+                <div role="menu" aria-label="Insert semantic component" className="menu-pop absolute left-1/2 top-10 z-[3] w-[300px] -translate-x-1/2 p-1.5">
                   <span className="block px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-[.12em] text-[var(--faint)]">Semantic components</span>
                   {nodeCatalog.map((preset) => {
                     const PresetIcon = catalogIcons[preset.kind];
                     return (
-                      <button key={preset.kind} type="button" onClick={() => insertNode(preset.kind)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-[var(--hover)]">
+                      <button key={preset.kind} type="button" role="menuitem" onClick={() => insertNode(preset.kind)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-[var(--hover)]">
                         <span className="grid size-8 shrink-0 place-items-center rounded-md border border-[var(--line)] bg-[var(--chip)] text-[var(--t-strong)]"><PresetIcon size={14} /></span>
                         <span className="min-w-0"><strong className="block text-[11px] font-semibold">{nodeNames[preset.kind]}</strong><small className="block truncate text-[11px] text-[var(--muted)]">{preset.description}</small></span>
                       </button>
@@ -832,11 +931,12 @@ export function ManualEditor({
             </div>
           </div>
 
-          <div className="floating-chrome pointer-events-auto flex items-center gap-0.5 rounded-xl p-1">
+          <div className="floating-chrome order-2 flex shrink-0 items-center gap-0.5 rounded-xl p-1 sm:order-none">
             <button type="button" aria-label="Toggle preview mode" aria-pressed={previewMode} onClick={() => setPreviewMode((current) => !current)} className={`inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium ${previewMode ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
               <MonitorPlay size={13} weight={previewMode ? "fill" : "regular"} /> Preview
             </button>
             <button
+              ref={inspectorTriggerRef}
               type="button"
               aria-label="Open design inspector"
               aria-controls="editor-inspector-panel"
@@ -849,8 +949,8 @@ export function ManualEditor({
           </div>
         </div>
 
-        <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[2] flex items-end justify-between gap-2">
-          <div className="floating-chrome pointer-events-auto flex items-center gap-1.5 rounded-xl p-1 pl-2 text-[10px] text-[var(--muted)]">
+        <div className="pointer-events-auto absolute inset-x-2 bottom-2 z-[2] flex flex-wrap items-end justify-between gap-2 sm:inset-x-3 sm:bottom-3 sm:flex-nowrap">
+          <div className="floating-chrome flex shrink-0 items-center gap-1.5 rounded-xl p-1 pl-2 text-[10px] text-[var(--muted)]">
             <label className="relative flex items-center gap-1.5 text-[var(--muted)]">
               <DeviceMobile size={12} aria-hidden="true" />
               <span className="sr-only">Preview device</span>
@@ -873,13 +973,13 @@ export function ManualEditor({
             </span>
           </div>
 
-          <div className="floating-chrome pointer-events-auto flex items-center gap-1 rounded-xl p-1">
-            <button type="button" aria-label="Fit canvas" title="Fit board · 0" onClick={() => canvasApi.current?.fitAll(true)} className="grid size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)]"><ArrowsOutSimple size={12} /></button>
-            <button type="button" aria-label="Zoom out" onClick={() => canvasApi.current?.zoomBy(0.8)} className="grid size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)]"><Minus size={11} /></button>
+          <div className="floating-chrome flex shrink-0 items-center gap-1 rounded-xl p-1">
+            <button type="button" aria-label="Fit canvas" title="Fit board · 0" onClick={() => canvasApi.current?.fitAll(true)} className="hidden size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] sm:grid"><ArrowsOutSimple size={12} /></button>
+            <button type="button" aria-label="Zoom out" onClick={() => canvasApi.current?.zoomBy(0.8)} className="hidden size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] sm:grid"><Minus size={11} /></button>
             <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
-              <button type="button" aria-label="Zoom level" aria-expanded={zoomMenuOpen} onClick={() => setZoomMenuOpen((open) => !open)} className="min-h-7 w-12 rounded-md text-center font-mono text-[11px] text-[var(--t-strong)] hover:bg-[var(--hover)]">{zoomPct}%</button>
+              <button ref={zoomTriggerRef} type="button" aria-label="Zoom level" aria-expanded={zoomMenuOpen} onClick={() => setZoomMenuOpen((open) => !open)} className="min-h-7 w-12 rounded-md text-center font-mono text-[11px] text-[var(--t-strong)] hover:bg-[var(--hover)]">{zoomPct}%</button>
               {zoomMenuOpen ? (
-                <div className="menu-pop absolute bottom-9 right-0 z-[3] w-36 p-1">
+                <div role="menu" aria-label="Choose zoom level" className="menu-pop absolute bottom-9 right-0 z-[3] w-36 p-1">
                   {([
                     { label: "Fit board", shortcut: "0", run: () => canvasApi.current?.fitAll(true) },
                     { label: "50%", run: () => canvasApi.current?.zoomTo(0.5) },
@@ -887,7 +987,7 @@ export function ManualEditor({
                     { label: "150%", run: () => canvasApi.current?.zoomTo(1.5) },
                     { label: "200%", shortcut: "2", run: () => canvasApi.current?.zoomTo(2) },
                   ]).map((item) => (
-                    <button key={item.label} type="button" onClick={() => { item.run(); setZoomMenuOpen(false); }} className="flex min-h-7 w-full items-center justify-between rounded-md px-2 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
+                    <button key={item.label} type="button" role="menuitem" onClick={() => { item.run(); setZoomMenuOpen(false); }} className="flex min-h-7 w-full items-center justify-between rounded-md px-2 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
                       {item.label}
                       {item.shortcut ? <kbd className="font-mono text-[10px] text-[var(--faint)]">{item.shortcut}</kbd> : null}
                     </button>
@@ -895,9 +995,9 @@ export function ManualEditor({
                 </div>
               ) : null}
             </div>
-            <button type="button" aria-label="Zoom in" onClick={() => canvasApi.current?.zoomBy(1.25)} className="grid size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)]"><Plus size={11} /></button>
-            <span className="h-4 w-px bg-[var(--line)]" />
-            <button type="button" aria-label="Show keyboard shortcuts" title="Keyboard shortcuts · ?" aria-expanded={shortcutsOpen} onClick={() => setShortcutsOpen((open) => !open)} className="grid size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)]"><Keyboard size={13} /></button>
+            <button type="button" aria-label="Zoom in" onClick={() => canvasApi.current?.zoomBy(1.25)} className="hidden size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] sm:grid"><Plus size={11} /></button>
+            <span className="hidden h-4 w-px bg-[var(--line)] sm:block" />
+            <button type="button" aria-label="Show keyboard shortcuts" title="Keyboard shortcuts · ?" aria-expanded={shortcutsOpen} onClick={() => setShortcutsOpen((open) => !open)} className="hidden size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] sm:grid"><Keyboard size={13} /></button>
           </div>
         </div>
       </section>

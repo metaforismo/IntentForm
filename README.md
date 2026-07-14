@@ -21,12 +21,15 @@ This repository is the OpenAI Build Week vertical slice. It intentionally proves
 - Searchable layers and commands, human editing for labels, stack axis, width, spacing tokens, emphasis, ordering, duplication and component insertion, with undo/redo.
 - Validated local draft recovery; an invalid or unavailable browser store never replaces the verified sample.
 - Deterministic React and SwiftUI compiler backends.
-- Runnable generated React application embedded in Studio, with typed navigation events.
+- Active React preview embedded in Studio: it validates the current graph, verifies the exact compiler fingerprint, lowers the shared IR into an isolated runtime, and executes typed navigation events without evaluating arbitrary generated source.
 - Playwright screenshot, computed-style and layout-bounds verification for compact and regular viewports.
 - Typed repair proposal, semantic diff and independent verification rerun.
 - Hosted-studio-ready Next.js experience across Brief, Graph, Outputs, Verification and Proof Report.
 - Native SwiftUI build harness validated with `xcodebuild` for iOS Simulator.
 - Native Simulator evidence adapter for screenshots, accessibility identifiers and point-accurate action bounds.
+- Responsive, keyboard-accessible Studio coverage at phone, tablet, adaptive desktop, wide desktop and short-landscape sizes.
+- Release browser gates for console/page/request failures, direct routes, refresh, invalid input, request recovery and reduced motion.
+- Production CSP and browser security headers that preserve the same-origin preview sandbox while blocking external framing.
 
 ## The proof
 
@@ -62,6 +65,7 @@ Core checks:
 pnpm typecheck
 pnpm test
 pnpm build
+pnpm smoke:studio
 pnpm generate:demo
 pnpm verify:react-preview
 pnpm verify:swiftui
@@ -78,6 +82,19 @@ This writes a native screenshot and `evidence.json` under `artifacts/swiftui/`. 
 
 Generated evidence is written to `generated/` and excluded from Git because it is reproducible from the canonical graph.
 
+## Judge path
+
+The intended zero-setup judge path is the replay-only deployment at [intentform-metaforismos-projects.vercel.app](https://intentform-metaforismos-projects.vercel.app). It requires no account, test credentials, OpenAI key or paid action. The current deployment is still behind Vercel team SSO; it is not judge-ready until the owner explicitly removes protection for this project and the remote smoke suite passes.
+
+Once public, the shortest product path is:
+
+1. open **Design canvas**, inspect the three-screen semantic flow and switch compact/regular devices;
+2. edit the request action label or compact placement and observe the semantic diff;
+3. open **Native outputs**, confirm the source fingerprint and interact with the active React preview;
+4. inspect **Verification** and **Proof report**, which say `not run` until graph-specific build evidence is actually supplied.
+
+For a local judge run, use the setup above and then `pnpm smoke:studio`. Supported judge platforms are modern Chromium on Node.js 22+; Xcode 16+ on macOS is needed only to reproduce native SwiftUI evidence.
+
 ## Agent-native workflows (Claude Code, Codex, any MCP client)
 
 IntentForm is designed to be **driven by coding agents**, not just humans. The repository ships an MCP server (auto-discovered by Claude Code through [`.mcp.json`](.mcp.json)) that operates on the local project in `.intentform/`:
@@ -91,7 +108,13 @@ intentform_compile            byte-stable React or SwiftUI into .intentform/outp
 intentform_diff / revert      semantic history — every agent edit is reversible
 ```
 
-An agent never writes UI code directly: it edits validated intent, and the deterministic compilers produce the code. The Studio opens and saves the same `.intentform/graph.json` (project menu → *Open/Save local project*), so agent edits land on the design board and human edits are visible to agents. See [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md) for the full loop, and [CLAUDE.md](CLAUDE.md) for in-repo agent conventions.
+In the intended MCP workflow an agent edits validated intent rather than generated UI files, and deterministic compilers produce the target code. The Studio opens and saves the same `.intentform/graph.json` (project menu → *Open/Save local project*), so agent edits land on the design board and human edits are visible to agents. See [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md) for the full loop, and [CLAUDE.md](CLAUDE.md) for in-repo agent conventions.
+
+## How Codex and GPT-5.6 shaped the build
+
+The human product decisions were to keep semantic intent as the source of truth, use deterministic compilers instead of model-written application code, make replay the public default, keep build status fail-closed, and defer authentication, cloud collaboration and a production API key. Codex accelerated repository architecture, schema and compiler implementation, editor UX, native harnesses, test generation, CI, security review and repeated browser/native verification. The commit history and [build log](docs/BUILD_LOG.md) preserve that implementation trail.
+
+GPT-5.6 has a narrower product role: it converts a brief into a graph, proposes scoped semantic edits and classifies repair actions. Every response is schema-validated and bounded; deterministic code owns lowering, source generation and diagnostics. In replay-only judging, those same three operations remain demonstrable without presenting deterministic output as a live model call. See [Codex and GPT-5.6 usage](docs/CODEX_USAGE.md) for the detailed boundary.
 
 ## Architecture
 
@@ -129,7 +152,7 @@ examples/preview-ios/       buildable iOS Swift package harness
 
 ## Build Week
 
-Submission closes **July 21, 2026 at 5:00 PM PT**. IntentForm is entered in Developer Tools. The repository is Apache-2.0 and provides a free replay path for judges. The Devpost Hackathons plugin is optional; the official rules, FAQ and submission requirements remain the authority.
+Submission closes **July 21, 2026 at 5:00 PM PT**. IntentForm is entered in Developer Tools. The repository is Apache-2.0 and provides a free replay path for judges. The required package includes a working project, category, English description, public YouTube demo under three minutes with audio explaining Codex and GPT-5.6, testable repository, and the primary Codex task's `/feedback` Session ID. The Devpost Hackathons plugin is optional; the official rules, FAQ and submission requirements remain the authority.
 
 - [Build Week](https://openai.devpost.com/)
 - [Official rules](https://openai.devpost.com/rules)

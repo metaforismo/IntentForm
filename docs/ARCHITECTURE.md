@@ -49,24 +49,25 @@ The browser Studio exposes every screen as a frame on one infinite world-space b
 
 The canvas resolves node state bindings against the selected visual fixture before rendering, so a failed-only recovery message never leaks into the idle preview. Compact and regular device profiles select the corresponding placement relation. Dragging a primary action vertically does not persist a `y` coordinate; crossing the gesture threshold changes the currently previewed breakpoint between the semantic stack and `persistent-bottom` safe-area anchoring. Every accepted edit is parsed again before it becomes canonical and immediately changes deterministic compiler output.
 
-This is an Instant Canvas, not a native rendering claim. The checked-in runnable React artifact remains the golden sample, while SwiftUI Simulator rendering remains the authority for native output.
+This is an Instant Canvas, not a native rendering claim. Outputs also contains an active React preview: the child validates the posted graph, independently recompiles it to confirm the exact source fingerprint, lowers the shared IR, and renders that IR without evaluating arbitrary generated code. The separate Vite application remains the browser build/evidence harness, while SwiftUI Simulator rendering remains the authority for native output.
 
 The browser may cache the most recent graph as a local draft. Restoration always goes through `parseGraph`; invalid storage is discarded and storage failures leave the in-memory validated graph untouched. The serialized project graph remains the product source of truth, not browser UI state.
 
 ## Verification boundary
 
-The Build Week slice combines deterministic graph and build evidence with a real browser-render adapter. Playwright executes the generated React application, follows the home-to-request-to-receipt flow, captures screenshots, reads computed positioning and records primary-action bounds at compact and regular viewports. A finding contains target, screen, violated intent, responsible layer and evidence.
+The Build Week slice keeps graph checks, source generation, builds and rendered evidence as distinct states. The Studio fails closed as `not-run` because it does not ingest fresh graph-specific CI or Simulator evidence. Separately, the reproducible evidence scripts build the generated React application; Playwright follows the home-to-request-to-receipt flow, captures screenshots, reads computed positioning and records primary-action bounds at compact and regular viewports. A finding contains target, screen, violated intent, responsible layer and evidence.
 
 A repair is accepted only after validation, recompilation, the same rendered check rerunning and no remaining blocking finding. The native adapter builds and installs a versioned host app, launches it in an available iPhone Simulator, captures a real screenshot and reads the foreground app accessibility tree. It resolves the primary action through the compiler-authored semantic identifier, records point-space bounds and runs the same reachability and minimum-target verifier used by React. macOS CI uploads the screenshot and structured report as a native evidence artifact.
 
 ## Security and cost controls
 
 - OpenAI credentials are server-only.
-- Anonymous requests are bounded by session and process-wide quotas.
+- Anonymous live requests are bounded by session and process-wide quotas; those controls are not durable across serverless instances, so the public deployment stays replay-only.
 - Client address and session are combined for the per-session bucket; malformed limits fall back to safe defaults.
 - Requests have a 45-second cancellation deadline.
 - Replay works when the API is absent or quota is exhausted.
 - Quota is not consumed when no live server-side key exists.
 - Provider errors are converted to generic client messages; trace metadata is redacted by construction.
 - The graph cannot execute arbitrary code.
-- CI scans source and bundles through ordinary build boundaries; no secrets are committed.
+- Hosted project-file writes fail closed, and generated preview code runs only through isolated, validated runtime boundaries.
+- Production responses enforce CSP, referrer, permissions, content-type and same-origin framing policies.

@@ -7,6 +7,7 @@ import {
   verifyGraph,
   type VerificationFinding,
   type VerificationResult,
+  type VerificationScenario,
 } from "@intentform/verifier";
 
 export interface ProofReport {
@@ -27,11 +28,19 @@ export interface ProofReport {
   reconciledFindings: VerificationFinding[];
 }
 
-export function buildProofReport(graph: SemanticInterfaceGraph): ProofReport {
-  const scenario = { target: "swiftui" as const, viewport: { width: 375, height: 667 }, buildPassed: true };
+export interface ProofBuildEvidence {
+  before: VerificationScenario["buildStatus"];
+  after: VerificationScenario["buildStatus"];
+}
+
+export function buildProofReport(
+  graph: SemanticInterfaceGraph,
+  buildEvidence: ProofBuildEvidence,
+): ProofReport {
+  const scenario = { target: "swiftui" as const, viewport: { width: 375, height: 667 } };
   const reactBefore = compileReact(graph);
   const swiftBefore = compileSwiftUI(graph);
-  const verificationBefore = verifyGraph(graph, scenario);
+  const verificationBefore = verifyGraph(graph, { ...scenario, buildStatus: buildEvidence.before });
   const repairable = verificationBefore.findings.find((finding) =>
     finding.id.endsWith("primary.compact-reachability") && finding.screenId === "payment-request",
   );
@@ -41,7 +50,7 @@ export function buildProofReport(graph: SemanticInterfaceGraph): ProofReport {
   const repairedGraph = applyRepair(graph, repair);
   const reactAfter = compileReact(repairedGraph);
   const swiftAfter = compileSwiftUI(repairedGraph);
-  const verificationAfter = verifyGraph(repairedGraph, scenario);
+  const verificationAfter = verifyGraph(repairedGraph, { ...scenario, buildStatus: buildEvidence.after });
 
   return {
     before: {

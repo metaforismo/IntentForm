@@ -3,7 +3,15 @@
 import { CheckCircle, Copy } from "@phosphor-icons/react";
 import type { compileReact } from "@intentform/compiler-react";
 import type { SemanticInterfaceGraph } from "@intentform/semantic-schema";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { OutputTarget } from "../studio";
+import {
+  PREVIEW_READY,
+  PREVIEW_REQUEST,
+  PREVIEW_STATUS,
+  type ActivePreviewRequest,
+  type ActivePreviewStatus,
+} from "../runtime-preview-protocol";
 import { PhonePreview } from "./phone-preview";
 
 type GeneratedFileSet = ReturnType<typeof compileReact>;
@@ -39,7 +47,6 @@ interface OutputsStageProps {
   selectedCode: GeneratedFileSet["files"][number] | undefined;
   copyGeneratedFile: () => void;
   copied: boolean;
-  previewVariant: "before" | "after";
   graph: SemanticInterfaceGraph;
   selectedScreen: string;
 }
@@ -53,33 +60,79 @@ export function OutputsStage({
   selectedCode,
   copyGeneratedFile,
   copied,
-  previewVariant,
   graph,
   selectedScreen,
 }: OutputsStageProps) {
+  const previewFrame = useRef<HTMLIFrameElement>(null);
+  const [previewStatus, setPreviewStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  const sendPreview = useCallback(() => {
+    const message: ActivePreviewRequest = {
+      type: PREVIEW_REQUEST,
+      fingerprint: reactOutput.fingerprint,
+      graph,
+      selectedScreen,
+    };
+    previewFrame.current?.contentWindow?.postMessage(message, "*");
+  }, [graph, reactOutput.fingerprint, selectedScreen]);
+
+  useEffect(() => {
+    setPreviewStatus("loading");
+    setPreviewError(null);
+    sendPreview();
+  }, [sendPreview]);
+
+  useEffect(() => {
+    const receive = (event: MessageEvent<unknown>) => {
+      if (event.source !== previewFrame.current?.contentWindow || !event.data || typeof event.data !== "object") return;
+      const messageType = (event.data as { type?: unknown }).type;
+      if (messageType === PREVIEW_READY) {
+        sendPreview();
+        return;
+      }
+      const message = event.data as Partial<ActivePreviewStatus>;
+      if (message.type !== PREVIEW_STATUS || message.fingerprint !== reactOutput.fingerprint) return;
+      if (message.status === "ready") {
+        setPreviewStatus("ready");
+        setPreviewError(null);
+      } else if (message.status === "error") {
+        setPreviewStatus("error");
+        setPreviewError(typeof message.message === "string" ? message.message : "The active preview could not be rendered.");
+      }
+    };
+    window.addEventListener("message", receive);
+    return () => window.removeEventListener("message", receive);
+  }, [reactOutput.fingerprint, sendPreview]);
+
   return (
     <div className="mx-auto grid max-w-[1400px] gap-5 xl:grid-cols-[minmax(330px,.72fr)_minmax(0,1.28fr)]">
       <div>
         {outputTarget === "react" ? (
           <div className="overflow-hidden rounded-[32px] border border-[var(--line)] bg-[var(--inset)] p-4">
             <div className="mb-3 flex items-center justify-between px-1 text-[10px] text-[var(--muted)]">
-              <span className="font-semibold text-[var(--accent-dark)]">Runnable golden artifact</span>
-              <span className="font-mono">{previewVariant} · {reactOutput.fingerprint}</span>
+              <span className="font-semibold text-[var(--accent-dark)]">Active compiled preview</span>
+              <span className="flex items-center gap-2 font-mono" aria-live="polite">
+                <span className={`size-1.5 rounded-full ${previewStatus === "ready" ? "bg-emerald-500" : previewStatus === "error" ? "bg-red-500" : "animate-pulse bg-amber-500"}`} />
+                {previewStatus === "ready" ? "Current" : previewStatus === "error" ? "Failed" : "Syncing"} · {reactOutput.fingerprint}
+              </span>
             </div>
             <iframe
-              key={`${previewVariant}-${selectedScreen}`}
-              src={`/react-preview/index.html?variant=${previewVariant}&screen=${selectedScreen}`}
+              ref={previewFrame}
+              src="/runtime-preview"
+              onLoad={sendPreview}
               title={`Generated React preview: ${selectedScreen}`}
-              sandbox="allow-scripts allow-same-origin"
+              sandbox="allow-scripts"
               className="h-[570px] w-full rounded-[22px] border border-[var(--line)] bg-white"
             />
+            {previewError ? <p role="alert" className="mt-3 px-1 text-[11px] text-[var(--danger)]">{previewError}</p> : null}
           </div>
         ) : <PhonePreview graph={graph} selectedScreen={selectedScreen} />}
       </div>
       <div className="min-w-0 overflow-hidden rounded-[24px] border border-[#303a35] bg-[#1c211f] text-[#dce5df] shadow-[0_24px_50px_-34px_rgba(18,28,23,.8)]">
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-          <div className="flex gap-1 rounded-lg bg-white/5 p-1">
-            {(["react", "swiftui"] as const).map((target) => <button key={target} type="button" onClick={() => { setOutputTarget(target); setOutputFilePath(null); }} className={`rounded-md px-3 py-1.5 text-[10px] font-semibold capitalize ${outputTarget === target ? "bg-white/12 text-white" : "text-white/45 hover:text-white/70"}`}>{target}</button>)}
+          <div className="flex gap-1 rounded-lg bg-white/5 p-1" role="group" aria-label="Output target">
+            {(["react", "swiftui"] as const).map((target) => <button key={target} type="button" aria-pressed={outputTarget === target} onClick={() => { setOutputTarget(target); setOutputFilePath(null); }} className={`rounded-md px-3 py-1.5 text-[10px] font-semibold capitalize ${outputTarget === target ? "bg-white/12 text-white" : "text-white/45 hover:text-white/70"}`}>{target}</button>)}
           </div>
           <div className="flex items-center gap-3">
             <button type="button" onClick={copyGeneratedFile} className="inline-flex items-center gap-1.5 rounded-md bg-white/8 px-2.5 py-1.5 text-[10px] font-medium text-white/70 hover:bg-white/12 hover:text-white">

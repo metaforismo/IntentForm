@@ -1,4 +1,8 @@
-import type { PlatformTarget, SemanticInterfaceGraph } from "@intentform/semantic-schema";
+import {
+  classifyDevice,
+  type PlatformTarget,
+  type SemanticInterfaceGraph,
+} from "@intentform/semantic-schema";
 
 export interface Evidence {
   kind: "viewport" | "node" | "build" | "rule" | "screenshot" | "bounds" | "accessibility";
@@ -13,26 +17,24 @@ export interface RenderObservation {
   primaryAction: { x: number; y: number; width: number; height: number };
   position: string;
   screenshotPath: string;
-  graphExpectsPersistent: boolean;
+  graphPlacement: "inline" | "persistent-bottom";
 }
 
 export function verifyRenderedPrimaryAction(
   observation: RenderObservation,
 ): VerificationFinding[] {
-  const compact = observation.viewport.width <= 390 || observation.viewport.height <= 700;
-  if (!compact) return [];
-
+  const deviceClass = classifyDevice(observation.viewport);
   const findings: VerificationFinding[] = [];
   const persistent = observation.position === "fixed"
     || observation.position === "sticky"
-    || observation.position === "safe-area-inset";
+    || observation.position === "viewport-bottom";
   const actionBottom = observation.primaryAction.y + observation.primaryAction.height;
   const insideViewport = observation.primaryAction.x >= 0
     && observation.primaryAction.y >= 0
     && observation.primaryAction.x + observation.primaryAction.width <= observation.viewport.width
     && actionBottom <= observation.viewport.height;
 
-  if (!persistent) {
+  if (deviceClass === "compact" && !persistent) {
     findings.push({
       id: `${observation.target}.${observation.screenId}.primary.rendered-reachability`,
       target: observation.target,
@@ -47,7 +49,26 @@ export function verifyRenderedPrimaryAction(
         { kind: "node", label: "Computed position", value: observation.position },
         { kind: "screenshot", label: "Screenshot", value: observation.screenshotPath },
       ],
-      responsibleLayer: observation.graphExpectsPersistent ? "compiler" : "graph",
+      responsibleLayer: observation.graphPlacement === "persistent-bottom" ? "compiler" : "graph",
+      status: "open",
+    });
+  }
+
+  if (deviceClass === "regular"
+    && persistent !== (observation.graphPlacement === "persistent-bottom")) {
+    findings.push({
+      id: `${observation.target}.${observation.screenId}.primary.rendered-placement`,
+      target: observation.target,
+      screenId: observation.screenId,
+      severity: "error",
+      violatedIntent: "The rendered primary action must honor the graph's regular-screen placement.",
+      evidence: [
+        { kind: "viewport", label: "Device class", value: deviceClass },
+        { kind: "node", label: "Graph placement", value: observation.graphPlacement },
+        { kind: "node", label: "Observed position", value: observation.position },
+        { kind: "screenshot", label: "Screenshot", value: observation.screenshotPath },
+      ],
+      responsibleLayer: "compiler",
       status: "open",
     });
   }
@@ -66,7 +87,7 @@ export function verifyRenderedPrimaryAction(
         { kind: "bounds", label: "Primary action height", value: observation.primaryAction.height },
         { kind: "screenshot", label: "Screenshot", value: observation.screenshotPath },
       ],
-      responsibleLayer: observation.graphExpectsPersistent ? "compiler" : "graph",
+      responsibleLayer: observation.graphPlacement === "persistent-bottom" ? "compiler" : "graph",
       status: "open",
     });
   }
@@ -88,7 +109,7 @@ export interface VerificationFinding {
 export interface VerificationScenario {
   target: PlatformTarget;
   viewport: { width: number; height: number };
-  buildPassed: boolean;
+  buildStatus: "passed" | "failed" | "not-run";
 }
 
 export interface VerificationResult {
@@ -182,7 +203,7 @@ export function verifyGraph(
 
   findings.push(...verifyTokenContrast(graph, scenario.target));
 
-  if (!scenario.buildPassed) {
+  if (scenario.buildStatus === "failed") {
     findings.push({
       id: `${scenario.target}.build.failed`,
       target: scenario.target,
@@ -193,9 +214,20 @@ export function verifyGraph(
       responsibleLayer: "compiler",
       status: "open",
     });
+  } else if (scenario.buildStatus === "not-run") {
+    findings.push({
+      id: `${scenario.target}.build.not-run`,
+      target: scenario.target,
+      screenId: "project",
+      severity: "warning",
+      violatedIntent: "Generated output needs current build evidence before verification can pass.",
+      evidence: [{ kind: "build", label: "Build status", value: "not run" }],
+      responsibleLayer: "compiler",
+      status: "open",
+    });
   }
 
-  const compact = scenario.viewport.height <= 700 || scenario.viewport.width <= 390;
+  const deviceClass = classifyDevice(scenario.viewport);
   for (const screen of graph.screens) {
     const primaryAction = screen.nodes.find((node) => node.kind === "primary-action");
     if (!primaryAction) {
@@ -212,7 +244,7 @@ export function verifyGraph(
       continue;
     }
 
-    if (compact && primaryAction.layout.placement?.compact !== "persistent-bottom") {
+    if (deviceClass === "compact" && primaryAction.layout.placement?.compact !== "persistent-bottom") {
       findings.push({
         id: `${scenario.target}.${screen.id}.primary.compact-reachability`,
         target: scenario.target,
@@ -249,7 +281,12 @@ export function verifyGraph(
     }
   }
 
-  return { passed: findings.every((finding) => finding.severity !== "error"), scenario, findings };
+  return {
+    passed: scenario.buildStatus === "passed"
+      && findings.every((finding) => finding.severity !== "error"),
+    scenario,
+    findings,
+  };
 }
 
 export function reconcileFindings(

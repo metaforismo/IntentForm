@@ -32,7 +32,7 @@ import {
 } from "@intentform/semantic-schema";
 import { verifyGraph, type VerificationFinding } from "@intentform/verifier";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ManualEditor, type WorkflowStage } from "./manual-editor";
 import { deviceProfiles, type DeviceId } from "./editor/support";
 import { BriefStage } from "./stages/brief-stage";
@@ -92,6 +92,13 @@ interface ActivityEntry {
   text: string;
 }
 
+type PendingAction = "project-open" | "project-save" | "interpret" | "repair";
+
+interface RequestFailure {
+  message: string;
+  retryLabel: string;
+}
+
 export function Studio() {
   const [stage, setStage] = useState<Stage>("canvas");
   const [brief, setBrief] = useState(demoBrief);
@@ -116,8 +123,16 @@ export function Studio() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
   const [theme, setThemeState] = useState<"light" | "dark">("light");
-  const [isPending, startTransition] = useTransition();
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [requestFailure, setRequestFailure] = useState<RequestFailure | null>(null);
   const lastCommit = useRef({ at: 0, notice: "" });
+  const requestSequence = useRef(0);
+  const activeRequest = useRef<{ id: number; controller: AbortController } | null>(null);
+  const retryRequest = useRef<(() => void) | null>(null);
+  const projectMenuTrigger = useRef<HTMLButtonElement>(null);
+  const projectMenuContent = useRef<HTMLDivElement>(null);
+  const projectMenuWasOpen = useRef(false);
+  const noticeTrigger = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (document.documentElement.dataset.theme === "dark") setThemeState("dark");
@@ -178,30 +193,80 @@ export function Studio() {
   }, [notice]);
 
   useEffect(() => {
+    const wasOpen = projectMenuWasOpen.current;
+    projectMenuWasOpen.current = menuOpen;
+    if (!menuOpen) {
+      if (wasOpen) projectMenuTrigger.current?.focus();
+      return;
+    }
+    requestAnimationFrame(() => projectMenuContent.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus());
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setMenuOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [menuOpen]);
+
+  useEffect(() => {
     if (!noticeOpen) return;
     const close = () => setNoticeOpen(false);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setNoticeOpen(false);
+      noticeTrigger.current?.focus();
+    };
     window.addEventListener("pointerdown", close);
-    return () => window.removeEventListener("pointerdown", close);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", onKeyDown);
+    };
   }, [noticeOpen]);
 
   const reactOutput = useMemo(() => compileReact(graph), [graph]);
   const swiftOutput = useMemo(() => compileSwiftUI(graph), [graph]);
   const scenario = scenarios[scenarioId];
   const verification = useMemo(
-    () => verifyGraph(graph, { target: "swiftui", viewport: scenario.viewport, buildPassed: true }),
+    () => verifyGraph(graph, { target: "swiftui", viewport: scenario.viewport, buildStatus: "not-run" }),
     [graph, scenario],
   );
   const changes = useMemo(() => semanticDiff(baseline, graph), [baseline, graph]);
   const output = outputTarget === "react" ? reactOutput : swiftOutput;
+  const graphFingerprint = useRef(reactOutput.fingerprint);
+  graphFingerprint.current = reactOutput.fingerprint;
+  const isPending = pendingAction !== null;
   const selectedCode = output.files.find((file) => file.path === outputFilePath)
     ?? output.files.find((file) => file.path.includes(`screens/${selectedScreen}`))
     ?? output.files[Math.max(0, graph.screens.findIndex((screen) => screen.id === selectedScreen))]
     ?? output.files[0];
-  const previewVariant = graph.screens
-    .find((screen) => screen.id === "payment-request")
-    ?.nodes.find((node) => node.kind === "primary-action")
-    ?.layout.placement?.compact === "persistent-bottom" ? "after" : "before";
 
+  const beginRequest = (action: PendingAction) => {
+    activeRequest.current?.controller.abort();
+    const request = { id: ++requestSequence.current, controller: new AbortController() };
+    activeRequest.current = request;
+    retryRequest.current = null;
+    setRequestFailure(null);
+    setPendingAction(action);
+    return request;
+  };
+
+  const isCurrentRequest = (id: number) => activeRequest.current?.id === id;
+  const finishRequest = (id: number) => {
+    if (!isCurrentRequest(id)) return;
+    activeRequest.current = null;
+    setPendingAction(null);
+  };
+
+  const failRequest = (message: string, retryLabel: string, retry: () => void) => {
+    setNotice(message);
+    retryRequest.current = retry;
+    setRequestFailure({ message, retryLabel });
+  };
+
+  useEffect(() => () => activeRequest.current?.controller.abort(), []);
   /* Rapid identical edits (dragging a color token) coalesce into one undo
      step instead of flooding the history. */
   const commitGraph = (nextGraph: SemanticInterfaceGraph, nextNotice: string) => {
@@ -282,12 +347,16 @@ export function Studio() {
      Claude Code, Codex and the Studio edit the same validated graph. */
   const openLocalProject = () => {
     setMenuOpen(false);
-    startTransition(async () => {
+    const active = beginRequest("project-open");
+    void (async () => {
       try {
-        const response = await fetch("/api/project");
-        if (!response.ok) throw new Error("No local .intentform project is available in this deployment.");
-        const result = (await response.json()) as { graph: unknown; seeded: boolean };
+        const response = await fetch("/api/project", { signal: active.controller.signal, cache: "no-store" });
+        const result = (await response.json()) as { error?: string; graph?: unknown; seeded?: boolean };
+        if (!response.ok || !result.graph || typeof result.seeded !== "boolean") {
+          throw new Error(result.error ?? "No local .intentform project is available in this deployment.");
+        }
         const nextGraph = parseGraph(result.graph);
+        if (!isCurrentRequest(active.id)) return;
         setGraph(nextGraph);
         setBaseline(nextGraph);
         setHistory([]);
@@ -300,26 +369,47 @@ export function Studio() {
           ? "Initialized .intentform/graph.json from the verified sample and opened it."
           : "Opened the local .intentform project. Agent edits are now on the board.");
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : "The local project could not be opened.");
+        if (!isCurrentRequest(active.id) || active.controller.signal.aborted) return;
+        failRequest(
+          error instanceof Error ? error.message : "The local project could not be opened.",
+          "Retry open",
+          openLocalProject,
+        );
+      } finally {
+        finishRequest(active.id);
       }
-    });
+    })();
   };
 
   const saveLocalProject = () => {
     setMenuOpen(false);
-    startTransition(async () => {
+    const active = beginRequest("project-save");
+    const graphToSave = graph;
+    void (async () => {
       try {
         const response = await fetch("/api/project", {
           method: "PUT",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ graph, reason: "studio save" }),
+          body: JSON.stringify({ graph: graphToSave, reason: "studio save" }),
+          signal: active.controller.signal,
         });
-        if (!response.ok) throw new Error("The graph could not be saved to the local project.");
+        const result = (await response.json()) as { error?: string; fingerprint?: string };
+        if (!response.ok || typeof result.fingerprint !== "string") {
+          throw new Error(result.error ?? "The graph could not be saved to the local project.");
+        }
+        if (!isCurrentRequest(active.id)) return;
         setNotice("Saved the graph to .intentform/graph.json for the MCP server and coding agents.");
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : "The local project could not be saved.");
+        if (!isCurrentRequest(active.id) || active.controller.signal.aborted) return;
+        failRequest(
+          error instanceof Error ? error.message : "The local project could not be saved.",
+          "Retry save",
+          saveLocalProject,
+        );
+      } finally {
+        finishRequest(active.id);
       }
-    });
+    })();
   };
 
   const copyGeneratedFile = async () => {
@@ -334,14 +424,19 @@ export function Studio() {
   };
 
   const compileBrief = (operation: "create" | "edit" = briefOperation) => {
-    startTransition(async () => {
+    const active = beginRequest("interpret");
+    const baseFingerprint = reactOutput.fingerprint;
+    const instruction = operation === "edit" ? editInstruction : brief;
+    const graphToEdit = graph;
+    const screenToEdit = selectedScreen;
+    void (async () => {
       try {
-        const instruction = operation === "edit" ? editInstruction : brief;
         setNotice(operation === "edit" ? "Planning the smallest typed semantic edit…" : "Interpreting product intent and validating the graph…");
         const response = await fetch("/api/interpret", {
           method: "POST",
           headers: { "content-type": "application/json", "x-intentform-session": getSessionId() },
-          body: JSON.stringify({ brief: instruction, operation, ...(operation === "edit" ? { graph, screenId: selectedScreen } : {}) }),
+          body: JSON.stringify({ brief: instruction, operation, ...(operation === "edit" ? { graph: graphToEdit, screenId: screenToEdit } : {}) }),
+          signal: active.controller.signal,
         });
         const payload = (await response.json()) as { error?: string; graph?: unknown; mode?: "live" | "replay"; model?: string; note?: string; trace?: TraceSummary };
         if (!response.ok || !payload.graph || !payload.mode || !payload.model || !payload.note) {
@@ -349,6 +444,10 @@ export function Studio() {
         }
         const result = payload as { graph: unknown; mode: "live" | "replay"; model: string; note: string; trace?: TraceSummary };
         const nextGraph = parseGraph(result.graph);
+        if (!isCurrentRequest(active.id)) return;
+        if (operation === "edit" && graphFingerprint.current !== baseFingerprint) {
+          throw new Error("The graph changed while the edit was being planned. Review the current graph and retry the edit.");
+        }
         if (operation === "edit") commitGraph(nextGraph, result.note);
         else {
           setGraph(nextGraph);
@@ -365,24 +464,44 @@ export function Studio() {
         setSelectedNodeId(nextScreen?.nodes[0]?.id ?? null);
         setStage("canvas");
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : "Interpretation failed.");
+        if (!isCurrentRequest(active.id) || active.controller.signal.aborted) return;
+        failRequest(
+          error instanceof Error ? error.message : "Interpretation failed.",
+          operation === "edit" ? "Retry edit" : "Retry compile",
+          () => compileBrief(operation),
+        );
+      } finally {
+        finishRequest(active.id);
       }
-    });
+    })();
   };
 
   const repairFinding = (finding: VerificationFinding) => {
-    startTransition(async () => {
+    const active = beginRequest("repair");
+    const baseFingerprint = reactOutput.fingerprint;
+    const graphToRepair = graph;
+    const scenarioToVerify = verification.scenario;
+    void (async () => {
       try {
         setNotice("Planning the smallest evidence-backed repair…");
         const response = await fetch("/api/repair", {
           method: "POST",
           headers: { "content-type": "application/json", "x-intentform-session": getSessionId() },
-          body: JSON.stringify({ graph, finding, evidence: { build: { passed: true, diagnostics: [] } } }),
+          body: JSON.stringify({
+            graph: graphToRepair,
+            finding,
+            scenario: { target: scenarioToVerify.target, viewport: scenarioToVerify.viewport },
+          }),
+          signal: active.controller.signal,
         });
         const payload = (await response.json()) as { error?: string; proposal?: RepairProposal; mode?: "live" | "replay"; model?: string; trace?: TraceSummary };
         if (!response.ok || !payload.proposal || !payload.mode || !payload.model) throw new Error(payload.error ?? "A safe repair could not be planned.");
         const result = payload as { proposal: RepairProposal; mode: "live" | "replay"; model: string; trace?: TraceSummary };
-        const repaired = applyRepair(graph, result.proposal);
+        if (!isCurrentRequest(active.id)) return;
+        if (graphFingerprint.current !== baseFingerprint) {
+          throw new Error("The graph changed while the repair was being planned. Re-run verification before retrying.");
+        }
+        const repaired = applyRepair(graphToRepair, result.proposal);
         setGraph(repaired);
         setMode(result.mode);
         setModel(result.model);
@@ -390,9 +509,16 @@ export function Studio() {
         setNotice(result.proposal.summary);
         setStage("report");
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : "Repair failed.");
+        if (!isCurrentRequest(active.id) || active.controller.signal.aborted) return;
+        failRequest(
+          error instanceof Error ? error.message : "Repair failed.",
+          "Retry repair",
+          () => repairFinding(finding),
+        );
+      } finally {
+        finishRequest(active.id);
       }
-    });
+    })();
   };
 
   const errorCount = verification.findings.filter((finding) => finding.severity === "error").length;
@@ -405,6 +531,7 @@ export function Studio() {
           <div className="flex min-w-0 items-center gap-2.5">
             <div className="relative">
               <button
+                ref={projectMenuTrigger}
                 type="button"
                 aria-label="IntentForm project menu"
                 aria-expanded={menuOpen}
@@ -416,22 +543,22 @@ export function Studio() {
               {menuOpen ? (
                 <>
                   <button type="button" aria-label="Close project menu" onClick={() => setMenuOpen(false)} className="fixed inset-0 z-[5] cursor-default" tabIndex={-1} />
-                  <div className="menu-pop absolute left-0 top-10 z-[6] w-64 p-1.5">
+                  <div ref={projectMenuContent} role="menu" aria-label="IntentForm project" className="menu-pop absolute left-0 top-10 z-[6] w-64 p-1.5">
                     <div className="border-b border-[var(--line)] px-2.5 pb-2 pt-1.5">
                       <strong className="block text-[12px]">{graph.product.name}</strong>
                       <span className="mt-0.5 block font-mono text-[10px] text-[var(--faint)]">payment-flow.intentform · v{graph.schemaVersion}</span>
                     </div>
-                    <button type="button" onClick={openLocalProject} className="mt-1 flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
+                    <button type="button" role="menuitem" onClick={openLocalProject} disabled={isPending} className="mt-1 flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)] disabled:cursor-wait disabled:opacity-50">
                       <FolderOpen size={13} /> Open local project
                     </button>
-                    <button type="button" onClick={saveLocalProject} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
+                    <button type="button" role="menuitem" onClick={saveLocalProject} disabled={isPending} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)] disabled:cursor-wait disabled:opacity-50">
                       <FloppyDisk size={13} /> Save to local project
                     </button>
                     <div className="my-1 border-t border-[var(--line)]" />
-                    <button type="button" onClick={exportGraph} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
+                    <button type="button" role="menuitem" onClick={exportGraph} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
                       <DownloadSimple size={13} /> Export graph as JSON
                     </button>
-                    <button type="button" onClick={resetProject} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
+                    <button type="button" role="menuitem" onClick={resetProject} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
                       <ArrowsCounterClockwise size={13} /> Reset to verified sample
                     </button>
                   </div>
@@ -443,6 +570,10 @@ export function Studio() {
                 <span className="truncate">{graph.product.name}</span><CaretDown size={10} className="text-[var(--muted)]" />
               </div>
               <span className="block truncate font-mono text-[10px] text-[var(--muted)]">payment-flow.intentform</span>
+            </div>
+            <div className="flex items-center gap-1 text-[9px] font-semibold text-[var(--muted)] sm:hidden" aria-label={mode === "live" ? `Live model: ${model}` : `Deterministic replay: ${model}`}>
+              <span className={`size-1.5 rounded-full ${mode === "live" ? "bg-[var(--accent)]" : "bg-amber-500"}`} aria-hidden="true" />
+              {mode === "live" ? "Live" : "Replay"}
             </div>
           </div>
 
@@ -476,16 +607,16 @@ export function Studio() {
               aria-label="Toggle color theme"
               aria-pressed={theme === "dark"}
               onClick={toggleTheme}
-              className="grid size-8 place-items-center rounded-lg text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"
+              className="hidden size-8 place-items-center rounded-lg text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)] sm:grid"
             >
               {theme === "dark" ? <Sun size={14} weight="fill" /> : <Moon size={14} />}
             </button>
             <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
-              <button type="button" aria-label="Show workspace status" aria-expanded={noticeOpen} onClick={() => setNoticeOpen((open) => !open)} className="grid size-8 place-items-center rounded-lg text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]">
+              <button ref={noticeTrigger} type="button" aria-label="Show workspace status" aria-expanded={noticeOpen} onClick={() => setNoticeOpen((open) => !open)} className="grid size-8 place-items-center rounded-lg text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]">
                 {noticeIsError ? <Warning size={14} weight="fill" className="text-[var(--danger)]" /> : <CheckCircle size={14} weight="fill" className="text-[var(--accent)]" />}
               </button>
               {noticeOpen ? (
-                <div className="menu-pop absolute right-0 top-10 z-[6] w-80 overflow-hidden">
+                <div role="region" aria-label="Workspace status" className="menu-pop absolute right-0 top-10 z-[6] w-[min(320px,calc(100vw-24px))] overflow-hidden">
                   <div role="status" aria-live="polite" className="border-b border-[var(--line)] p-3 text-[12px] leading-relaxed text-[var(--ink)]">{notice}</div>
                   {activity.length > 1 ? (
                     <div className="max-h-56 overflow-auto p-1.5">
@@ -515,7 +646,24 @@ export function Studio() {
           {isPending ? <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-[var(--line)]"><motion.span className="block h-full w-1/3 bg-[var(--accent)]" initial={{ x: "-100%" }} animate={{ x: "300%" }} transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }} /></div> : null}
         </header>
 
-        <section className="min-h-0 min-w-0 overflow-hidden">
+        <section className="relative min-h-0 min-w-0 overflow-hidden" aria-busy={isPending}>
+          {pendingAction ? (
+            <span className="sr-only" role="status" aria-live="polite">Request in progress: {pendingAction}.</span>
+          ) : null}
+          {requestFailure ? (
+            <div className="pointer-events-none absolute inset-x-0 top-3 z-[8] flex justify-center px-3">
+              <div role="alert" className="pointer-events-auto flex max-w-2xl items-center gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-950 shadow-lg">
+                <Warning size={16} weight="fill" className="shrink-0 text-red-600" />
+                <span className="min-w-0 flex-1 leading-relaxed">{requestFailure.message}</span>
+                <button type="button" onClick={() => retryRequest.current?.()} disabled={isPending} className="shrink-0 rounded-lg bg-red-900 px-3 py-2 font-semibold text-white disabled:opacity-50">
+                  {requestFailure.retryLabel}
+                </button>
+                <button type="button" aria-label="Dismiss request error" onClick={() => setRequestFailure(null)} className="shrink-0 rounded-lg px-2 py-2 font-semibold text-red-800 hover:bg-red-100">
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          ) : null}
           <AnimatePresence mode="wait">
             <motion.div
               key={stage}
@@ -556,6 +704,7 @@ export function Studio() {
                   briefOperation={briefOperation}
                   setBriefOperation={setBriefOperation}
                   compileBrief={compileBrief}
+                  isPending={isPending}
                   graph={graph}
                   selectedScreen={selectedScreen}
                 />
@@ -580,7 +729,6 @@ export function Studio() {
                   selectedCode={selectedCode}
                   copyGeneratedFile={copyGeneratedFile}
                   copied={copied}
-                  previewVariant={previewVariant}
                   graph={graph}
                   selectedScreen={selectedScreen}
                 />

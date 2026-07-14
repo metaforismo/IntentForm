@@ -2,11 +2,18 @@ import { createServer } from "node:http";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { chromium, type Browser, type Page } from "playwright";
+import { demoGraph } from "../packages/proof-report/src/demo.ts";
+import { buildProofReport } from "../packages/proof-report/src/index.ts";
+import {
+  CANONICAL_DEVICE_VIEWPORTS,
+  classifyDevice,
+} from "../packages/semantic-schema/src/index.ts";
 import { verifyRenderedPrimaryAction } from "../packages/verifier/src/index.ts";
 
 const root = process.cwd();
 const publicRoot = join(root, "apps/react-preview/dist");
 const artifactRoot = join(root, "artifacts/react");
+const proofReport = buildProofReport(demoGraph, { before: "not-run", after: "not-run" });
 await mkdir(artifactRoot, { recursive: true });
 
 const contentTypes: Record<string, string> = {
@@ -59,6 +66,11 @@ async function observe(page: Page, variant: "before" | "after", viewport: { widt
   });
   const screenshotPath = `artifacts/react/${variant}-${viewport.width}x${viewport.height}.png`;
   await page.screenshot({ path: join(root, screenshotPath), fullPage: true });
+  const graph = proofReport[variant].graph;
+  const primaryAction = graph.screens
+    .find((screen) => screen.id === "payment-request")
+    ?.nodes.find((node) => node.kind === "primary-action");
+  const graphPlacement = primaryAction?.layout.placement?.[classifyDevice(viewport)] ?? "inline";
   const observation = {
     target: "react" as const,
     screenId: "payment-request",
@@ -66,7 +78,7 @@ async function observe(page: Page, variant: "before" | "after", viewport: { widt
     primaryAction: measurement.bounds,
     position: measurement.position,
     screenshotPath,
-    graphExpectsPersistent: variant === "after",
+    graphPlacement,
   };
   return { observation, findings: verifyRenderedPrimaryAction(observation) };
 }
@@ -75,9 +87,9 @@ let browser: Browser | undefined;
 try {
   browser = await launchBrowser();
   const page = await browser.newPage();
-  const before = await observe(page, "before", { width: 375, height: 667 });
-  const after = await observe(page, "after", { width: 375, height: 667 });
-  const regular = await observe(page, "after", { width: 1024, height: 768 });
+  const before = await observe(page, "before", CANONICAL_DEVICE_VIEWPORTS.compactPhone);
+  const after = await observe(page, "after", CANONICAL_DEVICE_VIEWPORTS.compactPhone);
+  const regular = await observe(page, "after", CANONICAL_DEVICE_VIEWPORTS.regularPhone);
 
   await page.setViewportSize({ width: 375, height: 667 });
   await page.goto(`${origin}/?variant=after`, { waitUntil: "networkidle" });
@@ -85,9 +97,23 @@ try {
   await page.getByRole("heading", { name: "Request payment" }).waitFor();
   await page.getByRole("button", { name: "Confirm request" }).click();
   await page.getByRole("heading", { name: "Request sent" }).waitFor();
+  await page.getByText("IF-2048", { exact: true }).waitFor();
+
+  await page.goto(`${origin}/?variant=after&screen=payment-request&state=failed`, { waitUntil: "networkidle" });
+  await page.getByRole("status").getByText("Payment could not be sent. Check the amount and try again.", { exact: true }).waitFor();
+  if (await page.getByRole("textbox", { name: "Amount" }).inputValue() !== "120.00") {
+    throw new Error("The generated React input did not receive its selected fixture value.");
+  }
+  await page.getByText("Mara Rinaldi", { exact: true }).waitFor();
+
+  await page.goto(`${origin}/?variant=after&screen=payment-request&state=idle`, { waitUntil: "networkidle" });
+  if (await page.getByRole("status").count() !== 0) {
+    throw new Error("The generated React failed-state message remained visible for the idle fixture.");
+  }
 
   if (before.findings.length === 0) throw new Error("The controlled before artifact produced no rendered finding");
   if (after.findings.length > 0) throw new Error("The repaired compact artifact still has rendered findings");
+  if (regular.findings.length > 0) throw new Error("The repaired regular artifact does not honor its graph placement");
   if (regular.observation.position !== "static") throw new Error("The repaired action did not return inline on a regular viewport");
 
   const report = {
@@ -95,7 +121,7 @@ try {
     before,
     after,
     regular,
-    flow: { homeToRequestToReceipt: "passed" },
+    flow: { homeToRequestToReceipt: "passed", fixtureStateSelection: "passed" },
     verdict: "verified",
   };
   await writeFile(join(artifactRoot, "evidence.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
@@ -106,6 +132,7 @@ try {
     afterFindings: after.findings.length,
     regularPosition: regular.observation.position,
     flow: report.flow.homeToRequestToReceipt,
+    fixtureStateSelection: report.flow.fixtureStateSelection,
     verdict: report.verdict,
   }, null, 2));
 } finally {

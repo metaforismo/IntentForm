@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  ArrowDown,
+  ArrowUp,
   Copy,
   DotsSixVertical,
   Eye,
@@ -141,6 +143,16 @@ export function LayersPanel({
     onReorderScreens(pageOrder);
   };
 
+  const movePage = (screenId: string, direction: -1 | 1) => {
+    const index = pageOrder.indexOf(screenId);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= pageOrder.length) return;
+    const next = [...pageOrder];
+    [next[index], next[target]] = [next[target]!, next[index]!];
+    setPageOrder(next);
+    onReorderScreens(next);
+  };
+
   const layerRow = (node: SemanticNode, draggable: boolean) => {
     const nodeVisible = isNodeVisible(node, activeVisualState);
     return (
@@ -166,6 +178,8 @@ export function LayersPanel({
   return (
     <aside
       id="editor-structure-panel"
+      role={visible ? "dialog" : undefined}
+      aria-modal={visible ? "true" : undefined}
       aria-label="Pages and layers"
       className={`${visible ? "grid" : "hidden"} ${desktopVisible ? "xl:grid" : "xl:hidden"} absolute inset-y-0 left-0 z-[3] w-[268px] min-h-0 grid-rows-[auto_1fr] border-r border-[var(--line)] bg-[var(--chrome)] shadow-[24px_0_52px_-32px_var(--shadow-strong)] xl:relative xl:z-[1] xl:w-auto xl:shadow-none`}
     >
@@ -174,10 +188,20 @@ export function LayersPanel({
           {([["layers", "Layers"], ["tokens", "Tokens"]] as const).map(([tab, label]) => (
             <button
               key={tab}
+              id={`editor-${tab}-tab`}
               type="button"
               role="tab"
               aria-selected={railTab === tab}
+              aria-controls={`editor-${tab}-tabpanel`}
+              tabIndex={railTab === tab ? 0 : -1}
               onClick={() => onRailTab(tab)}
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                event.preventDefault();
+                const next = tab === "layers" ? "tokens" : "layers";
+                onRailTab(next);
+                requestAnimationFrame(() => document.getElementById(`editor-${next}-tab`)?.focus());
+              }}
               className={`min-h-9 border-b-2 px-3 text-[12px] font-medium transition-colors ${railTab === tab ? "border-[var(--accent)] text-[var(--ink)]" : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"}`}
             >
               {label}
@@ -188,7 +212,7 @@ export function LayersPanel({
       </div>
 
       {railTab === "layers" ? (
-        <div className="grid min-h-0 grid-rows-[auto_auto_1fr]">
+        <div id="editor-layers-tabpanel" role="tabpanel" aria-labelledby="editor-layers-tab" className="grid min-h-0 grid-rows-[auto_auto_1fr]">
           <div className="border-b border-[var(--line)] px-2 pb-2 pt-1.5">
             <PanelHeading
               label="Pages"
@@ -219,7 +243,9 @@ export function LayersPanel({
                         <span className="min-w-0 flex-1 truncate">{item.title}</span>
                         <span className="shrink-0 font-mono text-[10px] text-[var(--faint)] transition-opacity group-hover:opacity-0">{item.nodes.length}</span>
                       </button>
-                      <span className={`absolute inset-y-0 right-0 hidden items-center gap-0.5 pl-3 pr-1 group-hover:flex ${active ? "bg-gradient-to-l from-[var(--accent-soft)] via-[var(--accent-soft)] to-transparent" : "bg-gradient-to-l from-[var(--hover)] via-[var(--hover)] to-transparent"}`}>
+                      <span className={`pointer-events-none absolute inset-y-0 right-0 flex items-center gap-0.5 pl-3 pr-1 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 ${active ? "bg-gradient-to-l from-[var(--accent-soft)] via-[var(--accent-soft)] to-transparent" : "bg-gradient-to-l from-[var(--hover)] via-[var(--hover)] to-transparent"}`}>
+                        <button type="button" aria-label={`Move screen ${item.title} up`} disabled={pageOrder.indexOf(item.id) === 0} onClick={() => movePage(item.id, -1)} className="grid size-6 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--field)] hover:text-[var(--ink)] disabled:opacity-25"><ArrowUp size={12} /></button>
+                        <button type="button" aria-label={`Move screen ${item.title} down`} disabled={pageOrder.indexOf(item.id) === pageOrder.length - 1} onClick={() => movePage(item.id, 1)} className="grid size-6 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--field)] hover:text-[var(--ink)] disabled:opacity-25"><ArrowDown size={12} /></button>
                         <button type="button" aria-label={`Duplicate screen ${item.title}`} onClick={() => onDuplicateScreen(item.id)} className="grid size-6 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--field)] hover:text-[var(--ink)]"><Copy size={12} /></button>
                         <button type="button" aria-label={`Delete screen ${item.title}`} disabled={graph.screens.length <= 1} onClick={() => onDeleteScreen(item.id)} className="grid size-6 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] disabled:opacity-25"><Trash size={12} /></button>
                       </span>
@@ -270,7 +296,7 @@ export function LayersPanel({
           </div>
         </div>
       ) : (
-        <div className="min-h-0 overflow-y-auto overflow-x-hidden">
+        <div id="editor-tokens-tabpanel" role="tabpanel" aria-labelledby="editor-tokens-tab" className="min-h-0 overflow-y-auto overflow-x-hidden">
           <section className="border-b border-[var(--line)] px-3 pb-3 pt-2">
             <PanelHeading label="Color tokens" />
             <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--faint)]">Bound to every frame and compiled into both platforms.</p>

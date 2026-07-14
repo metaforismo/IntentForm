@@ -8,7 +8,7 @@ import { applyGraphPatch, parseGraph } from "@intentform/semantic-schema";
 import { contrastRatio, verifyGraph } from "@intentform/verifier";
 import { demoGraph } from "./demo";
 
-const scenario = { target: "swiftui" as const, viewport: { width: 375, height: 667 }, buildPassed: true };
+const scenario = { target: "swiftui" as const, viewport: { width: 375, height: 667 }, buildStatus: "passed" as const };
 
 describe("token-layer contrast verification and repair", () => {
   it("accepts the sample palette without token findings", () => {

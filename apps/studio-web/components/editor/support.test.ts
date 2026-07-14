@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { demoGraph } from "../../../../packages/proof-report/src/demo";
-import { semanticDiff } from "@intentform/semantic-schema";
-import { fixtureFor, withFixtureValue } from "./support";
+import { classifyDevice, semanticDiff } from "@intentform/semantic-schema";
+import { deviceProfiles, fixtureFor, withFixtureValue } from "./support";
+
+describe("editor device profiles", () => {
+  it("derives every breakpoint from the shared viewport contract", () => {
+    for (const profile of deviceProfiles) {
+      expect(profile.breakpoint).toBe(classifyDevice(profile));
+      expect(profile.detail).toBe(`${profile.width} × ${profile.height}`);
+    }
+  });
+});
 
 describe("fixture editing", () => {
   it("creates a missing state fixture from idle data and keeps the state coherent", () => {

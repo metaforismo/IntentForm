@@ -100,6 +100,10 @@ export function CanvasStage({
   const viewRef = useRef<ViewTransform>({ x: 0, y: 0, scale: 0.6 });
   const panSession = useRef<{ pointerId: number; x: number; y: number; view: ViewTransform } | null>(null);
   const interacted = useRef(false);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+  const contextMenuReturnFocus = useRef<HTMLElement | null>(null);
+  const renameReturnFocus = useRef<HTMLElement | null>(null);
+  const renameWasOpen = useRef(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string; screenId: string } | null>(null);
   const [rename, setRename] = useState<{ nodeId: string; screenId: string; x: number; y: number; width: number; value: string } | null>(null);
 
@@ -151,15 +155,22 @@ export function CanvasStage({
     const viewport = viewportRef.current;
     const frame = frames.find((item) => item.screen.id === screenId);
     if (!viewport || !frame) return;
+    const compactWorkspace = viewport.clientWidth < 640;
+    const horizontalInset = compactWorkspace ? 40 : 260;
+    const topInset = compactWorkspace ? 104 : 0;
+    const bottomInset = compactWorkspace ? 56 : 0;
+    const availableHeight = viewport.clientHeight - topInset - bottomInset;
     const scale = clampScale(Math.min(
-      (viewport.clientWidth - 260) / profile.width,
-      (viewport.clientHeight - 150) / worldHeight,
+      (viewport.clientWidth - horizontalInset) / profile.width,
+      (compactWorkspace ? availableHeight : viewport.clientHeight - 150) / worldHeight,
       1.1,
     ));
     applyView({
       scale,
       x: viewport.clientWidth / 2 - (frame.x + profile.width / 2) * scale,
-      y: (viewport.clientHeight - worldHeight * scale) / 2 + FRAME_HEADER_WORLD * scale * 0.4,
+      y: compactWorkspace
+        ? topInset + (availableHeight - worldHeight * scale) / 2 + FRAME_HEADER_WORLD * scale * 0.4
+        : (viewport.clientHeight - worldHeight * scale) / 2 + FRAME_HEADER_WORLD * scale * 0.4,
     }, smooth);
   }, [applyView, frames, profile.width, worldHeight]);
 
@@ -246,6 +257,7 @@ export function CanvasStage({
 
   useEffect(() => {
     if (!contextMenu) return;
+    requestAnimationFrame(() => contextMenuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus());
     const close = () => setContextMenu(null);
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
     window.addEventListener("pointerdown", close);
@@ -253,8 +265,15 @@ export function CanvasStage({
     return () => {
       window.removeEventListener("pointerdown", close);
       window.removeEventListener("keydown", onKey);
+      if (contextMenuReturnFocus.current?.isConnected) contextMenuReturnFocus.current.focus();
     };
   }, [contextMenu]);
+
+  useEffect(() => {
+    const wasOpen = renameWasOpen.current;
+    renameWasOpen.current = Boolean(rename);
+    if (!rename && wasOpen && renameReturnFocus.current?.isConnected) renameReturnFocus.current.focus();
+  }, [rename]);
 
   const panActive = tool === "hand" || spaceHeld;
 
@@ -272,6 +291,7 @@ export function CanvasStage({
     if (!viewport || !element) return;
     const nodeRect = element.getBoundingClientRect();
     const viewportRect = viewport.getBoundingClientRect();
+    renameReturnFocus.current = element as HTMLElement;
     setRename({
       nodeId: node.id,
       screenId,
@@ -281,6 +301,26 @@ export function CanvasStage({
       value: node.intent.label ?? "",
     });
   }, []);
+
+  const openContextMenu = (
+    element: HTMLElement,
+    nodeId: string,
+    screenId: string,
+    clientPosition?: { x: number; y: number },
+  ) => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const viewportRect = viewport.getBoundingClientRect();
+    const nodeRect = element.getBoundingClientRect();
+    contextMenuReturnFocus.current = element;
+    element.focus();
+    setContextMenu({
+      x: (clientPosition?.x ?? nodeRect.right) - viewportRect.left,
+      y: (clientPosition?.y ?? nodeRect.top) - viewportRect.top,
+      nodeId,
+      screenId,
+    });
+  };
 
   const commitRename = () => {
     if (!rename) return;
@@ -471,8 +511,10 @@ export function CanvasStage({
                         data-selected={selected}
                         data-cross-hover={hoveredNodeId === node.id}
                         role="button"
-                        tabIndex={previewMode ? -1 : 0}
-                        aria-label={`Select ${nodeNames[node.kind]}`}
+                        tabIndex={previewMode ? (flowStep ? 0 : -1) : 0}
+                        aria-label={previewMode && flowStep
+                          ? `Follow ${node.intent.label} to ${graph.screens.find((item) => item.id === flowStep.to)?.title ?? flowStep.to}`
+                          : `Select ${nodeNames[node.kind]}`}
                         onClick={(event) => {
                           event.stopPropagation();
                           if (panActive) return;
@@ -496,12 +538,26 @@ export function CanvasStage({
                           event.stopPropagation();
                           onSelectScreen(screen.id);
                           onSelectNode(node.id);
-                          const rect = viewportRef.current?.getBoundingClientRect();
-                          if (rect) setContextMenu({ x: event.clientX - rect.left, y: event.clientY - rect.top, nodeId: node.id, screenId: screen.id });
+                          openContextMenu(
+                            event.currentTarget,
+                            node.id,
+                            screen.id,
+                            event.clientX || event.clientY ? { x: event.clientX, y: event.clientY } : undefined,
+                          );
                         }}
                         onKeyDown={(event) => {
+                          if (event.shiftKey && event.key === "F10" && !previewMode) {
+                            event.preventDefault();
+                            openContextMenu(event.currentTarget, node.id, screen.id);
+                            return;
+                          }
                           if (event.key === "Enter" || event.key === " ") {
                             event.preventDefault();
+                            if (previewMode && flowStep) {
+                              onSelectScreen(flowStep.to);
+                              fitScreen(flowStep.to, true);
+                              return;
+                            }
                             onSelectScreen(screen.id);
                             onSelectNode(node.id);
                           }
@@ -558,11 +614,27 @@ export function CanvasStage({
 
       {contextMenu ? (
         <div
+          ref={contextMenuRef}
           role="menu"
           aria-label="Layer actions"
           className="menu-pop absolute z-20 w-52 p-1.5"
           style={{ left: Math.min(contextMenu.x, (viewportRef.current?.clientWidth ?? 600) - 220), top: Math.min(contextMenu.y, (viewportRef.current?.clientHeight ?? 500) - 240) }}
           onPointerDown={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            const items = [...event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+            const current = items.indexOf(document.activeElement as HTMLElement);
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault();
+              const offset = event.key === "ArrowDown" ? 1 : -1;
+              items[(current + offset + items.length) % items.length]?.focus();
+            } else if (event.key === "Home") {
+              event.preventDefault();
+              items[0]?.focus();
+            } else if (event.key === "End") {
+              event.preventDefault();
+              items.at(-1)?.focus();
+            }
+          }}
         >
           {([
             { label: "Rename label", icon: PencilSimple, run: () => {

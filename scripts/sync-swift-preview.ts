@@ -6,7 +6,7 @@ import { demoGraph } from "../packages/proof-report/src/demo.ts";
 
 const root = process.cwd();
 const destination = join(root, "examples/preview-ios/Sources/IntentFormPreview");
-const output = compileSwiftUI(buildProofReport(demoGraph).after.graph);
+const output = compileSwiftUI(buildProofReport(demoGraph, { before: "not-run", after: "not-run" }).after.graph);
 
 for (const file of output.files) {
   const target = join(destination, file.path);

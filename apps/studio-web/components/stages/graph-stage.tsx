@@ -29,6 +29,7 @@ export function GraphStage({ graph, selectedScreen, setSelectedScreen, onInspect
             <button
               key={item.id}
               type="button"
+              aria-current={selectedScreen === item.id ? "true" : undefined}
               onClick={() => setSelectedScreen(item.id)}
               className={`flex h-9 items-center justify-between gap-2 rounded-lg px-2.5 text-left transition-colors ${selectedScreen === item.id ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"}`}
             >
@@ -68,14 +69,14 @@ export function GraphStage({ graph, selectedScreen, setSelectedScreen, onInspect
             {screen?.nodes.map((node, index) => {
               const primary = node.intent.importance === "primary";
               return (
-                <motion.div layout key={node.id} className="grid grid-cols-[22px_1fr_auto_auto] items-center gap-3 px-2.5 py-2.5">
+                <motion.div layout key={node.id} className="grid grid-cols-[22px_minmax(0,1fr)] items-center gap-3 px-2.5 py-2.5 sm:grid-cols-[22px_minmax(0,1fr)_auto_auto]">
                   <span className="font-mono text-[10px] text-[var(--faint)]">{String(index + 1).padStart(2, "0")}</span>
                   <span className="min-w-0">
                     <span className="block truncate text-[12px] text-[var(--ink)]">{node.intent.label}</span>
                     <span className="block truncate font-mono text-[10px] text-[var(--faint)]">{node.id}</span>
                   </span>
-                  <span className="rounded-md bg-[var(--chip)] px-2 py-0.5 text-[11px] text-[var(--muted)]">{node.kind.replace(/-/g, " ")}</span>
-                  <span className="flex items-center gap-1.5">
+                  <span className="hidden rounded-md bg-[var(--chip)] px-2 py-0.5 text-[11px] text-[var(--muted)] sm:inline">{node.kind.replace(/-/g, " ")}</span>
+                  <span className="hidden items-center gap-1.5 sm:flex">
                     <span className={`size-1.5 shrink-0 rounded-full ${primary ? "bg-[var(--accent)]" : "bg-[var(--faint)]"}`} />
                     <span className={`text-[11px] ${primary ? "text-[var(--accent)]" : "text-[var(--faint)]"}`}>{node.intent.importance}</span>
                   </span>

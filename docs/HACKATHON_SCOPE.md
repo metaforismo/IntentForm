@@ -7,7 +7,7 @@ Existing AI builders generate code. IntentForm preserves product intent.
 The Build Week submission demonstrates one complete causal chain:
 
 ```text
-brief -> structured graph -> two deterministic compilers -> real build
+brief -> structured graph -> two deterministic compilers -> real builds
       -> evidence-backed failure -> typed repair -> independent passing rerun
 ```
 
@@ -26,7 +26,7 @@ brief -> structured graph -> two deterministic compilers -> real build
 
 ## Explicitly deferred
 
-- Expo, Compose, the desktop shell and infinite/freeform canvas.
+- Expo, Compose, the desktop shell and arbitrary coordinate/freeform design primitives.
 - Cross-platform pixel comparison and visual-diff thresholds.
 - Arbitrary source import or round-trip editing.
 - Backend and business-logic generation.

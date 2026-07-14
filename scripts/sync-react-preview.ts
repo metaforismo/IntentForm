@@ -6,7 +6,7 @@ import { demoGraph } from "../packages/proof-report/src/demo.ts";
 
 const root = process.cwd();
 const destination = join(root, "apps/react-preview/src/generated");
-const report = buildProofReport(demoGraph);
+const report = buildProofReport(demoGraph, { before: "not-run", after: "not-run" });
 
 async function emit(relativePath: string, content: string) {
   const target = join(destination, relativePath);

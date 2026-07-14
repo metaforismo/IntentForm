@@ -140,6 +140,8 @@ export function Inspector({
   return (
     <aside
       id="editor-inspector-panel"
+      role={visible ? "dialog" : undefined}
+      aria-modal={visible ? "true" : undefined}
       aria-label="Design inspector"
       className={`${visible ? "block" : "hidden"} ${desktopVisible ? "xl:block" : "xl:hidden"} absolute inset-y-0 right-0 z-[3] w-[304px] min-h-0 overflow-y-auto overflow-x-hidden border-l border-[var(--line)] bg-[var(--chrome)] text-[var(--t-strong)] shadow-[-24px_0_52px_-32px_var(--shadow-strong)] xl:relative xl:z-[1] xl:w-auto xl:shadow-none`}
     >

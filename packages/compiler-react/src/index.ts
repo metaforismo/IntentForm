@@ -1,33 +1,77 @@
 import {
   fingerprintFiles,
   lowerGraph,
+  validateGeneratedOutput,
   type CompilerBackend,
   type CompilerDiagnostic,
   type GeneratedFileSet,
   type PlatformIR,
   type PlatformIRNode,
 } from "@intentform/compiler-core";
-import type { SemanticInterfaceGraph } from "@intentform/semantic-schema";
+export {
+  lowerGraph,
+  type PlatformIR,
+  type PlatformIRNode,
+  type PlatformIRScreen,
+} from "@intentform/compiler-core";
+import {
+  DEVICE_CLASS_LIMITS,
+  type Expression,
+  type SemanticInterfaceGraph,
+} from "@intentform/semantic-schema";
+
+const reactExpression = (expression: Expression): string => {
+  if (expression.op === "value") return JSON.stringify(expression.value);
+  if (expression.op === "field") return `data.${expression.path.slice("data.".length)}`;
+  if (expression.op === "not") return `!(${reactExpression(expression.value)})`;
+  return `(${reactExpression(expression.left)} === ${reactExpression(expression.right)})`;
+};
+
+const fieldValue = (name: string): string => `data.${name}`;
+const displayedField = (name: string): string => `{String(${fieldValue(name)} ?? "")}`;
+
+const eventCall = (event: PlatformIRNode["events"][number]): string => {
+  if (!event.payload) return `events.${event.name}()`;
+  const fallback = event.payload === "string" ? '""' : event.payload === "number" ? "0" : "false";
+  const payload = event.payloadField
+    ? `${fieldValue(event.payloadField.name)}${event.payloadField.required ? "" : ` ?? ${fallback}`}`
+    : fallback;
+  return `events.${event.name}(${payload})`;
+};
+
+const eventHandler = (node: PlatformIRNode): string => {
+  if (node.events.length === 0) return "";
+  if (node.events.length === 1 && !node.events[0]!.payload) {
+    return ` onClick={events.${node.events[0]!.name}}`;
+  }
+  return ` onClick={() => { ${node.events.map(eventCall).join("; ")}; }}`;
+};
 
 const componentForNode = (node: PlatformIRNode): string => {
   const label = `{${JSON.stringify(node.label)}}`;
-  const handler = node.eventName ? ` onClick={events.${node.eventName}}` : "";
+  const handler = eventHandler(node);
+  const value = node.bindings.value ? displayedField(node.bindings.value.name) : null;
+  const detail = node.bindings.detail && node.bindings.detail.name !== node.bindings.value?.name
+    ? displayedField(node.bindings.detail.name)
+    : null;
   let source: string;
   switch (node.kind) {
     case "balance-summary":
-      source = `<section className="balance" aria-label={${JSON.stringify(node.accessibilityLabel)}}><span>Available balance</span><strong>€8,420.16</strong><small>Updated just now</small></section>`;
+      source = `<section className="balance" aria-label={${JSON.stringify(node.accessibilityLabel)}}><span>${label}</span>${value ? `<strong>${value}</strong>` : ""}${detail ? `<small>${detail}</small>` : ""}</section>`;
       break;
     case "transaction-list":
-      source = `<section aria-label={${JSON.stringify(node.accessibilityLabel)}}><h2>Recent activity</h2><ul className="transactions"><li><span>Riva Studio</span><strong>−€84.20</strong></li><li><span>Northline Market</span><strong>−€32.70</strong></li></ul></section>`;
+      source = `<section aria-label={${JSON.stringify(node.accessibilityLabel)}}><h2>${label}</h2>${value ? `<p>${value}</p>` : ""}</section>`;
       break;
     case "money-input":
-      source = `<label className="money-field"><span>${label}</span><input inputMode="decimal" defaultValue="120.00" aria-label={${JSON.stringify(node.accessibilityLabel)}} /></label>`;
+      source = `<label className="money-field"><span>${label}</span><input inputMode="decimal"${node.bindings.value ? ` defaultValue={${fieldValue(node.bindings.value.name)}}` : ""} aria-label={${JSON.stringify(node.accessibilityLabel)}} /></label>`;
       break;
     case "recipient-identity":
-      source = `<section className="recipient" aria-label={${JSON.stringify(node.accessibilityLabel)}}><span className="avatar" aria-hidden="true">MR</span><span><strong>Mara Rinaldi</strong><small>mara@northline.test</small></span></section>`;
+      source = `<section className="recipient" aria-label={${JSON.stringify(node.accessibilityLabel)}}>${node.bindings.value ? `<span className="avatar" aria-hidden="true">{String(${fieldValue(node.bindings.value.name)} ?? "").slice(0, 2).toUpperCase()}</span>` : ""}<span><strong>${value ?? label}</strong>${detail ? `<small>${detail}</small>` : ""}</span></section>`;
       break;
     case "primary-action": {
-      const className = node.compactPlacement === "persistent-bottom" ? "primary persistent" : "primary";
+      const compactPlacement = node.compactPlacement === "persistent-bottom" ? "persistent" : "inline";
+      const regularPlacement = node.regularPlacement === "persistent-bottom" ? "persistent" : "inline";
+      const className = `primary placement-compact-${compactPlacement} placement-regular-${regularPlacement}`;
       source = `<button className="${className}" type="button" aria-label={${JSON.stringify(node.accessibilityLabel)}}${handler}>${label}</button>`;
       break;
     }
@@ -38,14 +82,19 @@ const componentForNode = (node: PlatformIRNode): string => {
       source = `<p role="status" className="status">${label}</p>`;
       break;
     case "receipt-summary":
-      source = `<section className="receipt" aria-label={${JSON.stringify(node.accessibilityLabel)}}><span>Payment complete</span><strong>€120.00</strong><small>Reference IF-2048</small></section>`;
+      source = `<section className="receipt" aria-label={${JSON.stringify(node.accessibilityLabel)}}><span>${label}</span>${detail ? `<strong>${detail}</strong>` : ""}${value ? `<small>${value}</small>` : ""}</section>`;
       break;
     default:
       source = `<div>${label}</div>`;
   }
 
-  if (node.visibleStates.length > 0) {
-    return `{${JSON.stringify(node.visibleStates)}.includes(data.status) ? (${source}) : null}`;
+  if (node.visibility.length > 0) {
+    const condition = node.visibility.map((visibility) => visibility.expression
+      ? reactExpression(visibility.expression)
+      : node.bindings.status
+        ? `${fieldValue(node.bindings.status.name)} === ${JSON.stringify(visibility.state)}`
+        : "true").join(" || ");
+    return `{${condition} ? (${source}) : null}`;
   }
   return source;
 };
@@ -94,12 +143,6 @@ function contractSource(ir: PlatformIR, screenIndex: number): string {
   return `export interface ${name}Data {\n${fields}\n}\n\nexport interface ${name}Events {\n${events}\n}\n`;
 }
 
-const defaultValue = (type: "string" | "number" | "boolean" | "money" | "status"): unknown => {
-  if (type === "number") return 0;
-  if (type === "boolean") return false;
-  return type === "status" ? "idle" : "";
-};
-
 function appSource(ir: PlatformIR): string {
   const imports = ir.screens
     .map((screen) => `import { ${componentName(screen.id)} } from "./screens/${screen.id}";`)
@@ -108,13 +151,14 @@ function appSource(ir: PlatformIR): string {
   const initialScreen = ir.screens[0]?.id;
   if (!initialScreen) throw new Error("React output needs at least one screen");
 
+  const fixtureConstants = ir.screens.map((screen) => {
+    const fixtures = screen.fixtures.length > 0 ? screen.fixtures : [screen.defaultFixture];
+    const byState = Object.fromEntries(fixtures.map((fixture) => [fixture.state, fixture.data]));
+    return `const ${componentName(screen.id).replace(/Screen$/, "")}Fixtures = ${JSON.stringify(byState)} as const;`;
+  }).join("\n");
+
   const branches = ir.screens.map((screen) => {
-    const data = Object.fromEntries(
-      (screen.contract?.data ?? []).map((field) => [
-        field.name,
-        screen.fixture[field.name] ?? defaultValue(field.type),
-      ]),
-    );
+    const fixturesName = `${componentName(screen.id).replace(/Screen$/, "")}Fixtures`;
     const events = (screen.contract?.events ?? []).map((event) => {
       const target = screen.eventTargets[event.name];
       const argument = event.payload ? `_payload: ${event.payload}` : "";
@@ -122,7 +166,7 @@ function appSource(ir: PlatformIR): string {
     }).join("\n");
     return `      {screen === ${JSON.stringify(screen.id)} ? (
         <${componentName(screen.id)}
-          data={${JSON.stringify(data)}}
+          data={${fixturesName}[(requestedState ?? "") as keyof typeof ${fixturesName}] ?? ${fixturesName}[${JSON.stringify(screen.defaultFixture.state)}]}
           events={{
 ${events}
           }}
@@ -136,8 +180,12 @@ import "./styles.css";
 
 type ScreenId = ${screenIds};
 
+${fixtureConstants}
+
 export function GeneratedApp() {
-  const requestedScreen = new URLSearchParams(window.location.search).get("screen") as ScreenId | null;
+  const search = new URLSearchParams(window.location.search);
+  const requestedScreen = search.get("screen") as ScreenId | null;
+  const requestedState = search.get("state");
   const [screen, setScreen] = useState<ScreenId>(
     requestedScreen && [${ir.screens.map((screen) => JSON.stringify(screen.id)).join(", ")}].includes(requestedScreen)
       ? requestedScreen
@@ -204,10 +252,13 @@ h1 { margin: 8px 0 28px; font-size: 32px; letter-spacing: -.04em; }
 button { min-height: 48px; border: 0; border-radius: var(--if-control-radius); font: inherit; font-weight: 700; cursor: pointer; }
 button:focus-visible, input:focus-visible { outline: 3px solid color-mix(in oklab, var(--if-accent) 55%, #ffffff); outline-offset: 3px; }
 .primary { padding: 16px 20px; color: white; background: var(--if-accent); }
-.primary.persistent { position: fixed; right: max(22px, calc((100vw - 396px) / 2)); bottom: max(18px, env(safe-area-inset-bottom)); left: max(22px, calc((100vw - 396px) / 2)); }
+.primary.placement-compact-persistent { position: fixed; right: max(22px, calc((100vw - 396px) / 2)); bottom: max(18px, env(safe-area-inset-bottom)); left: max(22px, calc((100vw - 396px) / 2)); }
 .secondary { color: var(--if-accent-deep); background: var(--if-accent-soft); }
 .status { padding: 14px; border-left: 3px solid #b65e46; background: #f8e9e3; }
-@media (min-width: 700px) { .primary.persistent { position: static; } }
+@media (min-width: ${DEVICE_CLASS_LIMITS.compactMaxWidth + 1}px) and (min-height: ${DEVICE_CLASS_LIMITS.compactMaxHeight + 1}px) {
+  .primary.placement-compact-persistent { position: static; }
+  .primary.placement-regular-persistent { position: fixed; right: max(22px, calc((100vw - 396px) / 2)); bottom: max(18px, env(safe-area-inset-bottom)); left: max(22px, calc((100vw - 396px) / 2)); }
+}
 `;
 }
 
@@ -245,5 +296,5 @@ export class ReactCompiler implements CompilerBackend {
 
 export function compileReact(graph: SemanticInterfaceGraph): GeneratedFileSet {
   const compiler = new ReactCompiler();
-  return compiler.generate(compiler.lower(graph));
+  return validateGeneratedOutput(compiler, compiler.generate(compiler.lower(graph)));
 }
