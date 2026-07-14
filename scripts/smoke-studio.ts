@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { chromium, type Browser } from "playwright";
 
@@ -58,11 +59,42 @@ try {
   page.setDefaultTimeout(10_000);
   await page.goto(origin, { waitUntil: "networkidle" });
 
+  const workspaceStatus = page.getByRole("button", { name: "Show workspace status" });
+  await workspaceStatus.click();
+  await page.getByRole("status").waitFor();
+  await workspaceStatus.click();
+
+  await page.keyboard.press("Control+k");
+  await page.getByRole("region", { name: "Command menu" }).waitFor();
+  await page.getByLabel("Search commands").fill("preview");
+  await page.getByRole("button", { name: "Enter preview mode" }).waitFor();
+  await page.keyboard.press("Escape");
+  await page.getByRole("region", { name: "Command menu" }).waitFor({ state: "detached" });
+
+  const previewMode = page.getByRole("button", { name: "Toggle preview mode" });
+  await previewMode.click();
+  if (await page.locator("[data-preview-mode='true']").count() !== 1 || await previewMode.getAttribute("aria-pressed") !== "true") {
+    throw new Error("Preview mode did not hide editor selection behavior");
+  }
+  await previewMode.click();
+
   await page.keyboard.press("Alt+l");
   const desktopLayersTrigger = page.getByRole("button", { name: "Open pages and layers" });
   await desktopLayersTrigger.waitFor();
   await desktopLayersTrigger.click();
   await page.getByTestId("layer-payment-request.amount").waitFor();
+  const layerSearch = page.getByLabel("Search layers");
+  await layerSearch.fill("Recipient");
+  await page.getByTestId("layer-payment-request.recipient").waitFor();
+  if (await page.getByTestId("layer-payment-request.amount").count() !== 0) {
+    throw new Error("Layer search did not filter non-matching semantic nodes");
+  }
+  await page.getByRole("button", { name: "Clear layer search" }).click();
+  await page.getByTestId("layer-payment-request.amount").click();
+  await page.getByRole("button", { name: "Duplicate layer" }).click();
+  await page.getByTestId("layer-payment-request.amount-copy").waitFor();
+  await page.getByRole("button", { name: "Undo" }).click();
+  await page.getByTestId("layer-payment-request.amount-copy").waitFor({ state: "detached" });
   await page.getByRole("button", { name: "Close design inspector" }).click();
   const desktopInspectorTrigger = page.getByRole("button", { name: "Open design inspector" });
   await desktopInspectorTrigger.waitFor();
@@ -94,6 +126,9 @@ try {
   await page.keyboard.press("Escape");
   await page.getByRole("region", { name: "Keyboard shortcuts" }).waitFor({ state: "detached" });
   await page.getByLabel("Preview device").selectOption("compact-phone");
+
+  await mkdir(join(root, "output/playwright"), { recursive: true });
+  await page.screenshot({ path: join(root, "output/playwright/studio-redesign-wide.png"), fullPage: true });
 
   await page.getByTestId("layer-payment-request.confirm").click();
   const action = page.getByTestId("canvas-node-payment-request.confirm");
@@ -142,6 +177,7 @@ try {
   await inspectorTrigger.click();
   await adaptivePage.getByTestId("semantic-inspector").waitFor();
   await adaptivePage.getByText("Bottom safe area", { exact: true }).waitFor();
+  await adaptivePage.screenshot({ path: join(root, "output/playwright/studio-redesign-1100.png"), fullPage: true });
   console.log("Studio adaptive layer and inspector drawers: passed");
 } finally {
   await browser?.close();

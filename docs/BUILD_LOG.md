@@ -84,3 +84,14 @@ The public macOS run completed on an iPhone 16 Pro Simulator, uploaded the nativ
 - Added fit-to-canvas, bounded zoom, Select/Hand commands, undo/redo and panel keyboard shortcuts with a discoverable shortcut sheet.
 - Fixed a CSS Grid min-content overflow that pushed Device/State/Zoom controls below the visible 1100 × 900 workspace.
 - Extended the production smoke test across state visibility, breakpoint switching, keyboard commands, desktop focus mode and adaptive control reachability.
+
+## 2026-07-14 — Editor-grade frontend rebuild
+
+- Removed the remaining nested-dashboard shell and moved the six proof surfaces into a compact top workflow bar, giving the semantic canvas the full application viewport.
+- Unified Pages, Layers, canvas chrome and Inspector around one neutral editor palette instead of mixing a light app shell with dark side panels.
+- Added searchable layers, a searchable `Cmd/Ctrl+K` command menu, preview mode, node duplication, tablet preview, middle-mouse panning and modifier-wheel zoom.
+- Added additional semantic insertions for secondary actions and receipt summaries without introducing freeform coordinates.
+- Added validated browser-local draft recovery with safe fallback when storage is invalid or unavailable.
+- Added a persistent workspace-status control and a non-blocking compilation progress indicator.
+- Fixed undo and redo selection reconciliation after a duplicated selected node disappears from the graph.
+- Expanded production browser coverage for command search, focused-input Escape handling, preview mode, layer filtering, duplication/undo, responsive drawers and screenshots at 1440 × 1000 and 1100 × 900.

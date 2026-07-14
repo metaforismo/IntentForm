@@ -3,13 +3,14 @@
 import {
   ArrowRight,
   BracketsCurly,
+  CaretDown,
   CheckCircle,
   CircleNotch,
   Code,
   DeviceMobile,
   FileText,
   GitDiff,
-  Play,
+  Lightning,
   ShieldCheck,
   Sparkle,
   Selection,
@@ -28,19 +29,19 @@ import {
 } from "@intentform/semantic-schema";
 import { verifyGraph, type VerificationFinding } from "@intentform/verifier";
 import { AnimatePresence, motion } from "motion/react";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { ManualEditor } from "./manual-editor";
 
 type Stage = "canvas" | "brief" | "graph" | "outputs" | "verify" | "report";
 type OutputTarget = "react" | "swiftui";
 
-const stages: Array<{ id: Stage; label: string; icon: typeof Sparkle }> = [
-  { id: "canvas", label: "Design canvas", icon: Selection },
-  { id: "brief", label: "Brief", icon: Sparkle },
-  { id: "graph", label: "Semantic graph", icon: TreeStructure },
-  { id: "outputs", label: "Native outputs", icon: Code },
-  { id: "verify", label: "Verification", icon: ShieldCheck },
-  { id: "report", label: "Proof report", icon: FileText },
+const stages: Array<{ id: Stage; label: string; shortLabel: string; icon: typeof Sparkle }> = [
+  { id: "canvas", label: "Design canvas", shortLabel: "Design", icon: Selection },
+  { id: "brief", label: "Brief", shortLabel: "Brief", icon: Sparkle },
+  { id: "graph", label: "Semantic graph", shortLabel: "Graph", icon: TreeStructure },
+  { id: "outputs", label: "Native outputs", shortLabel: "Code", icon: Code },
+  { id: "verify", label: "Verification", shortLabel: "Verify", icon: ShieldCheck },
+  { id: "report", label: "Proof report", shortLabel: "Report", icon: FileText },
 ];
 
 const compactScenario = {
@@ -60,10 +61,10 @@ function getSessionId(): string {
 
 function ModeBadge({ mode, model }: { mode: "live" | "replay"; model: string }) {
   return (
-    <div className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-white/80 px-3 py-1.5 text-xs font-semibold text-[var(--muted)] shadow-[inset_0_1px_0_rgba(255,255,255,.7)]">
+    <div className="inline-flex min-h-8 items-center gap-2 rounded-lg border border-[var(--line)] bg-white/70 px-2.5 text-[10px] font-medium text-[var(--muted)] shadow-[inset_0_1px_0_rgba(255,255,255,.8)]">
       <span className={`status-breathe size-2 rounded-full ${mode === "live" ? "bg-[var(--accent)]" : "bg-amber-500"}`} />
       {mode === "live" ? "Live model" : "Deterministic replay"}
-      <span className="font-mono font-normal text-zinc-400">{model}</span>
+      <span className="hidden font-mono font-normal text-zinc-400 2xl:inline">{model}</span>
     </div>
   );
 }
@@ -165,7 +166,42 @@ export function Studio() {
   const [mode, setMode] = useState<"live" | "replay">("replay");
   const [model, setModel] = useState("deterministic-sample");
   const [notice, setNotice] = useState("Ready to compile the sample brief.");
+  const [noticeOpen, setNoticeOpen] = useState(false);
+  const [draftReady, setDraftReady] = useState(false);
   const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("intentform-project-draft-v1");
+      if (saved) {
+        const restored = parseGraph(JSON.parse(saved));
+        const nextScreen = restored.screens.find((screen) => screen.id === selectedScreen) ?? restored.screens[0];
+        setGraph(restored);
+        setBaseline(restored);
+        setSelectedScreen(nextScreen?.id ?? "");
+        setSelectedNodeId(nextScreen?.nodes[0]?.id ?? null);
+        setNotice("Restored the local semantic draft.");
+      }
+    } catch {
+      window.localStorage.removeItem("intentform-project-draft-v1");
+      setNotice("The local draft was invalid, so IntentForm reopened the verified sample.");
+    } finally {
+      setDraftReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!draftReady) return;
+    try {
+      window.localStorage.setItem("intentform-project-draft-v1", JSON.stringify(graph));
+    } catch {
+      setNotice("The semantic graph is valid, but this browser could not save the local draft.");
+    }
+  }, [draftReady, graph]);
+
+  useEffect(() => {
+    if (/failed|could not|invalid|quota|unavailable/i.test(notice)) setNoticeOpen(true);
+  }, [notice]);
 
   const reactOutput = useMemo(() => compileReact(graph), [graph]);
   const swiftOutput = useMemo(() => compileSwiftUI(graph), [graph]);
@@ -186,12 +222,26 @@ export function Studio() {
     setNotice(nextNotice);
   };
 
+  const reconcileSelection = (nextGraph: SemanticInterfaceGraph) => {
+    const nextScreen = nextGraph.screens.find((screen) => screen.id === selectedScreen) ?? nextGraph.screens[0];
+    if (!nextScreen) {
+      setSelectedScreen("");
+      setSelectedNodeId(null);
+      return;
+    }
+    setSelectedScreen(nextScreen.id);
+    if (!selectedNodeId || !nextScreen.nodes.some((node) => node.id === selectedNodeId)) {
+      setSelectedNodeId(nextScreen.nodes[0]?.id ?? null);
+    }
+  };
+
   const undo = () => {
     const previous = history.at(-1);
     if (!previous) return;
     setHistory((items) => items.slice(0, -1));
     setFuture((items) => [graph, ...items].slice(0, 40));
     setGraph(previous);
+    reconcileSelection(previous);
     setNotice("Undid the last semantic edit.");
   };
 
@@ -201,6 +251,7 @@ export function Studio() {
     setFuture((items) => items.slice(1));
     setHistory((items) => [...items.slice(-39), graph]);
     setGraph(next);
+    reconcileSelection(next);
     setNotice("Restored the semantic edit.");
   };
 
@@ -259,15 +310,22 @@ export function Studio() {
   const errorFinding = verification.findings.find((finding) => finding.severity === "error");
 
   return (
-    <main className="studio-grain min-h-[100dvh] p-2 text-[var(--ink)]">
-      <div className="mx-auto grid min-h-[calc(100dvh-16px)] max-w-[1680px] overflow-hidden rounded-[18px] border border-white/70 bg-[var(--surface)] shadow-[0_32px_90px_-46px_rgba(21,36,29,.32)] md:grid-cols-[92px_1fr]">
-        <aside className="flex flex-col border-b border-[var(--line)] bg-[#eef1ed] p-2 md:border-r md:border-b-0">
-          <div className="flex items-center gap-3 px-1 py-2 md:flex-col md:gap-1">
-            <div className="grid size-9 place-items-center rounded-xl bg-[#183b31] text-white shadow-[inset_0_1px_0_rgba(255,255,255,.16)]"><BracketsCurly size={19} weight="bold" /></div>
-            <div className="md:text-center"><strong className="block tracking-[-.03em] md:text-[10px]">IntentForm</strong><span className="text-[10px] text-[var(--muted)] md:hidden">Build Week · 0.1</span></div>
+    <main className="studio-grain min-h-[100dvh] overflow-hidden text-[var(--ink)]">
+      <div className="grid min-h-[100dvh] grid-rows-[54px_minmax(0,1fr)] bg-[var(--surface)]">
+        <header className="studio-topbar relative z-[5] grid grid-cols-[auto_minmax(0,1fr)_auto] items-center border-b border-[var(--line)] bg-[rgba(250,251,248,.92)] px-2.5 backdrop-blur-xl">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <button type="button" aria-label="IntentForm project menu" className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-[#183b31] text-white shadow-[inset_0_1px_0_rgba(255,255,255,.18)] transition-transform active:scale-[.96]">
+              <BracketsCurly size={16} weight="bold" />
+            </button>
+            <div className="hidden min-w-0 sm:block">
+              <div className="flex items-center gap-1 text-[10px] font-semibold tracking-[-.01em]">
+                <span className="truncate">{graph.product.name}</span><CaretDown size={10} className="text-[var(--muted)]" />
+              </div>
+              <span className="block truncate font-mono text-[8px] text-[var(--muted)]">payment-flow.intentform</span>
+            </div>
           </div>
 
-          <nav aria-label="Workflow" className="mt-3 grid grid-cols-6 gap-1 md:mt-7 md:grid-cols-1 md:gap-1.5">
+          <nav aria-label="Workflow" className="mx-auto flex min-w-0 items-center rounded-[10px] border border-[var(--line)] bg-[#f1f3f0] p-0.5">
             {stages.map((item) => {
               const Icon = item.icon;
               const active = stage === item.id;
@@ -276,41 +334,40 @@ export function Studio() {
                   key={item.id}
                   type="button"
                   title={item.label}
+                  aria-label={item.label}
+                  aria-current={active ? "page" : undefined}
                   onClick={() => setStage(item.id)}
-                  className={`group flex min-h-11 items-center justify-center gap-3 rounded-xl px-2 text-left text-xs font-medium transition-[background,color,transform] duration-200 active:scale-[.98] md:min-h-[58px] md:flex-col md:gap-1 md:px-1 md:py-2 ${active ? "bg-white text-[var(--ink)] shadow-[0_10px_24px_-18px_rgba(21,36,29,.45)]" : "text-[var(--muted)] hover:bg-white/60 hover:text-[var(--ink)]"}`}
+                  className={`group flex min-h-8 items-center justify-center gap-1.5 rounded-lg px-2 text-[9px] font-medium transition-[background,color,box-shadow,transform] duration-200 active:scale-[.97] lg:px-2.5 ${active ? "bg-white text-[var(--ink)] shadow-[0_5px_14px_-10px_rgba(20,32,26,.55),inset_0_0_0_1px_rgba(255,255,255,.8)]" : "text-[var(--muted)] hover:bg-white/60 hover:text-[var(--ink)]"}`}
                 >
-                  <Icon size={17} weight={active ? "fill" : "regular"} />
-                  <span className="hidden max-w-[72px] text-center text-[9px] leading-[1.15] md:block">{item.label}</span>
+                  <Icon size={14} weight={active ? "fill" : "regular"} />
+                  <span className="hidden xl:inline">{item.shortLabel}</span>
                 </button>
               );
             })}
           </nav>
 
-          <div className="mt-auto hidden border-t border-[var(--line)] px-1 pt-3 md:block">
-            <div className="flex items-center justify-center gap-1.5 text-[8px] font-semibold text-[var(--muted)]"><span className={`status-breathe size-1.5 rounded-full ${mode === "live" ? "bg-[var(--accent)]" : "bg-amber-500"}`} />{mode === "live" ? "Live" : "Replay"}</div>
-          </div>
-        </aside>
-
-        <section className="min-w-0">
-          <header className="flex min-h-[68px] flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] px-4 py-3 md:px-5">
-            <div>
-              <span className="font-mono text-[9px] text-[var(--muted)]">{graph.product.name} / payment-flow.intentform</span>
-              <h1 className="mt-0.5 text-base font-semibold tracking-[-.035em]">{stages.find((item) => item.id === stage)?.label}</h1>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="hidden xl:block"><ModeBadge mode={mode} model={model} /></div>
-              <div role="status" aria-live="polite" className="hidden max-w-[360px] truncate rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-[9px] text-[var(--muted)] 2xl:block">{notice}</div>
-              <button
-                type="button"
-                onClick={compileBrief}
-                disabled={isPending}
-                className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-[var(--accent)] px-3.5 text-[10px] font-semibold text-white transition-[transform,background] hover:bg-[var(--accent-dark)] active:scale-[.98] disabled:cursor-wait disabled:opacity-70"
-              >
-                {isPending ? <CircleNotch className="animate-spin" size={15} /> : <Play size={15} weight="fill" />}
-                {stage === "canvas" ? "Recompile" : "Compile intent"}
+          <div className="flex items-center justify-end gap-2">
+            <div className="relative">
+              <button type="button" aria-label="Show workspace status" aria-expanded={noticeOpen} onClick={() => setNoticeOpen((open) => !open)} className="grid size-8 place-items-center rounded-lg text-[var(--muted)] hover:bg-[#eef1ee] hover:text-[var(--ink)]">
+                {/failed|could not|invalid|quota|unavailable/i.test(notice) ? <Warning size={14} weight="fill" className="text-[var(--danger)]" /> : <CheckCircle size={14} weight="fill" className="text-[var(--accent)]" />}
               </button>
+              {noticeOpen ? <div role="status" aria-live="polite" className="absolute right-0 top-10 z-[6] w-72 rounded-xl border border-[var(--line)] bg-white p-3 text-[10px] leading-relaxed text-[var(--muted)] shadow-[0_18px_50px_-24px_rgba(21,36,29,.38)]">{notice}</div> : null}
             </div>
-          </header>
+            <div className="hidden lg:block"><ModeBadge mode={mode} model={model} /></div>
+            <button
+              type="button"
+              onClick={compileBrief}
+              disabled={isPending}
+              className="inline-flex min-h-8 items-center gap-2 rounded-lg bg-[var(--accent)] px-3 text-[10px] font-semibold text-white shadow-[0_8px_18px_-14px_rgba(36,84,68,.9)] transition-[transform,background] hover:bg-[var(--accent-dark)] active:scale-[.97] disabled:cursor-wait disabled:opacity-70"
+            >
+              {isPending ? <CircleNotch className="animate-spin" size={14} /> : <Lightning size={14} weight="fill" />}
+              <span className="hidden sm:inline">{stage === "canvas" ? "Recompile" : "Compile intent"}</span>
+            </button>
+          </div>
+          {isPending ? <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-[#dce6e1]"><motion.span className="block h-full w-1/3 bg-[var(--accent)]" initial={{ x: "-100%" }} animate={{ x: "300%" }} transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }} /></div> : null}
+        </header>
+
+        <section className="min-h-0 min-w-0 overflow-hidden">
 
           <AnimatePresence mode="wait">
             <motion.div
@@ -319,7 +376,7 @@ export function Studio() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ type: "spring", stiffness: 120, damping: 20 }}
-              className={stage === "canvas" ? "p-2" : "p-5 md:p-8"}
+              className={stage === "canvas" ? "h-full" : "h-full overflow-auto p-5 md:p-8"}
             >
               {stage === "canvas" ? (
                 <ManualEditor
