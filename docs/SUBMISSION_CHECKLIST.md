@@ -22,7 +22,7 @@
 - [x] Manual semantic edit updates graph and generated React code.
 - [x] Direct action drag creates an explicit safe-area relationship.
 - [x] SwiftUI Simulator screenshot and accessibility bounds capture locally.
-- [ ] Automate native render capture on hosted macOS CI.
+- [x] Automate native render capture on hosted macOS CI.
 - [ ] Public deployment smoke test from a clean browser.
 
 ## Devpost

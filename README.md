@@ -60,6 +60,7 @@ pnpm build
 pnpm generate:demo
 pnpm verify:react-preview
 pnpm verify:swiftui
+pnpm verify:swiftui-render
 ```
 
 With the generated SwiftUI preview running in a booted Simulator and `serve-sim` exposing its accessibility endpoint:
@@ -68,7 +69,7 @@ With the generated SwiftUI preview running in a booted Simulator and `serve-sim`
 INTENTFORM_SIMULATOR_UDID=<UDID> pnpm capture:swiftui-evidence
 ```
 
-This writes a native screenshot and `evidence.json` under `artifacts/swiftui/`. See [docs/NATIVE_EVIDENCE.md](docs/NATIVE_EVIDENCE.md) for the reproducible workflow and its current CI boundary.
+This writes a native screenshot and `evidence.json` under `artifacts/swiftui/`. `verify:swiftui-render` automates device selection, boot, host build, install, launch, AX capture and cleanup; macOS CI uploads the result as `swiftui-native-evidence`. See [docs/NATIVE_EVIDENCE.md](docs/NATIVE_EVIDENCE.md).
 
 Generated evidence is written to `generated/` and excluded from Git because it is reproducible from the canonical graph.
 

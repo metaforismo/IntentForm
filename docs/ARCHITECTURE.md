@@ -53,7 +53,7 @@ This is an Instant Canvas, not a native rendering claim. The checked-in runnable
 
 The Build Week slice combines deterministic graph and build evidence with a real browser-render adapter. Playwright executes the generated React application, follows the home-to-request-to-receipt flow, captures screenshots, reads computed positioning and records primary-action bounds at compact and regular viewports. A finding contains target, screen, violated intent, responsible layer and evidence.
 
-A repair is accepted only after validation, recompilation, the same rendered check rerunning and no remaining blocking finding. The native adapter now captures a real Simulator screenshot and reads the foreground app accessibility tree. It resolves the primary action through the compiler-authored semantic identifier, records its point-space bounds and runs the same reachability and minimum-target verifier used by React. The remaining boundary is automating preview-host launch and native capture on hosted CI; `xcodebuild` remains the CI gate today.
+A repair is accepted only after validation, recompilation, the same rendered check rerunning and no remaining blocking finding. The native adapter builds and installs a versioned host app, launches it in an available iPhone Simulator, captures a real screenshot and reads the foreground app accessibility tree. It resolves the primary action through the compiler-authored semantic identifier, records point-space bounds and runs the same reachability and minimum-target verifier used by React. macOS CI uploads the screenshot and structured report as a native evidence artifact.
 
 ## Security and cost controls
 

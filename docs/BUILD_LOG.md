@@ -54,4 +54,12 @@ Known honest boundary: this is a finite browser Instant Canvas. Infinite pan, ge
 - Measured the native application viewport at `402 × 874 pt` and the primary action at `157.3 × 49.3 pt`, fully inside the viewport.
 - Added `capture:swiftui-evidence`, which resolves `intentform.payment-request.confirm`, captures a PNG, hashes it, records bounds and runs the shared rendered verifier.
 
-The measured local verdict is `verified`. Hosted CI still build-verifies SwiftUI but does not yet launch the preview host or capture its accessibility tree.
+The measured local verdict is `verified`.
+
+## 2026-07-14 — Hosted native render gate
+
+- Added a versioned, installable iOS host that depends on the generated Swift package instead of copying individual screen files.
+- Added a pinned `serve-sim@0.1.44` development dependency.
+- Added `verify:swiftui-render` to select and boot an iPhone Simulator, build/install/launch the host, wait for its semantic AX node, capture evidence and clean up scoped resources.
+- Reproduced the complete workflow from a shutdown iPhone 17 Simulator and verified that the device returned to `Shutdown` with no helper left running.
+- Added the same render gate to macOS CI and configured `swiftui-native-evidence` artifact upload.

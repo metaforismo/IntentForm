@@ -53,3 +53,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify:swiftui
+      - run: pnpm verify:swiftui-render
+      - name: Upload SwiftUI native evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: swiftui-native-evidence
+          path: artifacts/swiftui/
+          if-no-files-found: error
