@@ -83,6 +83,24 @@ try {
   await preview.getByRole("button", { name: "Confirm request" }).click();
   await preview.getByRole("heading", { name: "Request sent" }).waitFor();
   console.log("Studio embedded generated React flow: passed");
+
+  const adaptivePage = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+  adaptivePage.setDefaultTimeout(10_000);
+  await adaptivePage.goto(origin, { waitUntil: "networkidle" });
+  const layersTrigger = adaptivePage.getByRole("button", { name: "Open pages and layers" });
+  const inspectorTrigger = adaptivePage.getByRole("button", { name: "Open design inspector" });
+  await layersTrigger.waitFor();
+  await inspectorTrigger.waitFor();
+  await layersTrigger.click();
+  await adaptivePage.locator("#editor-structure-panel").waitFor();
+  await adaptivePage.getByTestId("layer-payment-request.confirm").click();
+  if (await layersTrigger.getAttribute("aria-expanded") !== "false") {
+    throw new Error("Adaptive layer drawer did not close after selecting a semantic node");
+  }
+  await inspectorTrigger.click();
+  await adaptivePage.getByTestId("semantic-inspector").waitFor();
+  await adaptivePage.getByText("Bottom safe area", { exact: true }).waitFor();
+  console.log("Studio adaptive layer and inspector drawers: passed");
 } finally {
   await browser?.close();
   await stopServer(server);

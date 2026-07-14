@@ -18,6 +18,7 @@ import {
   Stack,
   TextT,
   Trash,
+  X,
 } from "@phosphor-icons/react";
 import {
   parseGraph,
@@ -28,6 +29,7 @@ import { motion } from "motion/react";
 import { useMemo, useRef, useState } from "react";
 
 type EditorTool = "select" | "hand";
+type MobilePanel = "structure" | "inspector" | null;
 type CommitGraph = (graph: SemanticInterfaceGraph, notice: string) => void;
 
 interface ManualEditorProps {
@@ -152,6 +154,7 @@ export function ManualEditor({
   const [tool, setTool] = useState<EditorTool>("select");
   const [zoom, setZoom] = useState(90);
   const [insertOpen, setInsertOpen] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const panOrigin = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const screen = graph.screens.find((item) => item.id === selectedScreen) ?? graph.screens[0];
@@ -262,19 +265,35 @@ export function ManualEditor({
   if (!screen) return null;
 
   return (
-    <div className="editor-shell grid min-h-[700px] grid-cols-1 overflow-hidden rounded-[22px] border border-[#292d2a] bg-[#202321] text-[#eef1ef] shadow-[0_26px_70px_-38px_rgba(14,20,17,.9)] xl:grid-cols-[228px_minmax(420px,1fr)_280px]">
-      <aside className="hidden min-h-0 grid-rows-[auto_auto_1fr] border-r border-[#343835] bg-[#1c1f1d] xl:grid">
+    <div className="editor-shell relative grid min-h-[700px] grid-cols-1 overflow-hidden rounded-[22px] border border-[#292d2a] bg-[#202321] text-[#eef1ef] shadow-[0_26px_70px_-38px_rgba(14,20,17,.9)] xl:grid-cols-[228px_minmax(420px,1fr)_280px]">
+      {mobilePanel ? (
+        <button
+          type="button"
+          aria-label="Close editor panel"
+          onClick={() => setMobilePanel(null)}
+          className="absolute inset-0 z-[2] bg-[#111613]/35 backdrop-blur-[1px] xl:hidden"
+        />
+      ) : null}
+
+      <aside
+        id="editor-structure-panel"
+        aria-label="Pages and layers"
+        className={`${mobilePanel === "structure" ? "grid" : "hidden xl:grid"} absolute inset-y-0 left-0 z-[3] w-[244px] min-h-0 grid-rows-[auto_auto_1fr] border-r border-[#343835] bg-[#1c1f1d] shadow-[24px_0_52px_-28px_rgba(0,0,0,.8)] xl:static xl:z-auto xl:w-auto xl:shadow-none`}
+      >
         <div className="border-b border-[#343835] p-3">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-semibold text-white">Pages</span>
-            <button type="button" aria-label="Add screen" onClick={addScreen} className="grid size-7 place-items-center rounded-md text-[#919894] hover:bg-[#2a2e2b] hover:text-white"><Plus size={13} /></button>
+            <div className="flex items-center gap-1">
+              <button type="button" aria-label="Add screen" onClick={addScreen} className="grid size-7 place-items-center rounded-md text-[#919894] hover:bg-[#2a2e2b] hover:text-white"><Plus size={13} /></button>
+              <button type="button" aria-label="Close pages and layers" onClick={() => setMobilePanel(null)} className="grid size-7 place-items-center rounded-md text-[#919894] hover:bg-[#2a2e2b] hover:text-white xl:hidden"><X size={13} /></button>
+            </div>
           </div>
           <div className="mt-2 grid gap-0.5">
             {graph.screens.map((item) => (
               <button
                 key={item.id}
                 type="button"
-                onClick={() => { onSelectScreen(item.id); onSelectNode(item.nodes[0]?.id ?? null); }}
+                onClick={() => { onSelectScreen(item.id); onSelectNode(item.nodes[0]?.id ?? null); setMobilePanel(null); }}
                 className={`flex min-h-8 items-center gap-2 rounded-md px-2 text-left text-[10px] ${item.id === screen.id ? "bg-[#303532] text-white" : "text-[#9ba19d] hover:bg-[#272b28] hover:text-white"}`}
               >
                 <FrameCorners size={13} />
@@ -304,7 +323,7 @@ export function ManualEditor({
               key={node.id}
               type="button"
               data-testid={`layer-${node.id}`}
-              onClick={() => onSelectNode(node.id)}
+              onClick={() => { onSelectNode(node.id); setMobilePanel(null); }}
               className={`group flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[10px] ${node.id === selectedNodeId ? "bg-[#31594d] text-white" : "text-[#9ba19d] hover:bg-[#292d2a] hover:text-white"}`}
             >
               <DotsSixVertical size={12} className="opacity-35" />
@@ -317,8 +336,18 @@ export function ManualEditor({
       </aside>
 
       <section className="relative grid min-w-0 grid-rows-[48px_1fr_34px] bg-[#d9ddda]">
-        <div className="flex items-center justify-center border-b border-[#bfc5c1] bg-[#f5f6f4]/95 px-3 text-[#343936] shadow-[0_1px_0_rgba(255,255,255,.8)]">
-          <div className="flex items-center gap-0.5 rounded-lg border border-[#cbd0cc] bg-white p-1 shadow-[0_8px_22px_-18px_rgba(22,30,26,.7)]">
+        <div className="relative flex items-center justify-between border-b border-[#bfc5c1] bg-[#f5f6f4]/95 px-3 text-[#343936] shadow-[0_1px_0_rgba(255,255,255,.8)]">
+          <button
+            type="button"
+            aria-label="Open pages and layers"
+            aria-controls="editor-structure-panel"
+            aria-expanded={mobilePanel === "structure"}
+            onClick={() => setMobilePanel((panel) => panel === "structure" ? null : "structure")}
+            className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-[#cbd0cc] bg-white px-2.5 text-[9px] font-semibold text-[#5c6560] shadow-[0_8px_22px_-18px_rgba(22,30,26,.7)] hover:bg-[#edf0ed] xl:hidden"
+          >
+            <Stack size={13} /> Layers
+          </button>
+          <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-lg border border-[#cbd0cc] bg-white p-1 shadow-[0_8px_22px_-18px_rgba(22,30,26,.7)]">
             {([
               { id: "select", label: "Select", icon: Cursor },
               { id: "hand", label: "Pan", icon: Hand },
@@ -330,6 +359,16 @@ export function ManualEditor({
             <button type="button" aria-label="Undo" disabled={!canUndo} onClick={onUndo} className="grid size-7 place-items-center rounded-md text-[#69706c] hover:bg-[#edf0ed] disabled:opacity-25"><ArrowCounterClockwise size={14} /></button>
             <button type="button" aria-label="Redo" disabled={!canRedo} onClick={onRedo} className="grid size-7 place-items-center rounded-md text-[#69706c] hover:bg-[#edf0ed] disabled:opacity-25"><ArrowClockwise size={14} /></button>
           </div>
+          <button
+            type="button"
+            aria-label="Open design inspector"
+            aria-controls="editor-inspector-panel"
+            aria-expanded={mobilePanel === "inspector"}
+            onClick={() => setMobilePanel((panel) => panel === "inspector" ? null : "inspector")}
+            className="ml-auto inline-flex min-h-8 items-center gap-1.5 rounded-md border border-[#cbd0cc] bg-white px-2.5 text-[9px] font-semibold text-[#5c6560] shadow-[0_8px_22px_-18px_rgba(22,30,26,.7)] hover:bg-[#edf0ed] xl:hidden"
+          >
+            Design <Selection size={13} />
+          </button>
         </div>
 
         <div
@@ -416,10 +455,14 @@ export function ManualEditor({
         </div>
       </section>
 
-      <aside className="hidden min-h-0 overflow-auto border-l border-[#343835] bg-[#1c1f1d] xl:block">
-        <div className="flex h-12 items-center border-b border-[#343835] px-3">
-          <span className="rounded-md bg-[#303532] px-3 py-1.5 text-[10px] font-semibold text-white">Design</span>
-          <span className="px-3 text-[10px] text-[#737a76]">Prototype</span>
+      <aside
+        id="editor-inspector-panel"
+        aria-label="Design inspector"
+        className={`${mobilePanel === "inspector" ? "block" : "hidden xl:block"} absolute inset-y-0 right-0 z-[3] w-[300px] min-h-0 overflow-auto border-l border-[#343835] bg-[#1c1f1d] shadow-[-24px_0_52px_-28px_rgba(0,0,0,.8)] xl:static xl:z-auto xl:w-auto xl:shadow-none`}
+      >
+        <div className="flex h-12 items-center justify-between border-b border-[#343835] px-3">
+          <div className="flex items-center"><span className="rounded-md bg-[#303532] px-3 py-1.5 text-[10px] font-semibold text-white">Design</span><span className="px-3 text-[10px] text-[#737a76]">Prototype</span></div>
+          <button type="button" aria-label="Close design inspector" onClick={() => setMobilePanel(null)} className="grid size-7 place-items-center rounded-md text-[#919894] hover:bg-[#2a2e2b] hover:text-white xl:hidden"><X size={13} /></button>
         </div>
         {selectedNode ? (
           <div data-testid="semantic-inspector" className="divide-y divide-[#343835]">

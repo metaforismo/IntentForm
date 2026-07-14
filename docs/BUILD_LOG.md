@@ -63,3 +63,13 @@ The measured local verdict is `verified`.
 - Added `verify:swiftui-render` to select and boot an iPhone Simulator, build/install/launch the host, wait for its semantic AX node, capture evidence and clean up scoped resources.
 - Reproduced the complete workflow from a shutdown iPhone 17 Simulator and verified that the device returned to `Shutdown` with no helper left running.
 - Added the same render gate to macOS CI and configured `swiftui-native-evidence` artifact upload.
+
+The public macOS run completed on an iPhone 16 Pro Simulator, uploaded the native screenshot plus AX evidence, and returned zero findings with verdict `verified`.
+
+## 2026-07-14 — Adaptive manual workspace
+
+- Audited the Studio at 1440 × 1000 and 1100 × 900 browser viewports.
+- Confirmed that the original `xl` layout removed Pages, Layers and Inspector controls at the narrower viewport.
+- Added toolbar triggers and scoped overlay drawers so structure and semantic properties remain editable without compressing the device canvas.
+- Kept the full three-pane layout unchanged on wide desktops and removed closed drawer controls from keyboard navigation.
+- Extended the production browser smoke test to select a semantic layer and open its inspector at 1100 × 900.
