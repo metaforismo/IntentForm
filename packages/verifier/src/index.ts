@@ -97,11 +97,90 @@ export interface VerificationResult {
   findings: VerificationFinding[];
 }
 
+function relativeLuminance(hex: string): number | null {
+  const expanded = hex.replace("#", "");
+  if (!/^[0-9a-fA-F]{6}$/.test(expanded)) return null;
+  const channel = (value: number) => {
+    const scaled = value / 255;
+    return scaled <= 0.03928 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(parseInt(expanded.slice(0, 2), 16))
+    + 0.7152 * channel(parseInt(expanded.slice(2, 4), 16))
+    + 0.0722 * channel(parseInt(expanded.slice(4, 6), 16));
+}
+
+export function contrastRatio(foreground: string, background: string): number | null {
+  const fg = relativeLuminance(foreground);
+  const bg = relativeLuminance(background);
+  if (fg === null || bg === null) return null;
+  const lighter = Math.max(fg, bg);
+  const darker = Math.min(fg, bg);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+/* Token-layer rules (WCAG 2.1): the primary action renders white text on
+   color.accent (≥ 3:1 for large text / UI components), and body copy renders
+   color.ink on color.surface (≥ 4.5:1). */
+function verifyTokenContrast(
+  graph: SemanticInterfaceGraph,
+  target: PlatformTarget,
+): VerificationFinding[] {
+  const findings: VerificationFinding[] = [];
+  const checks: Array<{
+    id: string;
+    token: string;
+    foreground: string;
+    background: string;
+    minimum: number;
+    violatedIntent: string;
+  }> = [
+    {
+      id: "tokens.contrast.primary-action",
+      token: "color.accent",
+      foreground: "#ffffff",
+      background: graph.tokens.colors["color.accent"] ?? "#397461",
+      minimum: 3,
+      violatedIntent: "The primary action's white label must stay legible on color.accent (WCAG ≥ 3:1).",
+    },
+    {
+      id: "tokens.contrast.body-text",
+      token: "color.ink",
+      foreground: graph.tokens.colors["color.ink"] ?? "#181c1a",
+      background: graph.tokens.colors["color.surface"] ?? "#fbfcf9",
+      minimum: 4.5,
+      violatedIntent: "Body copy in color.ink must stay legible on color.surface (WCAG ≥ 4.5:1).",
+    },
+  ];
+
+  for (const check of checks) {
+    const ratio = contrastRatio(check.foreground, check.background);
+    if (ratio === null || ratio >= check.minimum) continue;
+    findings.push({
+      id: `${target}.${check.id}`,
+      target,
+      screenId: "project",
+      severity: "error",
+      violatedIntent: check.violatedIntent,
+      evidence: [
+        { kind: "rule", label: "Contrast ratio", value: Number(ratio.toFixed(2)) },
+        { kind: "rule", label: "Required minimum", value: check.minimum },
+        { kind: "rule", label: "Token", value: check.token },
+        { kind: "rule", label: "Token value", value: graph.tokens.colors[check.token] ?? "" },
+      ],
+      responsibleLayer: "tokens",
+      status: "open",
+    });
+  }
+  return findings;
+}
+
 export function verifyGraph(
   graph: SemanticInterfaceGraph,
   scenario: VerificationScenario,
 ): VerificationResult {
   const findings: VerificationFinding[] = [];
+
+  findings.push(...verifyTokenContrast(graph, scenario.target));
 
   if (!scenario.buildPassed) {
     findings.push({

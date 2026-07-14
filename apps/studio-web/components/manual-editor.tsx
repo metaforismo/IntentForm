@@ -51,6 +51,7 @@ import { CommandMenu, ShortcutsSheet, type EditorCommand } from "./editor/overla
 import {
   deviceProfiles,
   isFormControl,
+  isNodeVisible,
   nodeCatalog,
   nodeNames,
   type EditorTool,
@@ -125,7 +126,49 @@ export function ManualEditor({
   const [layerQuery, setLayerQuery] = useState("");
   const [previewMode, setPreviewMode] = useState(false);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [panelWidths, setPanelWidths] = useState(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = JSON.parse(window.localStorage.getItem("intentform-panel-widths") ?? "") as { rail?: number; inspector?: number };
+        return {
+          rail: Math.min(380, Math.max(220, saved.rail ?? 268)),
+          inspector: Math.min(420, Math.max(260, saved.inspector ?? 304)),
+        };
+      } catch {
+        // Fall through to defaults when nothing valid is stored.
+      }
+    }
+    return { rail: 268, inspector: 304 };
+  });
   const canvasApi = useRef<CanvasApi>(null);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("intentform-panel-widths", JSON.stringify(panelWidths));
+    } catch {
+      // Persisting panel sizes is best-effort.
+    }
+  }, [panelWidths]);
+
+  const beginPanelResize = (side: "rail" | "inspector") => (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = panelWidths[side];
+    const onMove = (move: PointerEvent) => {
+      const delta = move.clientX - startX;
+      const next = side === "rail" ? startWidth + delta : startWidth - delta;
+      setPanelWidths((current) => ({
+        ...current,
+        [side]: Math.min(side === "rail" ? 380 : 420, Math.max(side === "rail" ? 220 : 260, next)),
+      }));
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
 
   const screen = graph.screens.find((item) => item.id === selectedScreen) ?? graph.screens[0];
   const selectedNode = screen?.nodes.find((node) => node.id === selectedNodeId) ?? null;
@@ -263,6 +306,64 @@ export function ManualEditor({
     commitDraft(draft, `Inserted a semantic ${nodeNames[kind].toLowerCase()}.`);
   };
 
+  const reorderScreens = useCallback((orderedIds: string[]) => {
+    const draft = structuredClone(graph);
+    const byId = new Map(draft.screens.map((item) => [item.id, item]));
+    const next = orderedIds.map((id) => byId.get(id)).filter((item): item is typeof draft.screens[number] => Boolean(item));
+    if (next.length !== draft.screens.length) return;
+    draft.screens = next;
+    commitDraft(draft, "Reordered the product flow.");
+  }, [commitDraft, graph]);
+
+  const duplicateScreen = useCallback((screenId: string) => {
+    const draft = structuredClone(graph);
+    const source = draft.screens.find((item) => item.id === screenId);
+    if (!source) return;
+    let copyIndex = 2;
+    let newId = `${screenId}-copy`;
+    while (draft.screens.some((item) => item.id === newId)) {
+      newId = `${screenId}-copy-${copyIndex}`;
+      copyIndex += 1;
+    }
+    const copy = structuredClone(source);
+    copy.id = newId;
+    copy.title = `${source.title} copy`;
+    copy.route = `/${newId}`;
+    copy.nodes = copy.nodes.map((node) => ({
+      ...node,
+      id: node.id.startsWith(`${screenId}.`) ? `${newId}.${node.id.slice(screenId.length + 1)}` : `${newId}.${node.id}`,
+      provenance: { author: "human" as const, revision: 0 },
+    }));
+    draft.screens.splice(draft.screens.findIndex((item) => item.id === screenId) + 1, 0, copy);
+    const contract = draft.contracts.find((item) => item.screenId === screenId);
+    if (contract) draft.contracts.push({ ...structuredClone(contract), screenId: newId });
+    for (const fixture of draft.fixtures.filter((item) => item.screenId === screenId)) {
+      draft.fixtures.push({ ...structuredClone(fixture), id: `${newId}.${fixture.state}`, screenId: newId });
+    }
+    onSelectScreen(newId);
+    onSelectNode(copy.nodes[0]?.id ?? null);
+    commitDraft(draft, `Duplicated ${source.title} with its contract and fixtures.`);
+  }, [commitDraft, graph, onSelectNode, onSelectScreen]);
+
+  const deleteScreen = useCallback((screenId: string) => {
+    if (graph.screens.length <= 1) return;
+    const draft = structuredClone(graph);
+    const removed = draft.screens.find((item) => item.id === screenId);
+    if (!removed) return;
+    draft.screens = draft.screens.filter((item) => item.id !== screenId);
+    draft.contracts = draft.contracts.filter((item) => item.screenId !== screenId);
+    draft.fixtures = draft.fixtures.filter((item) => item.screenId !== screenId);
+    draft.flows = draft.flows
+      .map((flow) => ({ ...flow, steps: flow.steps.filter((step) => step.from !== screenId && step.to !== screenId) }))
+      .filter((flow) => flow.steps.length > 0);
+    const fallback = draft.screens[0];
+    if (selectedScreen === screenId && fallback) {
+      onSelectScreen(fallback.id);
+      onSelectNode(fallback.nodes[0]?.id ?? null);
+    }
+    commitDraft(draft, `Removed ${removed.title} and its contract, fixtures and flow steps.`);
+  }, [commitDraft, graph, onSelectNode, onSelectScreen, selectedScreen]);
+
   const addScreen = useCallback(() => {
     const draft = structuredClone(graph);
     let index = draft.screens.length + 1;
@@ -343,6 +444,8 @@ export function ManualEditor({
     duplicate: () => {},
     remove: () => {},
     moveSelected: (_direction: -1 | 1) => {},
+    navigate: (_direction: "up" | "down" | "left" | "right") => {},
+    zoomToSelection: () => {},
     undo: () => {},
     redo: () => {},
     togglePanel: (_panel: "structure" | "inspector") => {},
@@ -363,6 +466,23 @@ export function ManualEditor({
     duplicate: () => { if (selectedNode) duplicateNodeById(selectedNode.id); },
     remove: () => { if (selectedNode) deleteNodeById(selectedNode.id); },
     moveSelected: (direction) => { if (selectedNode) moveNode(selectedNode.id, direction); },
+    navigate: (direction) => {
+      if (!screen) return;
+      if (direction === "left" || direction === "right") {
+        const index = graph.screens.findIndex((item) => item.id === screen.id);
+        const next = graph.screens[index + (direction === "right" ? 1 : -1)];
+        if (next) {
+          onSelectScreen(next.id);
+          onSelectNode(next.nodes[0]?.id ?? null);
+        }
+        return;
+      }
+      const visible = screen.nodes.filter((node) => isNodeVisible(node, activeVisualState));
+      const index = visible.findIndex((node) => node.id === selectedNodeId);
+      const next = index === -1 ? visible[0] : visible[index + (direction === "down" ? 1 : -1)];
+      if (next) onSelectNode(next.id);
+    },
+    zoomToSelection: () => { if (screen) canvasApi.current?.fitScreen(screen.id, true); },
     undo: () => { if (canUndo) onUndo(); },
     redo: () => { if (canRedo) onRedo(); },
     togglePanel: toggleEditorPanel,
@@ -415,6 +535,18 @@ export function ManualEditor({
         keyActions.current.moveSelected(event.key === "ArrowUp" ? -1 : 1);
         return;
       }
+      if (!modifier && !event.altKey && event.key.startsWith("Arrow")) {
+        event.preventDefault();
+        keyActions.current.navigate(
+          event.key === "ArrowUp" ? "up" : event.key === "ArrowDown" ? "down" : event.key === "ArrowLeft" ? "left" : "right",
+        );
+        return;
+      }
+      if (!modifier && event.shiftKey && event.code === "Digit2") {
+        event.preventDefault();
+        keyActions.current.zoomToSelection();
+        return;
+      }
       if (!modifier && (event.key === "Delete" || event.key === "Backspace")) {
         event.preventDefault();
         keyActions.current.remove();
@@ -446,12 +578,19 @@ export function ManualEditor({
   }, [commandOpen, insertOpen, mobilePanel, shortcutsOpen, zoomMenuOpen]);
 
   const desktopGrid = desktopPanels.structure && desktopPanels.inspector
-    ? "xl:grid-cols-[268px_minmax(420px,1fr)_304px]"
+    ? "xl:grid-cols-[var(--rail-w)_minmax(420px,1fr)_var(--insp-w)]"
     : desktopPanels.structure
-      ? "xl:grid-cols-[268px_minmax(420px,1fr)]"
+      ? "xl:grid-cols-[var(--rail-w)_minmax(420px,1fr)]"
       : desktopPanels.inspector
-        ? "xl:grid-cols-[minmax(420px,1fr)_304px]"
+        ? "xl:grid-cols-[minmax(420px,1fr)_var(--insp-w)]"
         : "xl:grid-cols-1";
+
+  useEffect(() => {
+    if (!insertOpen && !zoomMenuOpen) return;
+    const close = () => { setInsertOpen(false); setZoomMenuOpen(false); };
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [insertOpen, zoomMenuOpen]);
 
   const commands: EditorCommand[] = [
     { label: "Fit board in view", shortcut: "0", section: "Board", icon: ArrowsOutSimple, action: () => canvasApi.current?.fitAll(true) },
@@ -461,6 +600,10 @@ export function ManualEditor({
     { label: "Toggle design inspector", shortcut: "⌥I", section: "Panels", icon: Selection, action: () => toggleEditorPanel("inspector") },
     { label: "Show design tokens", section: "Panels", icon: PaintBrush, action: () => { setRailTab("tokens"); setDesktopPanels((current) => ({ ...current, structure: true })); setMobilePanel("structure"); } },
     { label: "Add semantic screen", section: "Edit", icon: FrameCorners, action: addScreen },
+    { label: "Duplicate current screen", section: "Edit", icon: Copy, action: () => { if (screen) duplicateScreen(screen.id); } },
+    ...(graph.screens.length > 1 && screen ? [
+      { label: "Delete current screen", section: "Edit", icon: Trash, action: () => deleteScreen(screen.id) },
+    ] : []),
     ...(selectedNode ? [
       { label: "Duplicate selected layer", shortcut: "⌘D", section: "Edit", icon: Copy, action: () => duplicateNodeById(selectedNode.id) },
       { label: "Delete selected layer", shortcut: "⌫", section: "Edit", icon: Trash, action: () => deleteNodeById(selectedNode.id) },
@@ -485,7 +628,11 @@ export function ManualEditor({
   const floatingButton = "inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-[10.5px] font-medium text-[#565f5a] hover:bg-[#eef1ee] hover:text-[var(--ink)]";
 
   return (
-    <div className={`editor-shell relative grid h-[calc(100dvh-56px)] min-h-[560px] grid-cols-1 overflow-hidden bg-[#f6f7f5] text-[#222725] ${desktopGrid}`} data-preview-mode={previewMode}>
+    <div
+      className={`editor-shell relative grid h-[calc(100dvh-56px)] min-h-[560px] grid-cols-1 overflow-hidden bg-[#f6f7f5] text-[#222725] ${desktopGrid}`}
+      data-preview-mode={previewMode}
+      style={{ "--rail-w": `${panelWidths.rail}px`, "--insp-w": `${panelWidths.inspector}px` } as React.CSSProperties}
+    >
       {mobilePanel ? (
         <button
           type="button"
@@ -520,6 +667,9 @@ export function ManualEditor({
         onSelectNode={onSelectNode}
         onHoverNode={setHoveredNodeId}
         onAddScreen={addScreen}
+        onReorderScreens={reorderScreens}
+        onDuplicateScreen={duplicateScreen}
+        onDeleteScreen={deleteScreen}
         onReorderNodes={reorderNodes}
         onUpdateTokens={updateTokens}
         onClose={() => closeEditorPanel("structure")}
@@ -527,6 +677,24 @@ export function ManualEditor({
       />
 
       <section className="relative h-full min-h-0 min-w-0">
+        {desktopPanels.structure ? (
+          <div
+            role="separator"
+            aria-label="Resize pages and layers panel"
+            aria-orientation="vertical"
+            onPointerDown={beginPanelResize("rail")}
+            className="absolute inset-y-0 left-0 z-[4] hidden w-1.5 cursor-col-resize hover:bg-[var(--accent)]/25 active:bg-[var(--accent)]/40 xl:block"
+          />
+        ) : null}
+        {desktopPanels.inspector ? (
+          <div
+            role="separator"
+            aria-label="Resize design inspector"
+            aria-orientation="vertical"
+            onPointerDown={beginPanelResize("inspector")}
+            className="absolute inset-y-0 right-0 z-[4] hidden w-1.5 cursor-col-resize hover:bg-[var(--accent)]/25 active:bg-[var(--accent)]/40 xl:block"
+          />
+        ) : null}
         <CanvasStage
           graph={graph}
           selectedScreen={screen.id}
@@ -589,7 +757,7 @@ export function ManualEditor({
             <button type="button" aria-label="Undo" disabled={!canUndo} onClick={onUndo} className="grid size-8 place-items-center rounded-lg text-[#69706c] hover:bg-[#eef1ee] disabled:opacity-25"><ArrowCounterClockwise size={15} /></button>
             <button type="button" aria-label="Redo" disabled={!canRedo} onClick={onRedo} className="grid size-8 place-items-center rounded-lg text-[#69706c] hover:bg-[#eef1ee] disabled:opacity-25"><ArrowClockwise size={15} /></button>
             <span className="mx-1 h-4 w-px bg-[#d9ddda]" />
-            <div className="relative">
+            <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
               <button type="button" aria-label="Insert component" aria-expanded={insertOpen} onClick={() => setInsertOpen((open) => !open)} className={`grid size-8 place-items-center rounded-lg ${insertOpen ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]" : "text-[#69706c] hover:bg-[#eef1ee]"}`}>
                 <Plus size={15} weight="bold" />
               </button>
@@ -654,7 +822,7 @@ export function ManualEditor({
           <div className="floating-chrome pointer-events-auto flex items-center gap-1 rounded-xl p-1">
             <button type="button" aria-label="Fit canvas" title="Fit board · 0" onClick={() => canvasApi.current?.fitAll(true)} className="grid size-7 place-items-center rounded-md text-[#707873] hover:bg-[#eef1ee]"><ArrowsOutSimple size={12} /></button>
             <button type="button" aria-label="Zoom out" onClick={() => canvasApi.current?.zoomBy(0.8)} className="grid size-7 place-items-center rounded-md text-[#707873] hover:bg-[#eef1ee]"><Minus size={11} /></button>
-            <div className="relative">
+            <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
               <button type="button" aria-label="Zoom level" aria-expanded={zoomMenuOpen} onClick={() => setZoomMenuOpen((open) => !open)} className="min-h-7 w-12 rounded-md text-center font-mono text-[10px] text-[#4d5651] hover:bg-[#eef1ee]">{zoomPct}%</button>
               {zoomMenuOpen ? (
                 <div className="menu-pop absolute bottom-9 right-0 z-[3] w-36 rounded-xl border border-[var(--line-strong)] bg-white/98 p-1 shadow-[0_18px_45px_-20px_rgba(26,37,31,.35)]">

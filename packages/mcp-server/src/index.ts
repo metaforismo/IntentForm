@@ -30,7 +30,7 @@ interface ToolDefinition {
 }
 
 const PATCH_CONTRACT = `A GraphPatch is {"id": string, "rationale": string, "operations": Operation[]} where Operation is one of:
-{"op":"set-label","target":nodeId,"label":string} · {"op":"set-placement","target":nodeId,"compact":"inline"|"persistent-bottom","regular":"inline"|"persistent-bottom"} · {"op":"set-purpose","target":nodeId,"purpose":string} · {"op":"set-emphasis","target":nodeId,"emphasis":"quiet"|"normal"|"strong"} · {"op":"set-gap-token","target":nodeId,"token":string} · {"op":"set-padding-token","target":nodeId,"token":string}.
+{"op":"set-label","target":nodeId,"label":string} · {"op":"set-placement","target":nodeId,"compact":"inline"|"persistent-bottom","regular":"inline"|"persistent-bottom"} · {"op":"set-purpose","target":nodeId,"purpose":string} · {"op":"set-emphasis","target":nodeId,"emphasis":"quiet"|"normal"|"strong"} · {"op":"set-gap-token","target":nodeId,"token":string} · {"op":"set-padding-token","target":nodeId,"token":string} · {"op":"set-color-token","token":colorTokenName,"value":"#rrggbb"}.
 Node IDs are stable; discover them with intentform_describe_project. The patch is schema-validated and rejected atomically if any operation is invalid.`;
 
 const tools: ToolDefinition[] = [

@@ -2,6 +2,7 @@
 
 import {
   CaretRight,
+  Copy,
   DotsSixVertical,
   Eye,
   EyeSlash,
@@ -11,6 +12,7 @@ import {
   Selection,
   Stack,
   TextT,
+  Trash,
   X,
 } from "@phosphor-icons/react";
 import type { SemanticInterfaceGraph, SemanticNode } from "@intentform/semantic-schema";
@@ -33,6 +35,9 @@ interface LayersPanelProps {
   onSelectNode(nodeId: string | null): void;
   onHoverNode(nodeId: string | null): void;
   onAddScreen(): void;
+  onReorderScreens(orderedIds: string[]): void;
+  onDuplicateScreen(screenId: string): void;
+  onDeleteScreen(screenId: string): void;
   onReorderNodes(screenId: string, orderedIds: string[]): void;
   onUpdateTokens(mutate: (tokens: SemanticInterfaceGraph["tokens"]) => void, notice: string): void;
   onClose(): void;
@@ -88,16 +93,24 @@ export function LayersPanel({
   onSelectNode,
   onHoverNode,
   onAddScreen,
+  onReorderScreens,
+  onDuplicateScreen,
+  onDeleteScreen,
   onReorderNodes,
   onUpdateTokens,
   onClose,
   onDismissMobile,
 }: LayersPanelProps) {
   const [order, setOrder] = useState<string[]>(() => screen.nodes.map((node) => node.id));
+  const [pageOrder, setPageOrder] = useState<string[]>(() => graph.screens.map((item) => item.id));
 
   useEffect(() => {
     setOrder(screen.nodes.map((node) => node.id));
   }, [screen.id, screen.nodes]);
+
+  useEffect(() => {
+    setPageOrder(graph.screens.map((item) => item.id));
+  }, [graph.screens]);
 
   const nodesById = useMemo(() => new Map(screen.nodes.map((node) => [node.id, node])), [screen.nodes]);
   const query = layerQuery.trim().toLowerCase();
@@ -109,6 +122,12 @@ export function LayersPanel({
     const current = screen.nodes.map((node) => node.id);
     if (order.length === current.length && order.every((id, index) => id === current[index])) return;
     onReorderNodes(screen.id, order);
+  };
+
+  const commitPageOrder = () => {
+    const current = graph.screens.map((item) => item.id);
+    if (pageOrder.length === current.length && pageOrder.every((id, index) => id === current[index])) return;
+    onReorderScreens(pageOrder);
   };
 
   const layerRow = (node: SemanticNode, draggable: boolean) => {
@@ -164,20 +183,31 @@ export function LayersPanel({
               <span className="text-[11px] font-semibold text-[#343a36]">Pages</span>
               <button type="button" aria-label="Add screen" onClick={onAddScreen} className="grid size-7 place-items-center rounded-md text-[#727b76] hover:bg-[#e9edea] hover:text-[var(--ink)]"><Plus size={13} /></button>
             </div>
-            <div className="mt-2 grid gap-0.5">
-              {graph.screens.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => { onSelectScreen(item.id); onSelectNode(item.nodes[0]?.id ?? null); onDismissMobile(); }}
-                  className={`flex min-h-8 items-center gap-2 rounded-md px-2 text-left text-[11px] ${item.id === screen.id ? "bg-[#e2ebe6] font-medium text-[#234d40]" : "text-[#626b66] hover:bg-[#ecefec] hover:text-[var(--ink)]"}`}
-                >
-                  <FrameCorners size={13} />
-                  <span className="min-w-0 flex-1 truncate">{item.title}</span>
-                  <span className="font-mono text-[9px] text-[var(--faint)]">{item.nodes.length}</span>
-                </button>
-              ))}
-            </div>
+            <Reorder.Group axis="y" as="div" values={pageOrder} onReorder={setPageOrder} className="mt-2 grid gap-0.5">
+              {pageOrder.map((screenId) => {
+                const item = graph.screens.find((candidate) => candidate.id === screenId);
+                if (!item) return null;
+                return (
+                  <Reorder.Item key={screenId} value={screenId} as="div" onDragEnd={commitPageOrder} className="relative">
+                    <div className={`group flex min-h-8 items-center gap-1 rounded-md pr-1 ${item.id === screen.id ? "bg-[#e2ebe6]" : "hover:bg-[#ecefec]"}`}>
+                      <button
+                        type="button"
+                        onClick={() => { onSelectScreen(item.id); onSelectNode(item.nodes[0]?.id ?? null); onDismissMobile(); }}
+                        className={`flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-[11px] ${item.id === screen.id ? "font-medium text-[#234d40]" : "text-[#626b66] group-hover:text-[var(--ink)]"}`}
+                      >
+                        <FrameCorners size={13} />
+                        <span className="min-w-0 flex-1 truncate">{item.title}</span>
+                        <span className="font-mono text-[9px] text-[var(--faint)] group-hover:hidden">{item.nodes.length}</span>
+                      </button>
+                      <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+                        <button type="button" aria-label={`Duplicate screen ${item.title}`} onClick={() => onDuplicateScreen(item.id)} className="grid size-6 place-items-center rounded text-[#727b76] hover:bg-white hover:text-[var(--ink)]"><Copy size={11} /></button>
+                        <button type="button" aria-label={`Delete screen ${item.title}`} disabled={graph.screens.length <= 1} onClick={() => onDeleteScreen(item.id)} className="grid size-6 place-items-center rounded text-[#727b76] hover:bg-[#f3e5e1] hover:text-[#9b4432] disabled:opacity-25"><Trash size={11} /></button>
+                      </span>
+                    </div>
+                  </Reorder.Item>
+                );
+              })}
+            </Reorder.Group>
           </div>
 
           <div className="border-b border-[var(--line)] px-3 py-2.5">

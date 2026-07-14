@@ -137,6 +137,17 @@ button { cursor: pointer; }
 }
 .canvas-node[data-selected="true"]::after { border-color: transparent; }
 
+.skeleton-block {
+  background: linear-gradient(100deg, rgba(120, 132, 125, 0.14) 40%, rgba(120, 132, 125, 0.3) 50%, rgba(120, 132, 125, 0.14) 60%);
+  background-size: 220% 100%;
+  animation: skeleton-sheen 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-sheen {
+  from { background-position: 120% 0; }
+  to { background-position: -80% 0; }
+}
+
 .status-breathe { animation: breathe 2.2s ease-in-out infinite; }
 
 @keyframes breathe { 0%,100% { opacity: .45; transform: scale(.86); } 50% { opacity: 1; transform: scale(1); } }

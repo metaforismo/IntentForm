@@ -127,3 +127,11 @@ The public macOS run completed on an iPhone 16 Pro Simulator, uploaded the nativ
 - Registered the server in `.mcp.json` for Claude Code auto-discovery and added `CLAUDE.md` with repo conventions plus `docs/AGENT_INTEGRATION.md` describing the loop.
 - Bridged the Studio to the same project through `/api/project` and new project-menu actions (Open/Save local project), so agent edits land on the design board and studio edits appear in agent diffs.
 - Verified end to end: 8 new vitest cases for the store and tools, a live JSON-RPC session (initialize → describe → patch → compile → error handling), a Studio↔MCP round-trip where the MCP diff reported a Studio token edit and reverted it, plus the full typecheck/test/build/smoke gate.
+
+## 2026-07-14 — Token-layer verification loop and fixture-driven board
+
+- Fixtures now drive every preview: canvas frames and studio previews render the screen's fixture data for the active visual state, with shimmer skeletons in loading and a real empty state for activity lists — switching states changes data, not just visibility.
+- Added token-layer verification: deterministic WCAG contrast rules (white-on-accent ≥ 3:1 for the primary action, ink-on-surface ≥ 4.5:1 for body copy) that fire with `responsibleLayer: "tokens"` and full evidence.
+- Added the `set-color-token` typed patch operation end to end (schema, apply, capability catalog, MCP contract) and a deterministic contrast repair that darkens the offending token to the nearest passing shade — closing the tokens → verify → repair loop without the live model.
+- Workspace polish toward the Figma/Canva bar: resizable side panels (persisted), arrow-key node and screen navigation, Shift+2 zoom-to-selection, double-click a frame header to zoom to it, drag-to-reorder pages, duplicate/delete screens with contract/fixture/flow cleanup, popovers that dismiss on outside click, and animated frame repositioning.
+- Verified with 29 vitest cases (5 new for contrast verification/repair, color-token patch rejection), a production build, and the full five-part Playwright smoke run including a new loading-skeleton assertion.

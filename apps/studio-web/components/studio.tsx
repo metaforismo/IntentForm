@@ -36,7 +36,7 @@ import { verifyGraph, type VerificationFinding } from "@intentform/verifier";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { NodePreview } from "./editor/node-preview";
-import { isNodeVisible } from "./editor/support";
+import { fixtureFor, isNodeVisible } from "./editor/support";
 import { ManualEditor, type WorkflowStage } from "./manual-editor";
 
 type Stage = "canvas" | WorkflowStage;
@@ -94,6 +94,7 @@ function PhonePreview({ graph, selectedScreen }: { graph: SemanticInterfaceGraph
   const width = 375;
   const height = 700;
   const nodes = screen.nodes.filter((node) => isNodeVisible(node, "idle"));
+  const fixture = fixtureFor(graph, screen.id, "idle");
   return (
     <div className="relative grid min-h-[520px] place-items-center rounded-[32px] border border-[var(--line)] bg-[#e9ede8] p-6">
       <div style={{ width: width * scale, height: height * scale }}>
@@ -113,7 +114,7 @@ function PhonePreview({ graph, selectedScreen }: { graph: SemanticInterfaceGraph
           <div className="flex min-h-0 flex-1 flex-col" style={{ gap: 18 }}>
             {nodes.map((node) => (
               <div key={node.id} className={node.kind === "primary-action" && node.layout.placement?.compact === "persistent-bottom" ? "mt-auto" : ""}>
-                <NodePreview node={node} graph={graph} />
+                <NodePreview node={node} graph={graph} fixture={fixture} state="idle" />
               </div>
             ))}
           </div>
@@ -200,6 +201,13 @@ export function Studio() {
   useEffect(() => {
     if (/failed|could not|invalid|quota|unavailable|rejected/i.test(notice)) setNoticeOpen(true);
   }, [notice]);
+
+  useEffect(() => {
+    if (!noticeOpen) return;
+    const close = () => setNoticeOpen(false);
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [noticeOpen]);
 
   const reactOutput = useMemo(() => compileReact(graph), [graph]);
   const swiftOutput = useMemo(() => compileSwiftUI(graph), [graph]);
@@ -488,7 +496,7 @@ export function Studio() {
           </nav>
 
           <div className="flex items-center justify-end gap-2">
-            <div className="relative">
+            <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
               <button type="button" aria-label="Show workspace status" aria-expanded={noticeOpen} onClick={() => setNoticeOpen((open) => !open)} className="grid size-8 place-items-center rounded-lg text-[var(--muted)] hover:bg-[#eef1ee] hover:text-[var(--ink)]">
                 {noticeIsError ? <Warning size={14} weight="fill" className="text-[var(--danger)]" /> : <CheckCircle size={14} weight="fill" className="text-[var(--accent)]" />}
               </button>

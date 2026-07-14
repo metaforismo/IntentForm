@@ -24,6 +24,7 @@ import { NodePreview } from "./node-preview";
 import {
   FRAME_GAP,
   FRAME_HEADER_WORLD,
+  fixtureFor,
   isNodeVisible,
   nodeNames,
   tokenColor,
@@ -366,8 +367,9 @@ export function CanvasStage({
           const state = visualStateFor(screen.id);
           const status = frameStatus(screen.id);
           const visibleNodes = screen.nodes.filter((node) => isNodeVisible(node, state));
+          const fixture = fixtureFor(graph, screen.id, state);
           return (
-            <div key={screen.id} className="absolute" style={{ left: x, top: FRAME_HEADER_WORLD, width: profile.width, height: profile.height }}>
+            <div key={screen.id} className="absolute transition-[left,width,height] duration-300 ease-[cubic-bezier(.22,1,.36,1)]" style={{ left: x, top: FRAME_HEADER_WORLD, width: profile.width, height: profile.height }}>
               <div
                 className="absolute left-0 flex items-end justify-between gap-3"
                 style={{
@@ -379,11 +381,13 @@ export function CanvasStage({
               >
                 <button
                   type="button"
+                  title="Double-click to zoom to this screen"
                   onClick={() => { onSelectScreen(screen.id); onSelectNode(screen.nodes[0]?.id ?? null); }}
+                  onDoubleClick={() => fitScreen(screen.id, true)}
                   className={`flex min-w-0 items-baseline gap-2 rounded-md px-1.5 py-1 text-left text-[12px] font-semibold tracking-[-.01em] ${isSelectedScreen ? "text-[var(--accent-dark)]" : "text-[#5d6661] hover:text-[var(--ink)]"}`}
                 >
                   <span className="truncate">{screen.title}</span>
-                  <span className="shrink-0 font-mono text-[10px] font-normal text-[var(--faint)]">{screen.route}</span>
+                  {isSelectedScreen ? <span className="shrink-0 font-mono text-[10px] font-normal text-[var(--faint)]">{screen.route}</span> : null}
                   {state !== "idle" ? <span className="shrink-0 rounded-full bg-[#e7ebe7] px-1.5 py-0.5 font-mono text-[9px] font-medium capitalize text-[#5d6661]">{state}</span> : null}
                 </button>
                 {status.errors > 0 ? (
@@ -489,7 +493,7 @@ export function CanvasStage({
                         }}
                         className={`canvas-node rounded-[18px] outline-none ${persistent ? "mt-auto" : ""} ${draggable ? "cursor-ns-resize" : flowStep ? "cursor-pointer" : "cursor-default"}`}
                       >
-                        <NodePreview node={node} graph={graph} />
+                        <NodePreview node={node} graph={graph} fixture={fixture} state={state} />
                         {selected && !previewMode ? (
                           <>
                             <span className="pointer-events-none absolute -inset-1.5 rounded-[20px] border-2 border-[var(--select)]" />

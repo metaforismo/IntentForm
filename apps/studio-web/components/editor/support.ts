@@ -75,6 +75,18 @@ export function tokenRadius(graph: SemanticInterfaceGraph, key: string, fallback
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+/* The fixture for a screen's visual state, falling back to the idle fixture so
+   previews always show plausible product data. */
+export function fixtureFor(
+  graph: SemanticInterfaceGraph,
+  screenId: string,
+  state: VisualState,
+): Record<string, unknown> {
+  return graph.fixtures.find((fixture) => fixture.screenId === screenId && fixture.state === state)?.data
+    ?? graph.fixtures.find((fixture) => fixture.screenId === screenId && fixture.state === "idle")?.data
+    ?? {};
+}
+
 export interface FrameStatus {
   errors: number;
   warnings: number;

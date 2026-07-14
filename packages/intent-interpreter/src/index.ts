@@ -80,6 +80,7 @@ export const capabilityCatalog = {
     "set-emphasis",
     "set-gap-token",
     "set-padding-token",
+    "set-color-token",
   ],
 } as const;
 

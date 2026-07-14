@@ -194,6 +194,11 @@ export const graphPatchSchema = z.object({
       }),
       z.object({ op: z.literal("set-gap-token"), target: z.string(), token: z.string().min(1) }),
       z.object({ op: z.literal("set-padding-token"), target: z.string(), token: z.string().min(1) }),
+      z.object({
+        op: z.literal("set-color-token"),
+        token: z.string().min(1),
+        value: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+      }),
     ]),
   ),
 });
@@ -212,6 +217,14 @@ export function applyGraphPatch(
   const clone = structuredClone(graph);
 
   for (const operation of patch.operations) {
+    if (operation.op === "set-color-token") {
+      if (!(operation.token in clone.tokens.colors)) {
+        throw new Error(`Unknown color token: ${operation.token}`);
+      }
+      clone.tokens.colors[operation.token] = operation.value;
+      continue;
+    }
+
     const node = clone.screens.flatMap((screen) => screen.nodes).find((item) => item.id === operation.target);
     if (!node) throw new Error(`Patch target not found: ${operation.target}`);
 

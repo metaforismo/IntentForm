@@ -185,6 +185,11 @@ try {
   }
   await page.getByRole("button", { name: "Undo" }).click();
 
+  await page.getByLabel("Visual state").selectOption("loading");
+  await page.locator("[data-loading-skeleton]").first().waitFor();
+  await page.getByLabel("Visual state").selectOption("idle");
+  await page.locator("[data-loading-skeleton]").waitFor({ state: "detached" });
+
   await page.getByRole("button", { name: "Toggle preview mode" }).click();
   await page.getByTestId("canvas-node-payment-request.confirm").click();
   await page.locator('[data-testid="device-frame"][data-screen-id="receipt"]').waitFor();
