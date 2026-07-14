@@ -12,6 +12,8 @@ import {
   DeviceMobile,
   DownloadSimple,
   FileText,
+  FloppyDisk,
+  FolderOpen,
   GitDiff,
   Lightning,
   Selection,
@@ -293,6 +295,50 @@ export function Studio() {
     setNotice("Exported the semantic graph as canonical JSON.");
   };
 
+  /* The `.intentform/` project on disk is shared with the MCP server, so
+     Claude Code, Codex and the Studio edit the same validated graph. */
+  const openLocalProject = () => {
+    setMenuOpen(false);
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/project");
+        if (!response.ok) throw new Error("No local .intentform project is available in this deployment.");
+        const result = (await response.json()) as { graph: unknown; seeded: boolean };
+        const nextGraph = parseGraph(result.graph);
+        setGraph(nextGraph);
+        setBaseline(nextGraph);
+        setHistory([]);
+        setFuture([]);
+        const nextScreen = nextGraph.screens.find((screen) => screen.id === selectedScreen) ?? nextGraph.screens[0];
+        setSelectedScreen(nextScreen?.id ?? "");
+        setSelectedNodeId(nextScreen?.nodes[0]?.id ?? null);
+        lastCommit.current = { at: 0, notice: "" };
+        setNotice(result.seeded
+          ? "Initialized .intentform/graph.json from the verified sample and opened it."
+          : "Opened the local .intentform project. Agent edits are now on the board.");
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "The local project could not be opened.");
+      }
+    });
+  };
+
+  const saveLocalProject = () => {
+    setMenuOpen(false);
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/project", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ graph, reason: "studio save" }),
+        });
+        if (!response.ok) throw new Error("The graph could not be saved to the local project.");
+        setNotice("Saved the graph to .intentform/graph.json for the MCP server and coding agents.");
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "The local project could not be saved.");
+      }
+    });
+  };
+
   const copyGeneratedFile = async () => {
     if (!selectedCode) return;
     try {
@@ -392,7 +438,14 @@ export function Studio() {
                       <strong className="block text-[11px]">{graph.product.name}</strong>
                       <span className="mt-0.5 block font-mono text-[9px] text-[var(--faint)]">payment-flow.intentform · v{graph.schemaVersion}</span>
                     </div>
-                    <button type="button" onClick={exportGraph} className="mt-1 flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[11px] text-[#2f3531] hover:bg-[#eef2ef]">
+                    <button type="button" onClick={openLocalProject} className="mt-1 flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[11px] text-[#2f3531] hover:bg-[#eef2ef]">
+                      <FolderOpen size={13} /> Open local project
+                    </button>
+                    <button type="button" onClick={saveLocalProject} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[11px] text-[#2f3531] hover:bg-[#eef2ef]">
+                      <FloppyDisk size={13} /> Save to local project
+                    </button>
+                    <div className="my-1 border-t border-[var(--line)]" />
+                    <button type="button" onClick={exportGraph} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[11px] text-[#2f3531] hover:bg-[#eef2ef]">
                       <DownloadSimple size={13} /> Export graph as JSON
                     </button>
                     <button type="button" onClick={resetProject} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[11px] text-[#2f3531] hover:bg-[#eef2ef]">

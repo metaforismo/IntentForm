@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
     "@intentform/compiler-react",
     "@intentform/compiler-swiftui",
     "@intentform/intent-interpreter",
+    "@intentform/mcp-server",
     "@intentform/proof-report",
     "@intentform/repair-planner",
     "@intentform/semantic-schema",

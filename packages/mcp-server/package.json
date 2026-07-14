@@ -1,0 +1,24 @@
+{
+  "name": "@intentform/mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./store": "./src/store.ts",
+    "./tools": "./src/tools.ts"
+  },
+  "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" },
+  "dependencies": {
+    "@intentform/compiler-react": "workspace:*",
+    "@intentform/compiler-swiftui": "workspace:*",
+    "@intentform/proof-report": "workspace:*",
+    "@intentform/semantic-schema": "workspace:*",
+    "@intentform/verifier": "workspace:*",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.0",
+    "typescript": "^5.9.3"
+  }
+}

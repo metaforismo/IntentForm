@@ -18,3 +18,4 @@ examples/preview-ios/Sources/IntentFormPreview/Generated/
 apps/react-preview/src/generated/
 apps/react-preview/dist/
 apps/studio-web/public/react-preview/
+.intentform/

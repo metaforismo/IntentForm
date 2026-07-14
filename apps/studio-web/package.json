@@ -12,6 +12,7 @@
     "@intentform/compiler-react": "workspace:*",
     "@intentform/compiler-swiftui": "workspace:*",
     "@intentform/intent-interpreter": "workspace:*",
+    "@intentform/mcp-server": "workspace:*",
     "@intentform/proof-report": "workspace:*",
     "@intentform/repair-planner": "workspace:*",
     "@intentform/semantic-schema": "workspace:*",

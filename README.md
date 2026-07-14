@@ -76,6 +76,21 @@ This writes a native screenshot and `evidence.json` under `artifacts/swiftui/`. 
 
 Generated evidence is written to `generated/` and excluded from Git because it is reproducible from the canonical graph.
 
+## Agent-native workflows (Claude Code, Codex, any MCP client)
+
+IntentForm is designed to be **driven by coding agents**, not just humans. The repository ships an MCP server (auto-discovered by Claude Code through [`.mcp.json`](.mcp.json)) that operates on the local project in `.intentform/`:
+
+```text
+intentform_describe_project   inspect screens, stable node IDs, tokens, flows, findings
+intentform_apply_patch        smallest typed semantic edit, validated and revisioned
+intentform_replace_graph      structural edits with full schema validation
+intentform_verify             deterministic intent rules per device scenario
+intentform_compile            byte-stable React or SwiftUI into .intentform/output/
+intentform_diff / revert      semantic history — every agent edit is reversible
+```
+
+An agent never writes UI code directly: it edits validated intent, and the deterministic compilers produce the code. The Studio opens and saves the same `.intentform/graph.json` (project menu → *Open/Save local project*), so agent edits land on the design board and human edits are visible to agents. See [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md) for the full loop, and [CLAUDE.md](CLAUDE.md) for in-repo agent conventions.
+
 ## Architecture
 
 ```text

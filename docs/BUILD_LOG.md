@@ -118,3 +118,12 @@ The public macOS run completed on an iPhone 16 Pro Simulator, uploaded the nativ
 - Fixed quota accounting so offline replay consumes no live allowance, combined client/session identity for anonymous live limits and hardened malformed environment limits.
 - Hardened both API routes for invalid JSON, invalid graphs, oversized input, timeout, unsupported replay edits and findings without a safe deterministic repair.
 - Added unit coverage for replay independence, corrective retry, deterministic semantic diffs and referential patch validation; expanded browser smoke coverage for typed replay editing and its visible disclosure.
+
+## 2026-07-14 — Agent-native MCP surface
+
+- Added `@intentform/mcp-server`: a dependency-free MCP stdio server exposing the workspace to Claude Code, Codex and any MCP client via nine tools — describe, get-graph, apply-patch, replace-graph, verify, compile, list-revisions, diff and revert.
+- Introduced the on-disk `.intentform/` project (canonical graph, snapshot-per-mutation revision history capped at 50, compiler output directory), seeded from the verified sample and shared by agents and the Studio.
+- Every agent mutation is schema-validated before persistence, revisioned, and answered with the semantic diff plus fresh compact-scenario verification findings; invalid patches are rejected atomically with no side effects.
+- Registered the server in `.mcp.json` for Claude Code auto-discovery and added `CLAUDE.md` with repo conventions plus `docs/AGENT_INTEGRATION.md` describing the loop.
+- Bridged the Studio to the same project through `/api/project` and new project-menu actions (Open/Save local project), so agent edits land on the design board and studio edits appear in agent diffs.
+- Verified end to end: 8 new vitest cases for the store and tools, a live JSON-RPC session (initialize → describe → patch → compile → error handling), a Studio↔MCP round-trip where the MCP diff reported a Studio token edit and reverted it, plus the full typecheck/test/build/smoke gate.
