@@ -2,6 +2,7 @@ import { demoGraph } from "@intentform/proof-report/demo";
 import { defaultDeviceConfiguration } from "@intentform/device-registry";
 import {
   parseGraph,
+  emptyTokenModeValues,
   type PlatformTarget,
   type SemanticInterfaceGraph,
   type SemanticNode,
@@ -232,6 +233,7 @@ export function createLumenShowcaseGraph(): SemanticInterfaceGraph {
   graph.tokens.modes.evening = {
     name: "Dark",
     values: {
+      ...emptyTokenModeValues(),
       colors: { "color.accent": "#7c82ff", "color.ink": "#f4f1ff", "color.canvas": "#111117", "color.surface": "#1d1d26" },
       spacing: { "space.8": 8, "space.12": 12, "space.16": 16, "space.20": 20, "space.24": 24 },
       radii: { "radius.control": 16, "radius.surface": 24 },
@@ -240,6 +242,7 @@ export function createLumenShowcaseGraph(): SemanticInterfaceGraph {
   graph.tokens.modes.compact = {
     name: "Compact",
     values: {
+      ...emptyTokenModeValues(),
       colors: { "color.accent": "#5b63e8", "color.ink": "#1c1c27", "color.canvas": "#f2f1f7", "color.surface": "#ffffff" },
       spacing: { "space.8": 6, "space.12": 8, "space.16": 12, "space.20": 16, "space.24": 20 },
       radii: { "radius.control": 12, "radius.surface": 18 },

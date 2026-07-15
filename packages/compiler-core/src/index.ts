@@ -95,6 +95,12 @@ export interface PlatformIRNode {
     detail: PlatformIRField | null;
     status: PlatformIRField | null;
   };
+  codeComponent: {
+    definitionId: string;
+    module: string;
+    exportName: string;
+    props: Record<string, string | number | boolean>;
+  } | null;
   children: PlatformIRNode[];
 }
 
@@ -119,6 +125,7 @@ export interface PlatformIR {
   tokenModes: Record<string, ResolvedTokenMode>;
   activeTokenMode: string;
   assets: AssetDefinition[];
+  dependencies: Record<string, string>;
   devices: ResolvedDeviceConfiguration;
   web: SemanticInterfaceGraph["web"];
   expo: SemanticInterfaceGraph["expo"];
@@ -502,6 +509,10 @@ export function lowerGraph(graph: SemanticInterfaceGraph, target: PlatformTarget
     ])),
     activeTokenMode: graph.tokens.activeMode,
     assets: graph.assets,
+    dependencies: Object.fromEntries(graph.dependencies
+      .filter((dependency) => graph.components.some((component) => component.codeBindings.some((binding) =>
+        binding.target === target && binding.dependencyId === dependency.id)))
+      .map((dependency) => [dependency.id, dependency.version])),
     devices: resolveDeviceConfiguration(graph.devices),
     web: graph.web,
     expo: graph.expo,
@@ -541,6 +552,16 @@ export function lowerGraph(graph: SemanticInterfaceGraph, target: PlatformTarget
           ? definition?.variants.find((candidate) => candidate.id === node.asset?.variantId)
           : undefined;
         const file = variant ?? definition;
+        const componentDefinition = node.componentInstance
+          ? graph.components.find((candidate) => candidate.id === node.componentInstance?.definitionId)
+          : undefined;
+        const codeBinding = componentDefinition?.codeBindings.find((binding) => binding.target === target);
+        const componentProps = componentDefinition && node.componentInstance
+          ? Object.fromEntries(componentDefinition.properties.flatMap((property) => {
+            const value = node.componentInstance?.props[property.name] ?? property.default;
+            return value === undefined ? [] : [[property.name, value]];
+          }))
+          : {};
         if (definition?.exportPolicy === "blocked") {
           diagnostics.push({
             severity: "warning",
@@ -600,6 +621,15 @@ export function lowerGraph(graph: SemanticInterfaceGraph, target: PlatformTarget
             ...(state.visibleWhen ? { expression: state.visibleWhen } : {}),
           })),
           bindings: bindingsForNode(node, contract?.data ?? []),
+          codeComponent: codeBinding ? {
+            definitionId: componentDefinition!.id,
+            module: `${codeBinding.dependencyId}/${codeBinding.exportPath}`,
+            exportName: codeBinding.exportName,
+            props: Object.fromEntries(Object.entries(codeBinding.propertyMap).flatMap(([codeProperty, componentProperty]) => {
+              const value = componentProps[componentProperty];
+              return value === undefined ? [] : [[codeProperty, value]];
+            })),
+          } : null,
           children: node.children.map(lowerNode),
         };
       };

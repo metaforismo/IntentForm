@@ -19,7 +19,19 @@ export const tokenModes = {
     "radii": {
       "radius.control": 18,
       "radius.surface": 28
-    }
+    },
+    "fontFamilies": {},
+    "fontWeights": {},
+    "fontSizes": {},
+    "lineHeights": {},
+    "letterSpacing": {},
+    "shadows": {},
+    "opacity": {},
+    "durations": {},
+    "easings": {},
+    "containers": {},
+    "breakpoints": {},
+    "zIndices": {}
   },
   "evening": {
     "colors": {
@@ -39,7 +51,19 @@ export const tokenModes = {
     "radii": {
       "radius.control": 18,
       "radius.surface": 28
-    }
+    },
+    "fontFamilies": {},
+    "fontWeights": {},
+    "fontSizes": {},
+    "lineHeights": {},
+    "letterSpacing": {},
+    "shadows": {},
+    "opacity": {},
+    "durations": {},
+    "easings": {},
+    "containers": {},
+    "breakpoints": {},
+    "zIndices": {}
   }
 } as const;
 export type IntentFormTheme = (typeof tokenModes)[keyof typeof tokenModes];

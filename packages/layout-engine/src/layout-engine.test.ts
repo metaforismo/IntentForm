@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ContainerNodeKind, SemanticInterfaceGraph, SemanticNode } from "@intentform/semantic-schema";
+import { emptyTokenModeValues, type ContainerNodeKind, type SemanticInterfaceGraph, type SemanticNode } from "@intentform/semantic-schema";
 import {
   buildNodeIndex,
   compareLayoutEvidence,
@@ -16,11 +16,7 @@ const graph = {
     modes: {
       default: {
         name: "Default",
-        values: {
-          colors: {},
-          spacing: { "space.8": 8, "space.16": 16 },
-          radii: {},
-        },
+        values: { ...emptyTokenModeValues(), spacing: { "space.8": 8, "space.16": 16 } },
       },
     },
     aliases: {},

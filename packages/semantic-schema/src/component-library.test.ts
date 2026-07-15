@@ -11,6 +11,7 @@ import {
 } from "./index.ts";
 import {
   clearComponentOverride,
+  createComponentFromNode,
   detachComponentInstance,
   exportLocalComponentLibrary,
   importLocalComponentLibrary,
@@ -210,6 +211,28 @@ function componentNode(id: string, child?: SemanticNode): SemanticNode {
 }
 
 describe("local component libraries", () => {
+  it("creates a reusable attached component from a selected container without changing its rendered content", () => {
+    const source = structuredClone(demoGraph);
+    const stack = node("layout-lab.source-card", "stack", "Payment card");
+    stack.children = [node("layout-lab.source-card.copy", "text", "Secure checkout")];
+    source.screens[0]!.nodes.push(stack);
+    const created = commit(createComponentFromNode(source, {
+      nodeId: stack.id,
+      definitionId: "local.payment-card",
+      name: "Payment card",
+    }));
+    const definition = created.components.find((candidate) => candidate.id === "local.payment-card")!;
+    const instance = findGraphNode(created, stack.id)!;
+    expect(definition).toMatchObject({
+      version: "1.0.0",
+      properties: [{ name: "label", type: "string", default: "Payment card" }],
+      slots: [{ name: "content", target: "component.root", allowedKinds: ["text"] }],
+      codeBindings: [],
+    });
+    expect(instance.componentInstance).toMatchObject({ definitionId: definition.id, props: { label: "Payment card" } });
+    expect(instance.children.map((child) => child.intent.label)).toEqual(["Secure checkout"]);
+  });
+
   it("materializes typed props, variants, states, and instance overrides in deterministic precedence", () => {
     let graph = instantiate("intent.primary-action", "layout-lab.action", {
       props: { label: "Pay now" },

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { demoGraph } from "@intentform/proof-report/demo";
 import { parseGraph } from "@intentform/semantic-schema";
+import { instantiateComponent } from "@intentform/semantic-schema/component-library";
 import { compileWeb } from "./index";
 
 function responsiveGraph() {
@@ -170,5 +171,45 @@ describe("responsive web compiler", () => {
     expect(css).not.toContain("if-page-header");
     expect(css).not.toContain("if-site-nav");
     expect(css).not.toContain("font-size: clamp(2.5rem");
+  });
+
+  it("emits exact signed package imports and mapped props for registered Web code components", () => {
+    const graph = structuredClone(responsiveGraph());
+    const definition = graph.components[0]!;
+    const exportPath = "components/balance-summary";
+    graph.dependencies.push({
+      id: "@intentform/acme-ui",
+      version: "2.4.1",
+      kind: "component-library",
+      manifestDigest: "a".repeat(64),
+      artifactDigest: "b".repeat(64),
+      publisherKeyId: "acme.release",
+      visibility: "public",
+      registry: "https://packages.example.test",
+      publishedAt: "2026-07-15T12:00:00.000Z",
+      sourceRevision: "release-2.4.1",
+      license: "MIT",
+      exports: [exportPath],
+    });
+    definition.codeBindings = [{
+      target: "web",
+      dependencyId: "@intentform/acme-ui",
+      exportPath,
+      exportName: "BalanceSummary",
+      propertyMap: { title: definition.properties[0]!.name },
+    }];
+    const instanceGraph = instantiateComponent(parseGraph(graph), {
+      definitionId: definition.id,
+      instanceId: "home.code-component",
+      screenId: "home",
+      props: { [definition.properties[0]!.name]: "Available now" },
+    });
+    const output = compileWeb(parseGraph(instanceGraph));
+    const route = output.files.find((file) => file.path === "src/routes/home.tsx")!.content;
+    const packageJson = JSON.parse(output.files.find((file) => file.path === "package.json")!.content) as { dependencies: Record<string, string> };
+    expect(route).toContain('import { BalanceSummary as IntentForm_');
+    expect(route).toContain('from "@intentform/acme-ui/components/balance-summary"');
+    expect(route).toContain('title={"Available now"}');
+    expect(packageJson.dependencies["@intentform/acme-ui"]).toBe("2.4.1");
   });
 });

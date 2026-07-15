@@ -70,11 +70,20 @@ function normalizedName(value: string): string {
 }
 
 function internalKey(path: readonly string[], type: string): string {
-  const prefix = type === "color" ? "color" : type === "dimension"
-    ? path[0] === "radius" ? "radius" : "space"
-    : "";
+  const normalized = path.map(normalizedName);
+  const joined = normalized.join(".");
+  const knownPrefix = [
+    "color.", "space.", "radius.", "font.family.", "font.weight.", "font.size.",
+    "font.line-height.", "font.letter-spacing.", "shadow.", "opacity.", "duration.",
+    "easing.", "container.", "breakpoint.", "z.",
+  ].find((prefix) => joined.startsWith(prefix));
+  if (knownPrefix) return joined;
+  const prefix = type === "color" ? "color" : type === "dimension" ? "space"
+    : type === "fontFamily" ? "font.family" : type === "fontWeight" ? "font.weight"
+      : type === "duration" ? "duration" : type === "cubicBezier" ? "easing"
+        : type === "shadow" ? "shadow" : type === "number" ? "opacity" : type === "string" ? "font.family" : "";
   if (!prefix) throw new Error(`Unsupported DTCG token type: ${type}`);
-  const parts = path.map(normalizedName);
+  const parts = normalized;
   if (parts[0] === prefix) return parts.join(".");
   return [prefix, ...parts].join(".");
 }
@@ -115,25 +124,66 @@ function dimensionFromValue(value: unknown, path: string): number {
   return dimension.value;
 }
 
+function finiteNumber(value: unknown, path: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${path} must be a finite number`);
+  return value;
+}
+
+function stringValue(value: unknown, path: string): string {
+  if (typeof value !== "string" || value.length === 0) throw new Error(`${path} must be a non-empty string`);
+  return value;
+}
+
+function durationFromValue(value: unknown, path: string): number {
+  const duration = record(value, path);
+  if (duration.unit !== "ms") throw new Error(`${path} must use milliseconds`);
+  return finiteNumber(duration.value, `${path}.value`);
+}
+
+function easingFromValue(value: unknown, path: string): string {
+  if (!Array.isArray(value) || value.length !== 4 || value.some((part) => typeof part !== "number" || !Number.isFinite(part))) {
+    throw new Error(`${path} must be a four-number cubic Bezier value`);
+  }
+  return `cubic-bezier(${value.join(", ")})`;
+}
+
 function groupForKey(key: string): TokenGroup {
   if (key.startsWith("color.")) return "colors";
   if (key.startsWith("space.")) return "spacing";
   if (key.startsWith("radius.")) return "radii";
+  if (key.startsWith("font.family.")) return "fontFamilies";
+  if (key.startsWith("font.weight.")) return "fontWeights";
+  if (key.startsWith("font.size.")) return "fontSizes";
+  if (key.startsWith("font.line-height.")) return "lineHeights";
+  if (key.startsWith("font.letter-spacing.")) return "letterSpacing";
+  if (key.startsWith("shadow.")) return "shadows";
+  if (key.startsWith("opacity.")) return "opacity";
+  if (key.startsWith("duration.")) return "durations";
+  if (key.startsWith("easing.")) return "easings";
+  if (key.startsWith("container.")) return "containers";
+  if (key.startsWith("breakpoint.")) return "breakpoints";
+  if (key.startsWith("z.")) return "zIndices";
   throw new Error(`Unsupported token key: ${key}`);
 }
 
 function emptyValues(): ResolvedTokenMode {
-  return { colors: {}, spacing: {}, radii: {} };
+  return {
+    colors: {}, spacing: {}, radii: {}, fontFamilies: {}, fontWeights: {}, fontSizes: {},
+    lineHeights: {}, letterSpacing: {}, shadows: {}, opacity: {}, durations: {}, easings: {},
+    containers: {}, breakpoints: {}, zIndices: {},
+  };
 }
 
 function normalizedGroupPath(path: readonly string[], type: string | undefined): string {
   const normalized = path.map(normalizedName);
+  const joined = normalized.join(".");
+  if (["font", "shadow", "opacity", "duration", "easing", "container", "breakpoint", "z"].includes(normalized[0] ?? "")) return joined;
   if (type === "color" && normalized[0] !== "color") return ["color", ...normalized].join(".");
   if (type === "dimension") {
     const prefix = normalized[0] === "radius" ? "radius" : "space";
     if (normalized[0] !== prefix) return [prefix, ...normalized].join(".");
   }
-  return normalized.join(".");
+  return joined;
 }
 
 function walkDtcg(
@@ -185,6 +235,14 @@ function walkDtcg(
         if (groupName === "spacing" && dimension <= 0) throw new Error(`Spacing token must be positive: ${key}`);
         if (groupName === "radii" && dimension < 0) throw new Error(`Radius token cannot be negative: ${key}`);
         values[groupName][key] = dimension;
+      } else if (type === "fontFamily" || type === "string" || type === "shadow") {
+        (values[groupName] as Record<string, string>)[key] = stringValue(tokenValue, `${key}.$value`);
+      } else if (type === "fontWeight" || type === "number") {
+        (values[groupName] as Record<string, number>)[key] = finiteNumber(tokenValue, `${key}.$value`);
+      } else if (type === "duration") {
+        (values[groupName] as Record<string, number>)[key] = durationFromValue(tokenValue, `${key}.$value`);
+      } else if (type === "cubicBezier") {
+        (values[groupName] as Record<string, string>)[key] = easingFromValue(tokenValue, `${key}.$value`);
       } else {
         throw new Error(`Unsupported DTCG token type: ${type}`);
       }
@@ -211,6 +269,18 @@ function validatedModeValues(value: unknown, modeId: string): ResolvedTokenMode 
     colors: record(mode.colors ?? {}, `${modeId}.colors`) as Record<string, string>,
     spacing: record(mode.spacing ?? {}, `${modeId}.spacing`) as Record<string, number>,
     radii: record(mode.radii ?? {}, `${modeId}.radii`) as Record<string, number>,
+    fontFamilies: record(mode.fontFamilies ?? {}, `${modeId}.fontFamilies`) as Record<string, string>,
+    fontWeights: record(mode.fontWeights ?? {}, `${modeId}.fontWeights`) as Record<string, number>,
+    fontSizes: record(mode.fontSizes ?? {}, `${modeId}.fontSizes`) as Record<string, number>,
+    lineHeights: record(mode.lineHeights ?? {}, `${modeId}.lineHeights`) as Record<string, number>,
+    letterSpacing: record(mode.letterSpacing ?? {}, `${modeId}.letterSpacing`) as Record<string, number>,
+    shadows: record(mode.shadows ?? {}, `${modeId}.shadows`) as Record<string, string>,
+    opacity: record(mode.opacity ?? {}, `${modeId}.opacity`) as Record<string, number>,
+    durations: record(mode.durations ?? {}, `${modeId}.durations`) as Record<string, number>,
+    easings: record(mode.easings ?? {}, `${modeId}.easings`) as Record<string, string>,
+    containers: record(mode.containers ?? {}, `${modeId}.containers`) as Record<string, number>,
+    breakpoints: record(mode.breakpoints ?? {}, `${modeId}.breakpoints`) as Record<string, number>,
+    zIndices: record(mode.zIndices ?? {}, `${modeId}.zIndices`) as Record<string, number>,
   };
 }
 
@@ -284,6 +354,15 @@ function colorValue(hex: string): JsonObject {
 
 function dtcgValue(key: string, value: string | number): JsonObject {
   if (key.startsWith("color.")) return { $type: "color", $value: colorValue(String(value)) };
+  if (key.startsWith("font.family.")) return { $type: "fontFamily", $value: value };
+  if (key.startsWith("font.weight.")) return { $type: "fontWeight", $value: value };
+  if (key.startsWith("shadow.")) return { $type: "string", $value: value };
+  if (key.startsWith("opacity.") || key.startsWith("z.")) return { $type: "number", $value: value };
+  if (key.startsWith("duration.")) return { $type: "duration", $value: { value, unit: "ms" } };
+  if (key.startsWith("easing.")) {
+    const match = String(value).match(/^cubic-bezier\(([^)]+)\)$/);
+    return match ? { $type: "cubicBezier", $value: match[1]!.split(",").map(Number) } : { $type: "string", $value: value };
+  }
   return { $type: "dimension", $value: { value, unit: "px" } };
 }
 
@@ -322,7 +401,7 @@ export function exportDtcg(tokensInput: TokenCollection): JsonObject {
   const defaultValues = resolveTokenMode(tokens, tokens.defaultMode);
   const root: JsonObject = {};
   const preserved = record(tokens.extensions["org.intentform.dtcg-preserved"] ?? {}, "tokens.extensions.org.intentform.dtcg-preserved") as PreservedMetadata;
-  for (const group of ["colors", "spacing", "radii"] as const) {
+  for (const group of Object.keys(defaultValues).sort() as Array<keyof ResolvedTokenMode>) {
     for (const [key, value] of Object.entries(defaultValues[group]).sort(([left], [right]) => left.localeCompare(right))) {
       if (Object.hasOwn(tokens.aliases, key)) continue;
       const token = dtcgValue(key, value);

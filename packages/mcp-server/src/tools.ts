@@ -726,7 +726,7 @@ export function listTokenModes(dir: string) {
         id,
         name: mode.name,
         description: mode.description ?? null,
-        overrideCount: Object.values(mode.values).reduce((count, group) => count + Object.keys(group).length, 0),
+        overrideCount: Object.values(mode.values).reduce((count, group) => count + Object.keys(group ?? {}).length, 0),
         resolved: resolveTokenMode(graph.tokens, id),
       })),
   };

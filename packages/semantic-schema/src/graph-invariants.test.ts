@@ -239,6 +239,47 @@ describe("semantic graph invariants", () => {
     })).toThrow(/HTTPS/i);
   });
 
+  it("validates code component bindings against exact signed dependency exports and typed properties", () => {
+    const graph: GraphDraft = makeValidGraph();
+    graph.dependencies = [{
+      id: "@intentform/acme-ui",
+      version: "1.2.3",
+      kind: "component-library",
+      manifestDigest: "a".repeat(64),
+      artifactDigest: "b".repeat(64),
+      publisherKeyId: "acme.release",
+      visibility: "public",
+      registry: "https://packages.example.test/intentform",
+      publishedAt: "2026-07-15T12:00:00.000Z",
+      sourceRevision: "release-1.2.3",
+      license: "MIT",
+      exports: ["components/receipt-summary"],
+    }];
+    graph.components[0].properties = [{
+      name: "label",
+      type: "string",
+      default: "Receipt",
+      bindings: [{ target: "receipt-summary.root", field: "intent.label" }],
+    }];
+    graph.components[0].codeBindings = [{
+      target: "web",
+      dependencyId: "@intentform/acme-ui",
+      exportPath: "components/receipt-summary",
+      exportName: "ReceiptSummary",
+      propertyMap: { title: "label" },
+    }];
+    expect(parseGraph(graph).components[0]!.codeBindings).toHaveLength(1);
+    const missingExport = structuredClone(graph);
+    missingExport.components[0].codeBindings[0].exportPath = "components/missing";
+    expect(() => parseGraph(missingExport)).toThrow(/does not export/i);
+    const missingProperty = structuredClone(graph);
+    missingProperty.components[0].codeBindings[0].propertyMap.title = "missing";
+    expect(() => parseGraph(missingProperty)).toThrow(/unknown component property/i);
+    const missingDependency = structuredClone(graph);
+    missingDependency.components[0].codeBindings[0].dependencyId = "@intentform/missing";
+    expect(() => parseGraph(missingDependency)).toThrow(/unknown code component dependency/i);
+  });
+
   it("accepts nested semantic containers and patches descendant nodes by stable id", () => {
     const graph: GraphDraft = makeValidGraph();
     const leaf = structuredClone(graph.screens[1]!.nodes[0]!);

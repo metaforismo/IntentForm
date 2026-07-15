@@ -30,6 +30,13 @@ export interface InstantiateComponentInput {
   slots?: Record<string, SemanticNode[]>;
 }
 
+export interface CreateComponentFromNodeInput {
+  nodeId: string;
+  definitionId: string;
+  name: string;
+  description?: string;
+}
+
 function clone<T>(value: T): T {
   return structuredClone(value);
 }
@@ -68,6 +75,29 @@ function removeNode(nodes: SemanticNode[], id: string): boolean {
     if (removeNode(node.children, id)) return true;
   }
   return false;
+}
+
+function locateNode(nodes: SemanticNode[], id: string, parentId: string | null = null): {
+  node: SemanticNode;
+  siblings: SemanticNode[];
+  index: number;
+  parentId: string | null;
+} | undefined {
+  for (const [index, node] of nodes.entries()) {
+    if (node.id === id) return { node, siblings: nodes, index, parentId };
+    const nested = locateNode(node.children, id, node.id);
+    if (nested) return nested;
+  }
+  return undefined;
+}
+
+function normalizeTemplateIds(root: SemanticNode): void {
+  let index = 0;
+  walkNodes([root], (node) => {
+    node.id = index === 0 ? "component.root" : `component.node-${index}`;
+    delete node.componentInstance;
+    index += 1;
+  });
 }
 
 function applyOverride(root: SemanticNode, override: ComponentOverride): void {
@@ -281,6 +311,63 @@ export function instantiateComponent<T extends SemanticInterfaceGraph>(
   const index = Math.min(input.index ?? siblings.length, siblings.length);
   siblings.splice(index, 0, placeholder);
   return synchronizeComponentInstances(next);
+}
+
+export function createComponentFromNode<T extends SemanticInterfaceGraph>(
+  graph: T,
+  input: CreateComponentFromNodeInput,
+): T {
+  if (graph.components.some((definition) => definition.id === input.definitionId)) {
+    throw new Error(`Component definition is already in use: ${input.definitionId}`);
+  }
+  const next = clone(graph);
+  const screen = next.screens.find((candidate) => locateNode(candidate.nodes, input.nodeId));
+  if (!screen) throw new Error(`Unknown component source node: ${input.nodeId}`);
+  const location = locateNode(screen.nodes, input.nodeId)!;
+  const template = clone(location.node);
+  const componentLabel = template.intent.label ?? template.intent.purpose;
+  const slotChildren = clone(template.children);
+  normalizeTemplateIds(template);
+  template.children = [];
+  const allowedKinds = [...new Set(slotChildren.map((child) => child.kind))];
+  const definition: ComponentDefinition = {
+    id: input.definitionId,
+    name: input.name,
+    description: input.description ?? `Reusable component created from ${location.node.intent.label}.`,
+    version: "1.0.0",
+    template,
+    properties: [{
+      name: "label",
+      type: "string",
+      required: true,
+      default: componentLabel,
+      bindings: [
+        { target: template.id, field: "intent.label" },
+        { target: template.id, field: "accessibility.label" },
+      ],
+    }],
+    slots: allowedKinds.length > 0 ? [{
+      name: "content",
+      target: template.id,
+      allowedKinds,
+      required: false,
+      maxChildren: Math.max(1, slotChildren.length),
+    }] : [],
+    variants: [],
+    states: [],
+    codeBindings: [],
+  };
+  next.components.push(definition);
+  location.siblings.splice(location.index, 1);
+  return instantiateComponent(next, {
+    definitionId: definition.id,
+    instanceId: input.nodeId,
+    screenId: screen.id,
+    parentId: location.parentId,
+    index: location.index,
+    props: { label: componentLabel },
+    slots: slotChildren.length > 0 ? { content: slotChildren } : {},
+  });
 }
 
 export function setComponentVariant<T extends SemanticInterfaceGraph>(
