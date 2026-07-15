@@ -1,233 +1,192 @@
 # IntentForm
 
-**Compile product intent into platform-native, runnable, verified interfaces.**
+**Design interfaces with humans and agents. Compile them into real software.**
 
-IntentForm is an agent-native interface compiler. A product brief becomes a validated Semantic Interface Graph; deterministic backends lower that graph into normal React, SwiftUI, Expo Router and responsive-web projects; evidence-based checks identify intent violations and accept a repair only after an independent rerun.
+IntentForm is an open-source, local-first visual design environment and interface compiler. A validated Semantic Interface Graph is the shared source of truth for people and coding agents; deterministic compilers produce readable React, HTML/CSS, Expo, and SwiftUI output; browser and native checks provide evidence before a result is called verified.
 
-> Manipulate it like a design. Compile it like software.
+![IntentForm project launcher in dark mode](docs/assets/readme/launcher-dark.webp)
 
-This repository began as an OpenAI Build Week vertical slice and now continues toward the complete local-first product. The original React and SwiftUI proof remains intact alongside production Expo Router and responsive-web surfaces.
+## What IntentForm is
 
-## What works today
+- A desktop-class visual editor for semantic interface intent.
+- A deterministic, versioned project format with migrations and stable fingerprints.
+- A local MCP surface for Codex, Claude Code, OpenCode, Pi, and generic clients.
+- A compiler pipeline that keeps generated code downstream of the canonical graph.
+- A verification workflow for responsive layout, accessibility, generated builds, previews, and native rendering.
 
-- GPT-5.6 brief interpreter and scoped semantic editor through the Responses API with structured output and one corrective retry.
-- Deterministic offline replay, including typed adaptive-placement and primary-action rename edits, requiring no login or API key.
-- Versioned and runtime-validated recursive Semantic Interface Graph with bounded depth, size and cycle-safe ingestion.
-- Stable node IDs, restricted expression AST, typed UI contracts and fixtures.
-- Infinite multi-frame semantic board with flow edges, live finding badges, pointer-anchored zoom, pan, fit commands and adaptive workspace panels.
-- State-aware previews that expose idle, loading, failed and completed fixtures without rendering state-bound nodes at the wrong time.
-- Versioned, checksummed logical device profiles for neutral phone, tablet, orientation, split-window and custom viewports, plus named fluid, custom, browser and content web frames; direct manipulation changes semantic layout rather than storing arbitrary CSS.
-- Disabled-by-default bring-your-own bezel-pack boundary for locally supplied, legally permitted raster artwork; no official bezel bytes are bundled or emitted.
-- Fit-to-canvas, trackpad zoom, middle-mouse panning, preview mode and contextual keyboard shortcuts for selection, panels and revision history.
-- Searchable recursive layers and commands, human editing for labels, layout relations, width, spacing tokens, emphasis, sibling ordering, subtree-safe duplication and component insertion, with undo/redo.
-- Versioned local component definitions with typed props, named slots, variants, states, overrides, reset/detach, deprecation, deterministic compiler expansion and a strict `1.0.0` library ABI.
-- Project launcher with guided blank application/prototype/library starters, validated imports, copy-only examples, browser recovery diagnostics and an optional local-agent workspace bridge.
-- Versioned browser project recovery carrying project type, source, timestamp and local conflict fingerprint; invalid recovery remains inspectable instead of silently replacing a project.
-- Deterministic React and SwiftUI compiler backends for stack, grid, overlay, scroll, safe-area, adaptive, wrap, split, bounded freeform and page-flow hierarchy.
-- Production Expo Router compiler for typed iOS/Android routes, contracts, fixtures, token modes, safe areas, adaptive layout, optional development builds and explicit universal, platform-native or project-component ownership.
-- Dedicated responsive-web compiler and verifier for semantic HTML routes, block/flex/intrinsic-grid layout, wrapping, sticky/fixed positioning, overflow, aspect ratio, container declarations and named breakpoint overrides.
-- Active React preview embedded in Studio: it validates the current graph, verifies the exact compiler fingerprint, lowers the shared IR into an isolated runtime, and executes typed navigation events without evaluating arbitrary generated source.
-- Playwright screenshot, computed-style and layout-bounds verification for compact and regular viewports.
-- Typed repair proposal, semantic diff and independent verification rerun.
-- Hosted-studio-ready Next.js experience across Brief, Graph, Outputs, Verification and Proof Report.
-- Native SwiftUI build harness validated with `xcodebuild` for iOS Simulator.
-- Native Simulator evidence adapter for screenshots, accessibility identifiers and point-accurate action bounds.
-- Responsive, keyboard-accessible Studio coverage at phone, tablet, adaptive desktop, wide desktop and short-landscape sizes.
-- Release browser gates for console/page/request failures, direct routes, refresh, invalid input, request recovery and reduced motion.
-- Production CSP and browser security headers that preserve the same-origin preview sandbox while blocking external framing.
-- MCP 2025-11-25 over clean stdio or authenticated localhost Streamable HTTP, with typed structured outputs, subscribable project resources, semantic transactions, bounded preview tasks, and metadata-only access activity in Studio.
-- Checksummed named operation history with isolated human/agent branches, stable-property three-way merge, path-level conflict review, cherry-pick, inverse revert, bounded compaction and checkpoint recovery.
-- Versioned WCAG 2.2 AA audits shared by Studio and MCP across baseline, long-text, RTL and increased-contrast profiles, plus axe-rendered browser gates, explicit suppressions and copy-free evidence.
-- A measured 10,000-node runtime with reusable graph indexes, viewport canvas virtualization, bounded worker analysis, on-demand compiler caching, atomic chunked recovery and a CI performance budget.
-- A hardened macOS-first Electron shell with explicit project grants, sandboxed/context-isolated renderers, named IPC, local Studio/MCP supervision, installed-toolchain status, read-only Git context, ASAR integrity, a Developer ID Hardened Runtime signing path and a real ad-hoc packaged-app smoke gate.
-- A signed data-only ecosystem with exact graph dependency locks, content-addressed package cache, declarative default-deny plugins, AES-256-GCM branch review, a tenant-isolated opaque relay core and signature-bound remote evidence that never replaces local build proof.
+IntentForm is not a Figma clone, a screenshot-to-code service, or a promise of pixel-identical output across platforms. Native UI has platform-specific navigation, accessibility, type scaling, keyboard, safe-area, and control behavior. IntentForm preserves shared product intent while allowing honest platform expressions.
 
-## The proof
+## The product today
 
-The included Verdant Pay sample contains one controlled violation: the confirmation action is inline on a compact viewport, despite the intent requiring it to remain reachable. IntentForm:
+| Area | Working | Experimental | Planned |
+| --- | --- | --- | --- |
+| Project lifecycle | Launcher, create/import/open, examples, atomic browser recovery, schema migration | Multi-document tab workflow | Directory-backed project catalog |
+| Canvas | Infinite board, recursive layers, selection, resize, reorder, explicit freeform, device chrome | Multi-select grouping and semantic reparenting | Rich vector editing |
+| Layout | Stack, frame, list, grid tracks/span, wrap, overlay, split, scroll, safe area, adaptive and freeform relations | Weighted tracks, negative gap where supported | Complete CSS compatibility matrix |
+| Design systems | Components, slots, variants, states, overrides, detach/reset, assets, DTCG token modes | Local package and plugin ecosystem | Remote team libraries |
+| Output | React, real DOM/CSS, responsive Web, Expo Router, SwiftUI | Agent handoff for unsupported native targets | Deterministic Compose compiler |
+| Agents | 46 bounded tools, scoped resources, preview/commit/rollback transactions, semantic diffs, read-only default | Encrypted review bundles and collaboration relay | Multi-user presence |
+| Evidence | Unit/integration tests, Playwright, WCAG profiles, web runtime, Expo exports, SwiftUI builds/renders, desktop package checks | Remote evidence verification | Hosted verification workers |
 
-1. validates the graph;
-2. compiles React and SwiftUI;
-3. reports the exact violated intent and evidence;
-4. proposes a minimal typed graph patch;
-5. recompiles both targets;
-6. reruns the same check;
-7. marks the finding verified only when the rerun passes.
+![IntentForm workspace in dark mode with three related screens](docs/assets/readme/workspace-dark.webp)
 
-React lowers the repaired relation to a persistent responsive action. SwiftUI lowers it to `.safeAreaInset(edge: .bottom)`. The graph never stores device-specific coordinates.
+The editor chrome can be light, dark, or system-controlled without changing a project artboard’s authored theme.
 
-## Run locally
+![IntentForm workspace in light mode](docs/assets/readme/workspace-light.webp)
 
-Requirements: Node.js 22+, pnpm 10+, and Xcode 16+ only for native validation.
+## One source, several projections
+
+```text
+Human canvas edits ─┐
+                    ├─> validated Semantic Interface Graph
+Agent transactions ─┘              │
+                                    ├─> React compiler ─> runnable app
+                                    ├─> Web IR ─> DOM/CSS ─> browser evidence
+                                    ├─> Expo compiler ─> iOS/Android exports
+                                    └─> SwiftUI compiler ─> native build/render
+```
+
+Every committed mutation is schema-validated, fingerprint-bound, reversible, attributable, and represented as a semantic diff. Generated files are outputs; agents do not bypass the graph by editing generated code as the source of truth.
+
+![Responsive Web output beside deterministic generated code](docs/assets/readme/responsive-web.webp)
+
+## Quick start
+
+Requirements:
+
+- Node.js 22 or newer
+- pnpm 10.28.0
+- Chromium for browser smoke tests
+- Xcode command-line tools for SwiftUI and macOS checks
 
 ```bash
-pnpm install
-cp .env.example .env.local
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open `http://localhost:3000` to choose a blank project, recover browser work, import a graph, copy an example, or open the local `.intentform` workspace. The editor itself lives at `/studio`; direct access remains available for existing links and opens the verified example only when no browser project was selected. Without `OPENAI_API_KEY`, the editor clearly reports **Deterministic replay** and exercises safe typed edits. With a server-side key, it uses the `gpt-5.6` alias; the key is never included in the client bundle. Model traces expose only a request ID, deterministic fingerprint, attempt count and token totals—never prompts, secrets or reasoning chains.
+Open `http://127.0.0.1:3000`, create a project or copy an example, then enter Studio. An account, hosted service, model call, and paid MCP allowance are not required.
 
-For the replay-first Vercel configuration and the clean-browser remote gate, see [Deployment](docs/DEPLOYMENT.md).
-
-Core checks:
+Useful focused commands:
 
 ```bash
 pnpm typecheck
 pnpm test
 pnpm build
 pnpm smoke:studio
-pnpm generate:demo
-pnpm verify:react-preview
 pnpm verify:web-preview
-pnpm smoke:web-preview
 pnpm verify:expo-preview
 pnpm verify:swiftui
-pnpm verify:swiftui-render
-pnpm verify:desktop # macOS package, signature and packaged-app gate
+pnpm verify:desktop
 ```
 
-With the generated SwiftUI preview running in a booted Simulator and `serve-sim` exposing its accessibility endpoint:
+## Project format
+
+An `.intentform` project is canonical JSON validated by the versioned semantic schema. It contains:
+
+- product intent and principles;
+- design tokens and modes;
+- assets with explicit export and license policy;
+- component definitions and instances;
+- screens, generic semantic nodes, layouts, states, contracts, fixtures, and flows;
+- enabled platform profiles and precision preview devices;
+- optional ecosystem, history, and collaboration metadata.
+
+Bounds on serialized size, depth, child count, stable IDs, expressions, components, assets, frames, breakpoints, and patch operations fail closed. Migrations are explicit and fixture-backed; deterministic serialization produces canonical fingerprints.
+
+## Agent setup
+
+New MCP connections are read-only by default. Print a configuration plan without writing client files:
 
 ```bash
-INTENTFORM_SIMULATOR_UDID=<UDID> pnpm capture:swiftui-evidence
+pnpm mcp:install --client codex --print
+pnpm mcp:install --client claude --print
+pnpm mcp:install --client opencode --print
+pnpm mcp:install --client pi --print
 ```
 
-This writes a native screenshot and `evidence.json` under `artifacts/swiftui/`. `verify:swiftui-render` automates device selection, boot, host build, install, launch, AX capture and cleanup; macOS CI uploads the result as `swiftui-native-evidence`. See [docs/NATIVE_EVIDENCE.md](docs/NATIVE_EVIDENCE.md).
+Pass `--project /absolute/path/to/project` when the project is not the current directory. `--apply` installs the printed plan; an existing client configuration is never replaced without confirmation and a timestamped backup. Write access requires the explicit `INTENTFORM_MCP_PERMISSION=write` environment setting.
 
-Generated evidence is written to `generated/` and excluded from Git because it is reproducible from the canonical graph.
+The agent surface includes high-level inspect, graph, component search, token, asset, branch, history, compile, verify, preview, accessibility, package, review, checkpoint, diff, revert, and transaction operations. Successful tool responses identify the project, file, tab, page, device, visual state, and selection scope.
 
-## Judge path
+![Local preview evidence, least-authority agent access, and history](docs/assets/readme/agent-evidence.webp)
 
-The intended zero-setup judge path is the replay-only deployment at [intentform-metaforismos-projects.vercel.app](https://intentform-metaforismos-projects.vercel.app). It requires no account, test credentials, OpenAI key or paid action. The current deployment is still behind Vercel team SSO; it is not judge-ready until the owner explicitly removes protection for this project and the remote smoke suite passes.
+## Original showcase
 
-Once public, the shortest product path is:
+`Aster Sound` is an original fictional creator and listening product included in Examples. It demonstrates a responsive desktop library, tablet collection, phone discovery/player flow, original abstract cover surfaces, search, playlist rows, persistent playback, light/dark/compact token modes, responsive grids, three-screen flow, and Web/Expo/SwiftUI output. It includes no copyrighted music, competitor assets, external shader dependency, or placeholder copy.
 
-1. open the **Adaptive payment flow** example as a working copy;
-2. inspect the three-screen semantic flow and switch compact/regular devices;
-3. edit the request action label or compact placement and observe the semantic diff;
-4. open **Native outputs**, confirm the source fingerprint and interact with the active React preview;
-5. inspect **Verification** and **Proof report**, which say `not run` until graph-specific build evidence is actually supplied.
+Verdant Pay remains available as a clearly labeled verified compatibility sample for the original Build Week proof.
 
-For a local judge run, use the setup above and then `pnpm smoke:studio`. Supported judge platforms are modern Chromium on Node.js 22+; Xcode 16+ on macOS is needed only to reproduce native SwiftUI evidence.
+## Verification model
 
-## Agent-native workflows (Claude Code, Codex, any MCP client)
+IntentForm separates generation from verification. A generated file is not called verified until current evidence exists for its exact graph, compiler, target, device/profile, and build fingerprint.
 
-IntentForm is designed to be **driven by coding agents**, not just humans. The repository ships an MCP server (auto-discovered by Claude Code through [`.mcp.json`](.mcp.json)) that operates on the local project in `.intentform/`:
+The release gate is:
 
-```text
-intentform_preview_migration inspect schema status without writing
-intentform_apply_migration   checkpoint and migrate a previewed old graph
-intentform_describe_project   inspect screens, stable node IDs, tokens, flows, findings
-intentform://project/summary  read compact current graph/compiler/verification state
-intentform://project/graph    read the complete canonical graph
-intentform://project/revisions / project/history / project/previews
-                              read snapshots, named operations/branches and local evidence
-intentform://project/accessibility
-                              read versioned audits for every enabled output target
-intentform://agent/activity   read least-authority policy and metadata-only outcomes
-intentform://device-profiles  read checksummed geometry, safe areas, inputs and capabilities
-intentform://device-bezel-packs inspect local-only pack capability and byte-free metadata
-intentform://project/ecosystem inspect signed locks, cache integrity, plugin grants and optional sync policy
-intentform_list_token_modes   inspect resolved modes, aliases and deprecation
-intentform_import_dtcg / intentform_export_dtcg  DTCG 2025.10 interchange
-intentform_search_assets / intentform_import_asset  licensed local media
-intentform_asset_gc           preview or remove unreferenced local asset bytes
-intentform_search_components discover typed local definitions without copying layers
-intentform_component_schema  inspect props, slots, variants, states and template contracts
-intentform_instantiate_component add a validated, revisioned component instance
-intentform_preview_patch      validate and inspect a typed semantic edit without writing
-intentform_apply_patch        smallest typed semantic or hierarchy edit, validated and revisioned
-intentform_begin_transaction / preview_transaction / commit_transaction / rollback_transaction
-                              review and commit an exact fingerprint-bound semantic change
-intentform_replace_graph      structural edits with full schema validation
-intentform_verify             deterministic intent rules per device scenario
-intentform_audit_accessibility WCAG 2.2 AA profiles, evidence and repair direction
-intentform_verify_web         responsive frames, breakpoint coverage and web compiler diagnostics
-intentform_compile            byte-stable React, SwiftUI, Expo or web plus permitted assets into output/
-intentform_diff / revert      semantic history — every agent edit is reversible
-intentform_create_branch / apply_branch_patch / preview_branch_merge / merge_branch
-                              isolate agent work and approve only a clean semantic merge
-intentform_preview_history_operation / apply_history_operation
-                              preview and cherry-pick or inversely revert named operations
-intentform_preview_package_update / apply_package_update
-                              verify signatures, exact locks and typed exports before one revision
-intentform_set_plugin_permissions bind default-deny grants to an exact declarative plugin digest
-intentform_export_review_bundle / preview_review_bundle / apply_review_bundle
-                              exchange AES-256-GCM branch reviews through semantic merge
-intentform_verify_remote_evidence verify a signed exact preview binding without changing local evidence
+```bash
+pnpm verify
+pnpm smoke:studio
+pnpm verify:react-preview
+pnpm verify:swiftui
+pnpm verify:swiftui-render
+pnpm verify:desktop
 ```
 
-In the intended MCP workflow an agent edits validated intent rather than generated UI files, and deterministic compilers produce the target code. The Studio opens and saves the same `.intentform/graph.json` (project menu → *Open/Save local project*), so agent edits land on the design board and human edits are visible to agents. Writes use atomic replacement and expected fingerprints; if an agent changes the graph after Studio opens it, Studio refuses the stale save and asks you to reopen instead of overwriting the agent revision. Stdio remains the default; authenticated Streamable HTTP binds only to `127.0.0.1` when explicitly started. See [Accessibility verification](docs/ACCESSIBILITY.md), [large-document performance](docs/PERFORMANCE.md), [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md) for setup and compatibility, and [CLAUDE.md](CLAUDE.md) for in-repo agent conventions.
+CI additionally regenerates checked-in preview harnesses and requires a clean diff, runs the 10,000-node benchmark, builds and smokes responsive Web output, exports Expo for iOS and Android, runs the full Studio browser matrix, verifies native SwiftUI evidence, and packages the macOS desktop shell. GitHub Actions are pinned to immutable commits.
 
-The desktop application can start that authenticated endpoint and copy a complete client configuration without exposing its bearer token to the renderer. See [Desktop application](docs/DESKTOP.md), [Desktop security](docs/DESKTOP_SECURITY.md), [Ecosystem](docs/ECOSYSTEM.md) and [Ecosystem security](docs/ECOSYSTEM_SECURITY.md).
+![Native SwiftUI render produced from the same semantic project](docs/assets/readme/swiftui-native.webp)
 
-## How Codex and GPT-5.6 shaped the build
+## Security and local-first boundaries
 
-The human product decisions were to keep semantic intent as the source of truth, use deterministic compilers instead of model-written application code, make replay the public default, keep build status fail-closed, and defer authentication, cloud collaboration and a production API key. Codex accelerated repository architecture, schema and compiler implementation, editor UX, native harnesses, test generation, CI, security review and repeated browser/native verification. The commit history and [build log](docs/BUILD_LOG.md) preserve that implementation trail.
+- Project and revision state stays local by default.
+- HTTP MCP binds to loopback and requires a private token.
+- New agent clients receive read-only tools unless write access is explicitly granted.
+- Graph patches are bounded, validated, fingerprint-checked, atomic, and reversible.
+- Generated previews are isolated; generated Web output does not receive same-origin Studio access.
+- Asset, package, bezel, plugin, review, and collaboration inputs are path-, checksum-, signature-, and size-checked.
+- Logs exclude arguments, authored content, paths, credentials, tokens, and generated output.
+- No arbitrary shell, filesystem, or network tool is exposed through the semantic MCP surface.
+- The desktop package includes the project Apache license and NOTICE alongside Electron/Chromium legal material.
 
-GPT-5.6 has a narrower product role: it converts a brief into a graph, proposes scoped semantic edits and classifies repair actions. Every response is schema-validated and bounded; deterministic code owns lowering, source generation and diagnostics. In replay-only judging, those same three operations remain demonstrable without presenting deterministic output as a live model call. See [Codex and GPT-5.6 usage](docs/CODEX_USAGE.md) for the detailed boundary.
-
-## Architecture
-
-```text
-Brief or semantic edit
-  -> GPT-5.6 intent interpreter
-  -> validated Semantic Interface Graph
-  -> shared Platform IR
-     -> React compiler -> runnable web UI
-     -> SwiftUI compiler -> native iOS UI
-     -> Expo compiler -> routed iOS and Android app
-     -> responsive-web compiler -> routed Vite site
-  -> deterministic verifier + evidence
-  -> GPT-5.6 or deterministic repair planner
-  -> validated patch -> rebuild -> independent rerun
-```
-
-The model interprets and judges. It does not emit application code. Code generation remains deterministic: the same graph and compiler version produce byte-equivalent files.
-
-See [architecture](docs/ARCHITECTURE.md), [hackathon scope](docs/HACKATHON_SCOPE.md), [Codex usage](docs/CODEX_USAGE.md), [build log](docs/BUILD_LOG.md), and the [submission checklist](docs/SUBMISSION_CHECKLIST.md).
+IntentForm can optionally use a live model for intent interpretation or repair planning, but deterministic replay remains available and core editing/compilation does not require an account or model call.
 
 ## Repository map
 
 ```text
-apps/studio-web/            Next.js product experience and server routes
-apps/studio-desktop/        hardened Electron host, preload, services and packaging
-apps/react-preview/         Vite harness executing generated React output
-apps/web-preview/           Vite harness compiling generated responsive-web output
-apps/expo-preview/          generated Expo Router iOS/Android verification harness
-packages/semantic-schema/   graph, validation, canonical serialization, patches
-packages/desktop-bridge/    named desktop protocol, grants, probes, Git and supervisor
-packages/ecosystem/         signed packages, plugin grants, encrypted review and remote evidence
-packages/collaboration-relay/ opaque tenant-scoped optional sync service core
-packages/device-registry/   neutral versioned geometry, capabilities and checksums
-packages/device-bezels/     kill-switched local manifests, containment and integrity checks
-packages/layout-engine/     deterministic recursive indexing and neutral layout
-packages/compiler-core/     shared lowering and compiler contracts
-packages/compiler-react/    accessible responsive React output
-packages/compiler-swiftui/  native SwiftUI output
-packages/compiler-expo/     Expo Router and React Native output
-packages/compiler-web/      semantic responsive-web output
-packages/verifier/          deterministic findings and evidence
-packages/web-verifier/      frame and breakpoint verification for web projects
-packages/repair-planner/    typed deterministic and GPT-5.6 repairs
-packages/intent-interpreter GPT-5.6 structured graph creation and typed semantic edits
-packages/proof-report/      end-to-end proof orchestration and golden sample
-examples/preview-ios/       buildable iOS Swift package harness
+apps/
+  studio-web/          launcher, Studio, isolated previews, local APIs
+  studio-desktop/      hardened Electron shell and local services
+  react-preview/       generated React evidence harness
+  web-preview/         generated responsive DOM/CSS harness
+  expo-preview/        generated Expo Router export harness
+packages/
+  semantic-schema/     canonical graph, migrations, patches, diffs
+  layout-engine/       deterministic neutral layout relations
+  compiler-*/          React, Web, Expo, and SwiftUI backends
+  device-registry/     checksummed logical and precision preview profiles
+  mcp-server/          scoped resources, tools, transactions, transports
+  verifier/            semantic and target evidence rules
+scripts/               smoke, benchmark, native render, sync, installer gates
 ```
 
-## Build Week
+## Roadmap
 
-Submission closes **July 21, 2026 at 5:00 PM PT**. IntentForm is entered in Developer Tools. The repository is Apache-2.0 and provides a free replay path for judges. The required package includes a working project, category, English description, public YouTube demo under three minutes with audio explaining Codex and GPT-5.6, testable repository, and the primary Codex task's `/feedback` Session ID. The Devpost Hackathons plugin is optional; the official rules, FAQ and submission requirements remain the authority.
+Near-term work focuses on deeper professional workflows rather than a broad collection of tiny tools:
 
-- [Build Week](https://openai.devpost.com/)
-- [Official rules](https://openai.devpost.com/rules)
-- [Request the official $100 Codex credit grant](https://forms.gle/rP8WJgk4D2zQEu1A6) by July 17 at 12:00 PM PT
+- complete searchable token binding and style clipboard interactions;
+- richer selection traversal, keyboard manipulation, and cross-container drop targets;
+- sandboxed browser-native HTML/CSS import with explicit unsupported-property diagnostics;
+- simultaneous multi-device comparison inside Studio;
+- expanded image crop/SVG editing and replacement workflows;
+- deterministic native coverage beyond the current SwiftUI reference path.
 
-## Product direction
+## Build Week proof
 
-The full product is local-first and Expo Adaptive-first, with SwiftUI as the reference native renderer. Expo iOS/Android, responsive web, direct semantic manipulation, MCP, operation-log-based branch/merge workflows, fingerprint-bound local previews, the desktop toolchain shell, signed libraries, encrypted review and an optional opaque collaboration service boundary are implemented. Standalone Compose and repository adoption through managed zones remain future product layers. No generated application requires an IntentForm runtime, and no account or hosted relay is required for authoring.
+The original vertical slice established the core claim: a product brief becomes a validated interface graph, a human or agent changes one semantic relationship, React and SwiftUI are generated without a required IntentForm runtime, and the output is checked against compact-device and accessibility rules. The productized repository extends that proof with a real launcher, local project lifecycle, recursive editor, Web/Expo/desktop paths, semantic history, MCP transactions, preview evidence, and a broader original showcase.
+
+## Contributing
+
+Keep changes narrow, deterministic, reversible, and test-backed. Add schema changes through explicit migrations. Do not treat generated files as the canonical source. Run targeted checks first, then the applicable release gates. Never commit secrets, machine-specific paths, local output, evidence, or private notes.
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
+IntentForm is licensed under Apache-2.0. See `LICENSE` and `NOTICE`.

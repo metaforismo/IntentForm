@@ -19,12 +19,18 @@ describe("device registry", () => {
   it("resolves the versioned default registry with geometry and capabilities", () => {
     const resolved = resolveDeviceConfiguration(defaultDeviceConfiguration());
     expect(resolved.defaultProfile.id).toBe("neutral.phone.compact");
-    expect(resolved.profiles).toHaveLength(7);
+    expect(resolved.profiles).toHaveLength(12);
     expect(resolved.profiles.find((profile) => profile.id === "neutral.phone.regular")).toEqual(expect.objectContaining({
       safeArea: { top: 59, right: 0, bottom: 34, left: 0 },
       cutouts: [expect.objectContaining({ shape: "capsule" })],
     }));
     expect(resolved.profiles.find((profile) => profile.id === "neutral.tablet.split")?.capabilities).toContain("split-window");
+    expect(resolved.profiles.find((profile) => profile.id === "precision.iphone-15-pro")).toEqual(expect.objectContaining({
+      viewport: { width: 390, height: 844, scale: 3 },
+      cutouts: [expect.objectContaining({ id: "dynamic-island" })],
+    }));
+    expect(resolved.profiles.find((profile) => profile.id === "precision.ipad.landscape")?.orientation).toBe("landscape");
+    expect(resolved.profiles.find((profile) => profile.id === "precision.browser.desktop")?.viewport.width).toBe(1440);
   });
 
   it("accepts checksummed custom viewports and rejects tampering", () => {

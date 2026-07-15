@@ -38,7 +38,8 @@
     "verify:swiftui-render": "node scripts/verify-swiftui-render.mjs",
     "benchmark:migrations": "node --import tsx scripts/benchmark-migrations.ts",
     "benchmark:large-doc": "node --expose-gc --import tsx scripts/benchmark-large-document.ts",
-    "mcp:http": "pnpm --filter @intentform/mcp-server http"
+    "mcp:http": "pnpm --filter @intentform/mcp-server http",
+    "mcp:install": "node --import tsx scripts/install-mcp-client.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.10.2",

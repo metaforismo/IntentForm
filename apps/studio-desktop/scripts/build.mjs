@@ -35,6 +35,8 @@ await writeFile(join(applicationRoot, "package.json"), `${JSON.stringify({
   main: "main.cjs",
 }, null, 2)}\n`);
 await cp(join(appRoot, "resources"), join(applicationRoot, "resources"), { recursive: true });
+await cp(join(workspaceRoot, "LICENSE"), join(applicationRoot, "resources", "LICENSE.txt"));
+await cp(join(workspaceRoot, "NOTICE"), join(applicationRoot, "resources", "NOTICE.txt"));
 await cp(join(workspaceRoot, "apps/studio-web/.next/standalone"), linkedStudioRoot, { recursive: true, dereference: false });
 const linkedApplicationModules = join(linkedStudioRoot, "apps/studio-web/node_modules");
 const linkedNextPackage = await realpath(join(linkedApplicationModules, "next"));

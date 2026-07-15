@@ -5,6 +5,8 @@ import {
   ArrowUp,
   CheckCircle,
   Copy,
+  Eye,
+  Lock,
   PencilSimple,
   Trash,
   Warning,
@@ -294,6 +296,8 @@ export function CanvasStage({
      graph edits must never move the camera. */
   useLayoutEffect(() => {
     fitScreenRef.current(selectedScreenRef.current, false);
+    const frame = requestAnimationFrame(() => fitScreenRef.current(selectedScreenRef.current, false));
+    return () => cancelAnimationFrame(frame);
     // The initial framing runs once; later dependency changes refit below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -623,7 +627,7 @@ export function CanvasStage({
                           event.preventDefault();
                           event.stopPropagation();
                           onSelectScreen(screen.id);
-                          onSelectNode(node.id);
+                          if (!selected) onSelectNode(node.id);
                           openContextMenu(
                             event.currentTarget,
                             node.id,
@@ -738,7 +742,7 @@ export function CanvasStage({
           ref={contextMenuRef}
           role="menu"
           aria-label="Layer actions"
-          className="menu-pop absolute z-20 w-52 p-1.5"
+          className="menu-pop absolute z-20 w-64 p-1.5"
           style={{ left: Math.min(contextMenu.x, (viewportRef.current?.clientWidth ?? 600) - 220), top: Math.min(contextMenu.y, (viewportRef.current?.clientHeight ?? 500) - 240) }}
           onPointerDown={(event) => event.stopPropagation()}
           onKeyDown={(event) => {
@@ -766,6 +770,8 @@ export function CanvasStage({
             { label: selectedNodeIds.length > 1 ? "Duplicate selection" : "Duplicate", icon: Copy, shortcut: "⌘D", run: () => selectedNodeIds.length > 1 && selectedNodeIds.includes(contextMenu.nodeId) ? onDuplicateSelection() : onNodeCommand("duplicate", contextMenu.nodeId, contextMenu.screenId) },
             { label: "Move up", icon: ArrowUp, shortcut: "⌥↑", run: () => selectedNodeIds.length > 1 && selectedNodeIds.includes(contextMenu.nodeId) ? onMoveSelection(-1) : onNodeCommand("move-up", contextMenu.nodeId, contextMenu.screenId) },
             { label: "Move down", icon: ArrowDown, shortcut: "⌥↓", run: () => selectedNodeIds.length > 1 && selectedNodeIds.includes(contextMenu.nodeId) ? onMoveSelection(1) : onNodeCommand("move-down", contextMenu.nodeId, contextMenu.screenId) },
+            { label: findSemanticNode(graph.screens.find((item) => item.id === contextMenu.screenId)?.nodes ?? [], contextMenu.nodeId)?.editor?.hidden ? "Show" : "Hide", icon: Eye, shortcut: "⇧⌘H", run: () => onNodeCommand("toggle-hidden", contextMenu.nodeId, contextMenu.screenId) },
+            { label: findSemanticNode(graph.screens.find((item) => item.id === contextMenu.screenId)?.nodes ?? [], contextMenu.nodeId)?.editor?.locked ? "Unlock" : "Lock", icon: Lock, shortcut: "⇧⌘L", run: () => onNodeCommand("toggle-lock", contextMenu.nodeId, contextMenu.screenId) },
             { label: selectedNodeIds.length > 1 ? "Delete selection" : "Delete", icon: Trash, shortcut: "⌫", run: () => selectedNodeIds.length > 1 && selectedNodeIds.includes(contextMenu.nodeId) ? onDeleteSelection() : onNodeCommand("delete", contextMenu.nodeId, contextMenu.screenId), danger: true },
           ] as const).map((item) => {
             const Icon = item.icon;

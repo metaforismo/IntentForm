@@ -431,7 +431,7 @@ export function SelectionOverlay({
         data-testid="selection-overlay"
         data-selection-count={normalizedIds.length}
         data-selection-ids={normalizedIds.join(" ")}
-        className="pointer-events-none absolute z-[5] rounded-[16px] border-2 border-[var(--select)] shadow-[0_0_0_1px_rgba(255,255,255,.75)]"
+        className="pointer-events-none absolute z-[5] rounded-[16px] border border-[var(--select)]"
         style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
       >
         <button
@@ -467,9 +467,9 @@ export function SelectionOverlay({
             onPointerMove={moveResize}
             onPointerUp={finishResize}
             onPointerCancel={finishResize}
-            className={`pointer-events-auto absolute size-6 rounded-md border-2 border-[var(--select-deep)] bg-white shadow-sm ${position}`}
+            className={`pointer-events-auto absolute grid size-6 place-items-center bg-transparent ${position}`}
             style={{ transform }}
-          />
+          ><span aria-hidden="true" className="block size-2 rounded-[1px] border border-[var(--select-deep)] bg-white shadow-sm" /></button>
         )) : null}
         <div
           className="pointer-events-auto absolute bottom-[calc(100%+10px)] left-0 flex origin-bottom-left items-center gap-1 rounded-lg border border-[var(--line-strong)] bg-[var(--chrome)] p-1 text-[10px] text-[var(--t-strong)] shadow-[0_10px_28px_-18px_var(--shadow-strong)]"

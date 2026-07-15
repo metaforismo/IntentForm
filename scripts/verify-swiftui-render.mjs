@@ -52,7 +52,7 @@ function selectSimulator() {
 async function waitForAccessibility(axUrl, simulator) {
   let lastTree = [];
   let dismissedVoiceOverIntro = false;
-  for (let attempt = 0; attempt < 24; attempt += 1) {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
       const response = await fetch(axUrl, { signal: AbortSignal.timeout(15_000) });
       if (response.ok) {
@@ -120,7 +120,7 @@ try {
   previousContentSize = run(serveSim, ["ui", "text-size", "-d", simulator.udid], { capture: true }) || "medium";
   run(serveSim, ["ui", "text-size", contentSize, "-d", simulator.udid]);
   voiceOverWasOn = run(serveSim, ["ui", "voiceover", "-d", simulator.udid], { capture: true }) === "on";
-  if (!voiceOverWasOn) run(serveSim, ["ui", "voiceover", "on", "-d", simulator.udid]);
+  if (voiceOverWasOn) run(serveSim, ["ui", "voiceover", "off", "-d", simulator.udid]);
 
   run(process.execPath, ["--experimental-strip-types", join(root, "scripts/sync-swift-preview.ts")]);
   run("xcodebuild", [
@@ -143,8 +143,6 @@ try {
   const streamUrl = new URL(helper.streamUrl);
   const axUrl = new URL(streamUrl.pathname.replace(/stream\.mjpeg$/, "ax"), streamUrl.origin).href;
   console.log(`Native accessibility endpoint: ${axUrl}`);
-  await waitForAccessibility(axUrl, simulator.udid);
-  run(serveSim, ["ui", "voiceover", "off", "-d", simulator.udid]);
   await waitForAccessibility(axUrl, simulator.udid);
 
   run(process.execPath, ["--experimental-strip-types", join(root, "scripts/capture-swiftui-evidence.ts")], {

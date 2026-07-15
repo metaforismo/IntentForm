@@ -175,7 +175,7 @@
   "requiredProjectComponents": [],
   "ownedPaths": [
     ".gitignore",
-    "README.generated.md",
+    "INTENTFORM.generated.txt",
     "app.json",
     "app/+not-found.tsx",
     "app/_layout.tsx",

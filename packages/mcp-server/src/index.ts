@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import { parseGraph } from "@intentform/semantic-schema";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
@@ -77,6 +78,7 @@ import { agentAccessForTool, readAgentActivity, recordAgentActivity, type AgentA
 export const PROTOCOL_VERSION = LATEST_PROTOCOL_VERSION;
 const projectDir = resolveProjectDir();
 const semanticTransactions = new SemanticTransactionService();
+const readCanonicalGraph = () => parseGraph(JSON.parse(getGraph(projectDir)));
 
 export interface ToolContext {
   ownerId: string;
@@ -104,6 +106,48 @@ export const resourceDefinitions = [{
   description: "The complete validated Semantic Interface Graph as canonical deterministic JSON.",
   mimeType: "application/json",
   read: () => getGraph(projectDir),
+}, {
+  uri: "intentform://project/scope",
+  name: "IntentForm explicit editing scope",
+  description: "Unambiguous project, file, page, device, visual-state and selection scope. Null selection means no implicit active-layer mutation is permitted.",
+  mimeType: "application/json",
+  read: () => {
+    const graph = readCanonicalGraph();
+    return { project: graph.product.name, file: "project.intentform", tab: "design", page: graph.screens[0]?.id ?? null, device: graph.devices.defaultProfile, visualState: "idle", selection: null };
+  },
+}, {
+  uri: "intentform://project/tokens",
+  name: "IntentForm token modes",
+  description: "Canonical token modes, aliases and active mode without generated output.",
+  mimeType: "application/json",
+  read: () => readCanonicalGraph().tokens,
+}, {
+  uri: "intentform://project/components",
+  name: "IntentForm component definitions",
+  description: "Local component definitions, typed properties, slots, variants and states.",
+  mimeType: "application/json",
+  read: () => readCanonicalGraph().components,
+}, {
+  uri: "intentform://project/screens",
+  name: "IntentForm screens and flows",
+  description: "Screen outline and semantic navigation flows without authored fixture values.",
+  mimeType: "application/json",
+  read: () => {
+    const graph = readCanonicalGraph();
+    return { screens: graph.screens.map(({ id, title, purpose, route, nodes }) => ({ id, title, purpose, route, rootNodeIds: nodes.map((node) => node.id) })), flows: graph.flows };
+  },
+}, {
+  uri: "intentform://project/diagnostics",
+  name: "IntentForm verification diagnostics",
+  description: "Current compact verification diagnostics bound to the canonical graph fingerprint.",
+  mimeType: "application/json",
+  read: () => verifyProject(projectDir, "compact"),
+}, {
+  uri: "intentform://project/capabilities",
+  name: "IntentForm agent capabilities",
+  description: "Versioned semantic tool categories and explicit permission model for connected clients.",
+  mimeType: "application/json",
+  read: () => ({ version: "1.0.0", defaultPermission: "read-only", permissions: ["read-only", "write"], scopes: ["project", "file", "tab", "page", "device", "visual-state", "selection"], mutationPath: ["begin", "preview", "commit", "rollback", "verify", "revert"] }),
 }, {
   uri: "intentform://project/revisions",
   name: "IntentForm project revisions",
@@ -853,8 +897,19 @@ export const toolDefinitions: ToolDefinition[] = [
 
 const OUTPUT_SCHEMA = {
   type: "object",
-  properties: { result: {} },
-  required: ["result"],
+  properties: {
+    result: {},
+    scope: {
+      type: "object",
+      properties: {
+        project: { type: "string" }, file: { type: "string" }, tab: { type: "string" },
+        page: { type: ["string", "null"] }, device: { type: "string" }, visualState: { type: "string" }, selection: { type: "null" },
+      },
+      required: ["project", "file", "tab", "page", "device", "visualState", "selection"],
+      additionalProperties: false,
+    },
+  },
+  required: ["result", "scope"],
   additionalProperties: false,
 } as const;
 
@@ -943,9 +998,19 @@ function safeError(error: unknown): string {
 
 function callToolResult(result: unknown, taskId?: string): CallToolResult {
   const value = result ?? null;
+  const graph = readCanonicalGraph();
+  const scope = {
+    project: graph.product.name,
+    file: "project.intentform",
+    tab: "design",
+    page: graph.screens[0]?.id ?? null,
+    device: graph.devices.defaultProfile,
+    visualState: "idle",
+    selection: null,
+  };
   return {
-    content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value, null, 2) }],
-    structuredContent: { result: value },
+    content: [{ type: "text", text: JSON.stringify({ scope, result: value }, null, 2) }],
+    structuredContent: { result: value, scope },
     ...(taskId ? { _meta: { "io.modelcontextprotocol/related-task": { taskId } } } : {}),
   };
 }
@@ -998,7 +1063,19 @@ export interface IntentFormMcpRuntime {
   close(): Promise<void>;
 }
 
-export function createIntentFormMcpServer(ownerId = "stdio"): IntentFormMcpRuntime {
+export type AgentPermission = "read-only" | "write";
+
+export function availableToolDefinitions(permission: AgentPermission): ToolDefinition[] {
+  return permission === "write"
+    ? toolDefinitions
+    : toolDefinitions.filter((tool) => READ_ONLY_TOOLS.has(tool.name)
+      || ["intentform_begin_transaction", "intentform_preview_transaction", "intentform_rollback_transaction"].includes(tool.name));
+}
+
+export function createIntentFormMcpServer(
+  ownerId = "stdio",
+  permission: AgentPermission = process.env.INTENTFORM_MCP_PERMISSION === "write" ? "write" : "read-only",
+): IntentFormMcpRuntime {
   const subscriptions = new Set<string>();
   const transactionOwners = new Set([ownerId]);
   const taskStore = new InMemoryTaskStore();
@@ -1037,8 +1114,10 @@ export function createIntentFormMcpServer(ownerId = "stdio"): IntentFormMcpRunti
     }
   };
 
+  const availableTools = availableToolDefinitions(permission);
+
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: toolDefinitions.map(publicToolDefinition),
+    tools: availableTools.map(publicToolDefinition),
   }));
 
   server.setRequestHandler(ListResourcesRequestSchema, async () => ({
@@ -1073,7 +1152,7 @@ export function createIntentFormMcpServer(ownerId = "stdio"): IntentFormMcpRunti
 
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const startedAt = performance.now();
-    const tool = toolDefinitions.find((candidate) => candidate.name === request.params.name);
+    const tool = availableTools.find((candidate) => candidate.name === request.params.name);
     if (!tool) throw new McpError(ErrorCode.InvalidParams, `Unknown tool: ${request.params.name}`);
     const validation = argumentValidators.get(tool.name)!((request.params.arguments ?? {}) as unknown);
     if (!validation.valid) {

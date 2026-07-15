@@ -53,7 +53,7 @@ describe("Expo Adaptive compiler", () => {
     expect(route).toContain('"failed"');
     expect(route).toContain("useLocalSearchParams");
     expect(route).toContain('<Stack.Screen options={{ title: "Request payment" }} />');
-    expect(first.files.find((file) => file.path === "README.generated.md")!.content).toContain("custom development client");
+    expect(first.files.find((file) => file.path === "INTENTFORM.generated.txt")!.content).toContain("custom development client");
     const manifest = JSON.parse(first.files.find((file) => file.path === "intentform.expo.json")!.content) as {
       sdkVersion: string;
       requiredProjectComponents: unknown[];
@@ -104,7 +104,7 @@ describe("Expo Adaptive compiler", () => {
     };
     expect(packageJson.dependencies).not.toHaveProperty("expo-dev-client");
     expect(eas.build).not.toHaveProperty("development");
-    expect(output.files.find((file) => file.path === "README.generated.md")!.content).toContain("open the project in Expo Go");
+    expect(output.files.find((file) => file.path === "INTENTFORM.generated.txt")!.content).toContain("open the project in Expo Go");
 
     graph.expo!.developmentBuild = true;
     const developmentOutput = compileExpo(parseGraph(graph));

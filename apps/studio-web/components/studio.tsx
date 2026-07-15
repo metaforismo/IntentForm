@@ -14,12 +14,14 @@ import {
   FolderOpen,
   Lightning,
   Moon,
+  Plus,
   Selection,
   ShieldCheck,
   Sparkle,
   Sun,
   TreeStructure,
   Warning,
+  X,
 } from "@phosphor-icons/react";
 import { demoBrief, demoGraph } from "@intentform/proof-report/demo";
 import { applyRepair, type RepairProposal } from "@intentform/repair-planner";
@@ -153,6 +155,9 @@ export function Studio() {
   const [localProjectFingerprint, setLocalProjectFingerprint] = useState<string | null>(null);
   const [projectType, setProjectType] = useState<ProjectType>("application");
   const [projectSource, setProjectSource] = useState<ProjectSource>("example");
+  const [openTabs, setOpenTabs] = useState(["design", "output"] as const as readonly ("design" | "output")[]);
+  const [activeTab, setActiveTab] = useState<"design" | "output">("design");
+  const [lastClosedTab, setLastClosedTab] = useState<"design" | "output" | null>(null);
   const lastCommit = useRef({ at: 0, notice: "" });
   const graphRef = useRef(graph);
   graphRef.current = graph;
@@ -167,6 +172,39 @@ export function Studio() {
   useEffect(() => {
     if (document.documentElement.dataset.theme === "dark") setThemeState("dark");
   }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey)) return;
+      if (event.key.toLowerCase() === "w") {
+        event.preventDefault();
+        setOpenTabs((tabs) => {
+          if (tabs.length <= 1) return tabs;
+          const next = tabs.filter((tab) => tab !== activeTab);
+          setLastClosedTab(activeTab);
+          setActiveTab(next.at(-1) ?? "design");
+          return next;
+        });
+      } else if (event.shiftKey && event.key.toLowerCase() === "t" && lastClosedTab) {
+        event.preventDefault();
+        setOpenTabs((tabs) => tabs.includes(lastClosedTab) ? tabs : [...tabs, lastClosedTab]);
+        setActiveTab(lastClosedTab);
+        setLastClosedTab(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeTab, lastClosedTab]);
+
+  const closeTab = (tab: "design" | "output") => {
+    setOpenTabs((tabs) => {
+      if (tabs.length <= 1) return tabs;
+      const next = tabs.filter((item) => item !== tab);
+      setLastClosedTab(tab);
+      if (activeTab === tab) setActiveTab(next.at(-1) ?? "design");
+      return next;
+    });
+  };
 
   const toggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
@@ -647,9 +685,39 @@ export function Studio() {
   const noticeIsError = /failed|could not|invalid|quota|unavailable|rejected/i.test(notice);
 
   return (
-    <main className="studio-grain min-h-[100dvh] overflow-hidden text-[var(--ink)]">
+    <main className="studio-grain h-[100dvh] overflow-hidden text-[var(--ink)]">
       <a className="skip-link" href="#studio-workspace">Skip to workspace</a>
-      <div className="grid min-h-[100dvh] grid-rows-[auto_minmax(0,1fr)] bg-[var(--surface)]">
+      <div className="grid h-full min-h-0 grid-rows-[40px_auto_minmax(0,1fr)] bg-[var(--surface)]">
+        <div className="relative z-[6] flex min-w-0 items-end border-b border-[var(--line)] bg-[var(--app-bg,var(--canvas))] px-2 pt-1">
+          <div role="tablist" aria-label="Open project documents" className="flex min-w-0 items-end gap-px overflow-x-auto [scrollbar-width:none]">
+          {openTabs.map((tab) => {
+            const active = tab === activeTab;
+            const label = tab === "design" ? `${graph.product.name}.intentform` : "Generated output";
+            return (
+              <div
+                key={tab}
+                role="tab"
+                tabIndex={active ? 0 : -1}
+                aria-selected={active}
+                onClick={(event) => {
+                  if ((event.target as HTMLElement).closest("[data-close-tab]")) { closeTab(tab); return; }
+                  setActiveTab(tab); setStage(tab === "output" ? "outputs" : "canvas");
+                }}
+                onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setActiveTab(tab); setStage(tab === "output" ? "outputs" : "canvas"); } }}
+                onAuxClick={(event) => { if (event.button === 1) closeTab(tab); }}
+                className={`group flex h-9 min-w-0 max-w-56 items-center gap-2 rounded-t-[7px] border border-b-0 px-3 text-[11px] ${active ? "border-[var(--line)] bg-[var(--surface)] text-[var(--ink)]" : "border-transparent text-[var(--t-strong)] hover:bg-[var(--hover)]"}`}
+              >
+                <BracketsCurly size={13} className="shrink-0 text-[var(--accent)]" />
+                <span className="truncate">{label}</span>
+                {tab === "design" && history.length > 0 ? <span className="size-1.5 shrink-0 rounded-full bg-[var(--warning,#e4ad5a)]" aria-label="Unsaved changes" /> : null}
+                {tab === "design" && activity.length > 0 ? <span className="size-1.5 shrink-0 rounded-full bg-[var(--success,#55c58b)]" aria-label="Agent activity" /> : null}
+                <span data-close-tab aria-hidden="true" className="grid size-5 shrink-0 place-items-center rounded opacity-0 hover:bg-[var(--control-hover,var(--hover))] group-hover:opacity-100 group-focus-visible:opacity-100"><X size={11} /></span>
+              </div>
+            );
+          })}
+          </div>
+          <button type="button" aria-label="Open another document" onClick={() => { const tab = openTabs.includes("output") ? "design" : "output"; setOpenTabs((tabs) => tabs.includes(tab) ? tabs : [...tabs, tab]); setActiveTab(tab); }} className="mb-1 grid size-7 shrink-0 place-items-center rounded-[7px] text-[var(--muted)] hover:bg-[var(--hover)]"><Plus size={13} /></button>
+        </div>
         <header className="studio-topbar relative z-[5] grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto] items-center overflow-visible border-b border-[var(--line)] bg-[rgba(250,251,248,.92)] px-3 py-1 backdrop-blur-xl">
           <div className="flex min-w-0 items-center gap-2.5">
             <div className="relative">
@@ -765,7 +833,7 @@ export function Studio() {
               type="button"
               onClick={() => compileBrief("create")}
               disabled={isPending}
-              className="inline-flex min-h-8 items-center gap-2 rounded-lg bg-[var(--accent)] px-3 text-[12px] font-semibold text-white shadow-[0_8px_18px_-14px_rgba(36,84,68,.9)] transition-[transform,background] hover:bg-[var(--accent-dark)] active:scale-[.97] disabled:cursor-wait disabled:opacity-70"
+              className="inline-flex min-h-8 items-center gap-2 rounded-lg bg-[var(--accent-deep)] px-3 text-[12px] font-semibold text-white shadow-[0_8px_18px_-14px_rgba(36,84,68,.9)] transition-[transform,background] hover:bg-[var(--accent-dark)] active:scale-[.97] disabled:cursor-wait disabled:opacity-70"
             >
               {isPending ? <CircleNotch className="animate-spin" size={14} /> : <Lightning size={14} weight="fill" />}
               <span className="hidden sm:inline">{stage === "canvas" ? "Recompile" : "Compile intent"}</span>

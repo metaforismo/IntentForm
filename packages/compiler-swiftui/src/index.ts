@@ -96,6 +96,27 @@ function swiftNode(node: PlatformIRNode, guardedPrimaryId?: string): string {
   const children = node.children.map((child) => swiftNode(child, guardedPrimaryId)).filter(Boolean).join("\n\n");
   let source: string;
   switch (node.kind) {
+    case "text":
+      source = `Text("${label}")`;
+      break;
+    case "image":
+      source = `Label("${label}", systemImage: "photo")`;
+      break;
+    case "shape":
+      source = `RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.16)).accessibilityHidden(true)`;
+      break;
+    case "action":
+      source = `Button("${label}") { ${eventCall} }.buttonStyle(.bordered)`;
+      break;
+    case "input":
+      source = `TextField("${label}", text: .constant(""))`;
+      break;
+    case "divider":
+      source = `Divider().accessibilityHidden(true)`;
+      break;
+    case "spacer":
+      source = `Spacer(minLength: 8).accessibilityHidden(true)`;
+      break;
     case "balance-summary":
       source = `BalanceSummary(title: "${label}", value: ${value})`;
       break;
@@ -121,6 +142,8 @@ function swiftNode(node: PlatformIRNode, guardedPrimaryId?: string): string {
       source = `ReceiptSummary(label: "${label}", value: ${value}, detail: ${node.bindings.detail ? detail : "nil"})`;
       break;
     case "stack":
+    case "frame":
+    case "list":
     case "grid":
     case "overlay":
     case "scroll":

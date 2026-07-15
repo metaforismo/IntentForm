@@ -18,7 +18,7 @@ export type PreviewBreakpoint = DeviceClass;
 export type DeviceId = `device:${string}` | `web:${string}`;
 export type VisualState = "idle" | "loading" | "empty" | "failed" | "completed";
 export type RailTab = "layers" | "components" | "assets" | "tokens";
-export type NodeCommand = "duplicate" | "delete" | "move-up" | "move-down";
+export type NodeCommand = "duplicate" | "delete" | "move-up" | "move-down" | "toggle-lock" | "toggle-hidden";
 
 export interface DeviceProfile {
   id: DeviceId;
@@ -91,6 +91,15 @@ export function editorProfiles(graph: Pick<SemanticInterfaceGraph, "devices" | "
 }
 
 export const nodeNames: Record<SemanticNode["kind"], string> = {
+  text: "Text",
+  image: "Image",
+  shape: "Shape",
+  action: "Action",
+  input: "Input",
+  divider: "Divider",
+  spacer: "Spacer",
+  frame: "Frame",
+  list: "List",
   "balance-summary": "Balance summary",
   "transaction-list": "Recent activity",
   "money-input": "Money input",
@@ -121,6 +130,15 @@ export interface NodePreset {
 }
 
 export const nodeCatalog: NodePreset[] = [
+  { kind: "frame", label: "Frame", purpose: "Group interface content in a bounded region", importance: "supporting", live: "off", description: "A generic semantic frame for reusable interface regions." },
+  { kind: "text", label: "Text", purpose: "Communicate interface content", importance: "supporting", live: "off", description: "Accessible text that compilers map to native text primitives." },
+  { kind: "image", label: "Image", purpose: "Show an imported visual asset", importance: "supporting", live: "off", description: "A fit-aware image relation with explicit fallback semantics." },
+  { kind: "shape", label: "Shape", purpose: "Add a decorative semantic surface", importance: "supporting", live: "off", description: "A simple decorative surface, never a bitmap coordinate dump." },
+  { kind: "action", label: "Action", purpose: "Trigger an interface event", importance: "primary", live: "off", description: "A generic accessible action compiled to platform controls." },
+  { kind: "input", label: "Input", purpose: "Capture a user value", importance: "primary", live: "off", description: "A generic labeled form input." },
+  { kind: "list", label: "List", purpose: "Arrange repeated peer content", importance: "supporting", live: "off", description: "A semantic list container with deterministic reading order." },
+  { kind: "divider", label: "Divider", purpose: "Separate related regions", importance: "supporting", live: "off", description: "A non-interactive semantic separator." },
+  { kind: "spacer", label: "Spacer", purpose: "Reserve intentional layout space", importance: "supporting", live: "off", description: "An explicit layout spacer with no accessible content." },
   { kind: "primary-action", label: "Continue", purpose: "Advance the current flow", importance: "primary", live: "off", description: "The single dominant action of a screen." },
   { kind: "secondary-action", label: "Not now", purpose: "Offer a non-destructive alternative", importance: "secondary", live: "off", description: "A quiet escape hatch beside the primary action." },
   { kind: "money-input", label: "Amount", purpose: "Capture a currency amount", importance: "primary", live: "off", description: "A currency-aware amount field." },
@@ -142,6 +160,7 @@ export const nodeCatalog: NodePreset[] = [
 ];
 
 export function isNodeVisible(node: SemanticNode, visualState: VisualState): boolean {
+  if (node.editor?.hidden) return false;
   if (node.states.length === 0) return true;
   return node.states.some((binding) => binding.name === visualState);
 }

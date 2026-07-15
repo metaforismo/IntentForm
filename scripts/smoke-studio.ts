@@ -208,6 +208,12 @@ try {
       await page.getByRole("button", { name: "Not now" }).click();
       await page.getByText("Schema update required", { exact: true }).waitFor({ state: "detached" });
       await page.screenshot({ path: join(root, "output/playwright/project-launcher-wide.png"), fullPage: true });
+      await page.evaluate(() => localStorage.setItem("intentform-theme", "dark"));
+      await page.reload({ waitUntil: "networkidle" });
+      await page.getByRole("heading", { name: "Open intent. Build native interfaces." }).waitFor();
+      await page.screenshot({ path: join(root, "output/playwright/project-launcher-dark.png"), fullPage: true });
+      await page.evaluate(() => localStorage.setItem("intentform-theme", "light"));
+      await page.reload({ waitUntil: "networkidle" });
 
       await page.evaluate(() => localStorage.setItem("intentform-browser-project-v1", "{broken"));
       await page.reload({ waitUntil: "networkidle" });
@@ -307,7 +313,7 @@ try {
         || Math.abs(contentBefore.y - contentWithBezel.y) > 0.1
         || Math.abs(contentBefore.width - contentWithBezel.width) > 0.1
         || Math.abs(contentBefore.height - contentWithBezel.height) > 0.1) {
-        throw new Error("Local bezel presentation changed semantic content geometry");
+        throw new Error(`Local bezel presentation changed semantic content geometry: before=${JSON.stringify(contentBefore)} after=${JSON.stringify(contentWithBezel)}`);
       }
       await bezelSelect.selectOption("");
       await overlay.waitFor({ state: "detached" });

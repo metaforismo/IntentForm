@@ -42,6 +42,16 @@ function requiresPosition(parent: SemanticNode | null): boolean {
     ));
 }
 
+function assertMutable(graph: SemanticInterfaceGraph, location: EditorNodeLocation, action: string): void {
+  if (location.node.editor?.locked) throw new Error(`Locked nodes cannot ${action}: ${location.node.id}`);
+  if (location.node.editor?.hidden) throw new Error(`Hidden nodes cannot ${action}: ${location.node.id}`);
+  let parent = location.parent;
+  while (parent) {
+    if (parent.editor?.locked) throw new Error(`Nodes inside a locked parent cannot ${action}: ${parent.id}`);
+    parent = findGraphNodeLocation(graph, parent.id)?.parent ?? null;
+  }
+}
+
 function operationRootIds(graph: SemanticInterfaceGraph, nodeIds: readonly string[]): string[] {
   const requested = new Set(nodeIds);
   return flattenGraphNodes(graph)
@@ -114,6 +124,7 @@ export function moveNodeTransaction(
   return applyEditorTransaction(graph, (draft) => {
     const source = locateEditorNode(draft, nodeId);
     if (!source) throw new Error(`Node not found: ${nodeId}`);
+    assertMutable(draft, source, "move");
     const targetParent = targetParentId ? locateEditorNode(draft, targetParentId) : null;
     if (targetParent && targetParent.screen.id !== source.screen.id) {
       throw new Error("Nodes cannot move across screens without an explicit cross-screen operation");
@@ -199,6 +210,7 @@ export function removeNodeTransaction(
   return applyEditorTransaction(graph, (draft) => {
     const location = locateEditorNode(draft, nodeId);
     if (!location) throw new Error(`Node not found: ${nodeId}`);
+    assertMutable(draft, location, "be deleted");
     if (!location.parent && location.screen.nodes.length <= 1) {
       throw new Error("A screen must retain at least one root node");
     }
@@ -217,6 +229,7 @@ export function removeNodesTransaction(
     if (locations.some((location) => !location)) throw new Error("A selected node no longer exists");
     const bySiblings = new Map<SemanticNode[], EditorNodeLocation[]>();
     for (const location of locations as EditorNodeLocation[]) {
+      assertMutable(draft, location, "be deleted");
       const entries = bySiblings.get(location.siblings) ?? [];
       entries.push(location);
       bySiblings.set(location.siblings, entries);
@@ -237,6 +250,7 @@ export function updateNodeLayoutTransaction(
   return applyEditorTransaction(graph, (draft) => {
     const location = locateEditorNode(draft, nodeId);
     if (!location) throw new Error(`Node not found: ${nodeId}`);
+    assertMutable(draft, location, "be resized");
     mutate(location.node.layout);
     location.node.provenance = { author: "human", revision: location.node.provenance.revision + 1 };
   });
@@ -251,6 +265,7 @@ export function setFreeformPositionsTransaction(
     for (const [nodeId, position] of Object.entries(positions)) {
       const location = locateEditorNode(draft, nodeId);
       if (!location) throw new Error(`Node not found: ${nodeId}`);
+      assertMutable(draft, location, "be positioned");
       if (!requiresPosition(location.parent)) throw new Error(`Node is not in a freeform relation: ${nodeId}`);
       location.node.layout.position = {
         x: position.x,

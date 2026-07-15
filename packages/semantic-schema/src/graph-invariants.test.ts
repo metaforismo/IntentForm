@@ -132,6 +132,38 @@ function expectInvalid(change: (graph: GraphDraft) => void, message: string | Re
 }
 
 describe("semantic graph invariants", () => {
+  it("accepts the generic document vocabulary while preserving canonical fingerprints", () => {
+    const graph: GraphDraft = structuredClone(makeValidGraph());
+    const genericKinds = ["text", "image", "shape", "action", "input", "divider", "spacer"] as const;
+    graph.screens.push({ id: "generic", title: "Generic", purpose: "Render generic document nodes", route: "/generic", nodes: [{
+      id: "generic.frame",
+      kind: "frame",
+      intent: { purpose: "Group a profile card", label: "Profile card", importance: "supporting" },
+      layout: { axis: "vertical", width: "fill", gapToken: "space.16", paddingToken: "space.20" },
+      style: { role: "surface", emphasis: "normal" },
+      accessibility: { label: "Profile card", live: "off" },
+      states: [],
+      interactions: [],
+      provenance: { author: "system", revision: 0 },
+      children: genericKinds.map((kind, index) => ({
+        id: `generic.${kind}`,
+        kind,
+        intent: { purpose: `Render generic ${kind}`, label: kind, importance: "supporting" },
+        layout: { axis: "vertical", width: "fill", gapToken: "space.16", paddingToken: "space.20" },
+        style: { role: kind, emphasis: "normal" },
+        accessibility: { label: kind, live: "off" },
+        states: [],
+        interactions: [],
+        provenance: { author: "system", revision: index },
+        children: [],
+      })),
+    }] });
+    const parsed = parseGraph(graph);
+    expect(parsed.screens.find((screen) => screen.id === "generic")!.nodes[0]!.children.map((node) => node.kind)).toEqual([
+      "text", "image", "shape", "action", "input", "divider", "spacer",
+    ]);
+    expect(stableSerialize(parseGraph(JSON.parse(stableSerialize(parsed))))).toBe(stableSerialize(parsed));
+  });
   it("accepts a canonical graph and a stateless contract-free screen", () => {
     const graph: GraphDraft = makeValidGraph();
     const manual = structuredClone(graph.screens[1]!);

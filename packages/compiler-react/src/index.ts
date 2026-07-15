@@ -70,6 +70,27 @@ const componentForNode = (node: PlatformIRNode): string => {
   let source: string;
   const children = node.children.map(componentForNode).join("\n");
   switch (node.kind) {
+    case "text":
+      source = `<p${accessibility}>${label}</p>`;
+      break;
+    case "image":
+      source = `<figure${accessibility}><span>${label}</span></figure>`;
+      break;
+    case "shape":
+      source = `<div aria-hidden="true" className="if-shape" />`;
+      break;
+    case "action":
+      source = `<button className="secondary" type="button"${accessibility}${handler}>${label}</button>`;
+      break;
+    case "input":
+      source = `<label className="money-field"><span>${label}</span><input${accessibility} /></label>`;
+      break;
+    case "divider":
+      source = `<hr aria-hidden="true" />`;
+      break;
+    case "spacer":
+      source = `<span aria-hidden="true" className="if-spacer" />`;
+      break;
     case "balance-summary":
       source = `<section className="balance"${accessibility}><span>${label}</span>${value ? `<strong>${value}</strong>` : ""}${detail ? `<small>${detail}</small>` : ""}</section>`;
       break;
@@ -99,6 +120,8 @@ const componentForNode = (node: PlatformIRNode): string => {
       source = `<section className="receipt"${accessibility}><span>${label}</span>${detail ? `<strong>${detail}</strong>` : ""}${value ? `<small>${value}</small>` : ""}</section>`;
       break;
     case "stack":
+    case "frame":
+    case "list":
     case "grid":
     case "overlay":
     case "scroll":

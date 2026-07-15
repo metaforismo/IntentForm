@@ -224,6 +224,23 @@ describe("editor transactions", () => {
     expect(stableSerialize(demoGraph)).toBe(before);
   });
 
+  it("rejects manipulation of locked or hidden nodes atomically", () => {
+    const protectedGraph = structuredClone(demoGraph);
+    locateEditorNode(protectedGraph, "layout-lab.grid-a")!.node.editor = { locked: true, hidden: false };
+    const before = stableSerialize(protectedGraph);
+    expect(() => updateNodeLayoutTransaction(protectedGraph, "layout-lab.grid-a", (layout) => {
+      layout.fixedWidth = 200;
+    })).toThrow(/locked nodes/i);
+    expect(() => moveNodeTransaction(protectedGraph, "layout-lab.grid-a", "layout-lab.overlay")).toThrow(/locked nodes/i);
+    expect(() => removeNodeTransaction(protectedGraph, "layout-lab.grid-a")).toThrow(/locked nodes/i);
+    expect(stableSerialize(protectedGraph)).toBe(before);
+
+    const hiddenGraph = structuredClone(demoGraph);
+    locateEditorNode(hiddenGraph, "layout-lab.grid-b")!.node.editor = { locked: false, hidden: true };
+    expect(() => setFreeformPositionsTransaction(hiddenGraph, { "layout-lab.grid-b": { x: 1, y: 1 } }))
+      .toThrow(/hidden nodes/i);
+  });
+
   it("scopes new layers to the active non-idle state", () => {
     expect(insertionStateBindings("idle")).toEqual([]);
     expect(insertionStateBindings("failed")).toEqual([{ name: "failed" }]);

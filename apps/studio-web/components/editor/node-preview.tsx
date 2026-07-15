@@ -230,6 +230,20 @@ export function NodePreview({
   }
 
   switch (node.kind) {
+    case "text":
+      return <p className="text-[14px] leading-relaxed">{node.intent.label}</p>;
+    case "image":
+      return <div className="grid min-h-28 place-items-center rounded-xl border border-dashed text-[12px] text-zinc-500" style={{ borderColor: hairline }}>Image · {node.intent.label}</div>;
+    case "shape":
+      return <div aria-hidden="true" className="min-h-16 rounded-xl" style={{ background: soft }} />;
+    case "action":
+      return <div className="rounded-lg border px-4 py-3 text-center text-[14px] font-semibold" style={{ borderColor: accent, color: deep }}>{node.intent.label}</div>;
+    case "input":
+      return <label className="grid gap-2 text-[13px] font-medium">{node.intent.label}<span className="min-h-10 rounded-lg border bg-white" style={{ borderColor: hairline }} /></label>;
+    case "divider":
+      return <hr aria-hidden="true" style={{ borderColor: hairline }} />;
+    case "spacer":
+      return <span aria-hidden="true" className="block min-h-4" />;
     case "balance-summary":
       return (
         <div data-loading-skeleton={loading || undefined} className="grid gap-1.5 p-6 text-white" style={{ background: deep, borderRadius: surfaceRadius, boxShadow: "0 24px 44px -30px rgba(20, 40, 33, .8)" }}>

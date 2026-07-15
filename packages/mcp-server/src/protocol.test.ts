@@ -19,7 +19,7 @@ import {
   listenIntentFormHttpServer,
   type IntentFormHttpHandle,
 } from "./http.ts";
-import { PROTOCOL_VERSION } from "./index.ts";
+import { PROTOCOL_VERSION, availableToolDefinitions } from "./index.ts";
 
 const ROOT = join(import.meta.dirname, "../../..");
 const SERVER_ENTRY = join(import.meta.dirname, "index.ts");
@@ -36,22 +36,33 @@ function protocolClient() {
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "intentform-protocol-"));
+  process.env.INTENTFORM_MCP_PERMISSION = "write";
 });
 
 afterEach(async () => {
   await httpHandle?.close();
   httpHandle = undefined;
   rmSync(dir, { recursive: true, force: true });
+  delete process.env.INTENTFORM_MCP_PERMISSION;
 });
 
 describe("MCP 2025-11-25 protocol surface", () => {
+  it("defaults new clients to a read-only semantic surface", () => {
+    const names = availableToolDefinitions("read-only").map((tool) => tool.name);
+    expect(names).toContain("intentform_describe_project");
+    expect(names).toContain("intentform_preview_patch");
+    expect(names).toContain("intentform_preview_transaction");
+    expect(names).not.toContain("intentform_apply_patch");
+    expect(names).not.toContain("intentform_commit_transaction");
+    expect(availableToolDefinitions("write")).toHaveLength(46);
+  });
   it("negotiates the official SDK over stdio with resources, schemas and structured output", async () => {
     const client = protocolClient();
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: ["--import", "tsx", SERVER_ENTRY],
       cwd: ROOT,
-      env: { ...getDefaultEnvironment(), INTENTFORM_PROJECT_DIR: dir },
+      env: { ...getDefaultEnvironment(), INTENTFORM_PROJECT_DIR: dir, INTENTFORM_MCP_PERMISSION: "write" },
       stderr: "pipe",
     });
 
@@ -67,7 +78,7 @@ describe("MCP 2025-11-25 protocol surface", () => {
       const tools = await client.listTools();
       expect(tools.tools).toHaveLength(46);
       expect(tools.tools.find((tool) => tool.name === "intentform_describe_project")).toMatchObject({
-        outputSchema: { type: "object", required: ["result"] },
+        outputSchema: { type: "object", required: ["result", "scope"] },
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
         execution: { taskSupport: "forbidden" },
       });
@@ -78,6 +89,12 @@ describe("MCP 2025-11-25 protocol surface", () => {
       expect(resources.resources.map((resource) => resource.uri)).toEqual([
         "intentform://project/summary",
         "intentform://project/graph",
+        "intentform://project/scope",
+        "intentform://project/tokens",
+        "intentform://project/components",
+        "intentform://project/screens",
+        "intentform://project/diagnostics",
+        "intentform://project/capabilities",
         "intentform://project/revisions",
         "intentform://project/history",
         "intentform://project/accessibility",
@@ -262,7 +279,7 @@ describe("MCP 2025-11-25 protocol surface", () => {
       expect(transport.protocolVersion).toBe(PROTOCOL_VERSION);
       expect(transport.sessionId).toMatch(/^[a-f0-9-]{36}$/);
       expect((await client.listTools()).tools).toHaveLength(46);
-      expect((await client.listResources()).resources).toHaveLength(10);
+      expect((await client.listResources()).resources).toHaveLength(16);
       await client.ping();
       await transport.terminateSession();
     } finally {

@@ -20,6 +20,7 @@ function compilerOwnedPath(path: string): boolean {
     "expo-env.d.ts",
     "tsconfig.json",
     "README.generated.md",
+    "INTENTFORM.generated.txt",
     "intentform.expo.json",
   ].includes(path) || ["app/", "src/adapters/", "src/contracts/", "src/runtime/", "src/screens/", "src/theme/"].some((prefix) => path.startsWith(prefix));
 }

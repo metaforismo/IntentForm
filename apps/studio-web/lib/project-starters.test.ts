@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseGraph } from "@intentform/semantic-schema";
 import {
   createStarterGraph,
+  createLumenShowcaseGraph,
   projectExamples,
   type ProjectType,
 } from "./project-starters";
@@ -89,6 +90,17 @@ describe("project starters", () => {
     expect(projectExamples.length).toBeGreaterThanOrEqual(3);
     expect(new Set(projectExamples.map((example) => example.graph.product.name)).size).toBe(projectExamples.length);
     for (const example of projectExamples) expect(parseGraph(example.graph)).toEqual(example.graph);
+  });
+
+  it("ships the original Aster Sound multi-platform showcase", () => {
+    const graph = createLumenShowcaseGraph();
+    expect(graph.product.name).toBe("Aster Sound");
+    expect(graph.screens.map((screen) => screen.id)).toEqual(["library", "collection", "player"]);
+    expect(Object.keys(graph.tokens.modes)).toEqual(expect.arrayContaining(["default", "evening", "compact"]));
+    expect(graph.components.length).toBeGreaterThan(0);
+    expect(graph.platforms.filter((platform) => platform.enabled).map((platform) => platform.target))
+      .toEqual(expect.arrayContaining(["react", "swiftui", "expo", "web"]));
+    expect(JSON.stringify(graph)).not.toMatch(/lorem ipsum|spotify|apple music/i);
   });
 
   it("rejects an empty target selection", () => {

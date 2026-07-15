@@ -1,0 +1,5 @@
+Verdant Pay — generated Expo project
+
+This Expo Router project targets Expo SDK 57 and React Native 0.86. The graph enables a custom development client. Install it with pnpm ios, pnpm android, or the EAS development profile, then run pnpm start. Use the EAS preview profile for internal distribution.
+
+IntentForm owns the paths listed in intentform.expo.json. Files under src/project-components are project-owned integration points and are never generated.

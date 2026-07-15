@@ -65,6 +65,27 @@ function nodeSource(node: PlatformIRNode): string {
   const children = node.children.map(nodeSource).join("\n");
   let content: string;
   switch (node.kind) {
+    case "text":
+      content = `<p${attributes}>${label}</p>`;
+      break;
+    case "image":
+      content = `<figure className="if-media"${accessibility(node)}><figcaption>${label}</figcaption></figure>`;
+      break;
+    case "shape":
+      content = `<div className="if-shape" aria-hidden="true" />`;
+      break;
+    case "action":
+      content = `<button type="button" className="if-action if-action-secondary"${attributes}>${label}</button>`;
+      break;
+    case "input":
+      content = `<label className="if-field"><span>${label}</span><input${accessibility(node)} /></label>`;
+      break;
+    case "divider":
+      content = `<hr aria-hidden="true" />`;
+      break;
+    case "spacer":
+      content = `<span className="if-spacer" aria-hidden="true" />`;
+      break;
     case "primary-action":
       content = `<button type="button" className="if-action if-action-primary"${attributes}>${label}</button>`;
       break;

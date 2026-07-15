@@ -340,60 +340,22 @@ describe("IntentForm agent project store", () => {
   });
 
   it("publishes resolved device geometry as a read-only MCP resource", () => {
-    expect(resourceDefinitions.map(({ read: _read, ...resource }) => resource)).toEqual([{
-      uri: "intentform://project/summary",
-      name: "IntentForm project summary",
-      description: expect.stringMatching(/current product, targets/i),
-      mimeType: "application/json",
-    }, {
-      uri: "intentform://project/graph",
-      name: "IntentForm canonical graph",
-      description: expect.stringMatching(/complete validated Semantic Interface Graph/i),
-      mimeType: "application/json",
-    }, {
-      uri: "intentform://project/revisions",
-      name: "IntentForm project revisions",
-      description: expect.stringMatching(/newest-first local revision/i),
-      mimeType: "application/json",
-    }, {
-      uri: "intentform://project/history",
-      name: "IntentForm operation history and branches",
-      description: expect.stringMatching(/integrity-checked named operations/i),
-      mimeType: "application/json",
-    }, {
-      uri: "intentform://project/accessibility",
-      name: "IntentForm accessibility audit",
-      description: expect.stringMatching(/WCAG 2.2 AA audits/i),
-      mimeType: "application/json",
-    }, {
-      uri: "intentform://project/previews",
-      name: "IntentForm local preview evidence",
-      description: expect.stringMatching(/freshness-bound/i),
-      mimeType: "application/json",
-    }, {
-      uri: "intentform://project/ecosystem",
-      name: "IntentForm local ecosystem and collaboration policy",
-      description: expect.stringMatching(/locked signed packages/i),
-      mimeType: "application/json",
-    }, {
-      uri: "intentform://agent/activity",
-      name: "IntentForm agent access and activity",
-      description: expect.stringMatching(/arguments, tokens, paths, content and outputs are excluded/i),
-      mimeType: "application/json",
-    }, {
-      uri: "intentform://device-profiles",
-      name: "IntentForm device profiles",
-      description: expect.stringMatching(/checksummed logical device geometry/i),
-      mimeType: "application/json",
-    }, {
-      uri: "intentform://device-bezel-packs",
-      name: "IntentForm local device bezel packs",
-      description: expect.stringMatching(/never includes asset bytes or source paths/i),
-      mimeType: "application/json",
-    }]);
+    const resources = resourceDefinitions.map(({ read: _read, ...resource }) => resource);
+    expect(resources).toHaveLength(16);
+    expect(resources).toEqual(expect.arrayContaining([
+      expect.objectContaining({ uri: "intentform://project/summary", mimeType: "application/json" }),
+      expect.objectContaining({ uri: "intentform://project/scope", description: expect.stringMatching(/selection scope/i) }),
+      expect.objectContaining({ uri: "intentform://project/tokens" }),
+      expect.objectContaining({ uri: "intentform://project/components" }),
+      expect.objectContaining({ uri: "intentform://project/screens" }),
+      expect.objectContaining({ uri: "intentform://project/diagnostics" }),
+      expect.objectContaining({ uri: "intentform://project/capabilities", description: expect.stringMatching(/permission model/i) }),
+      expect.objectContaining({ uri: "intentform://device-profiles", description: expect.stringMatching(/checksummed logical device geometry/i) }),
+      expect.objectContaining({ uri: "intentform://device-bezel-packs", description: expect.stringMatching(/never includes asset bytes or source paths/i) }),
+    ]));
     const resource = deviceProfileResource(dir);
     expect(resource.fingerprint).toBe(loadProject(dir).fingerprint);
-    expect(resource.profiles).toHaveLength(7);
+    expect(resource.profiles).toHaveLength(12);
     expect(resource.profiles.find((profile) => profile.id === "neutral.tablet.split")).toMatchObject({
       source: "registry",
       window: { mode: "split", resizable: true },

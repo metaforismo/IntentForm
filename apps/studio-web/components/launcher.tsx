@@ -14,6 +14,12 @@ import {
   Plus,
   ShieldCheck,
   Sparkle,
+  Archive,
+  ClockCounterClockwise,
+  Gear,
+  GraduationCap,
+  House,
+  MagnifyingGlass,
   Warning,
   X,
 } from "@phosphor-icons/react";
@@ -70,6 +76,7 @@ const inferredProjectType = (graph: SemanticInterfaceGraph): ProjectType => grap
 export function Launcher() {
   const router = useRouter();
   const importInput = useRef<HTMLInputElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
   const [view, setView] = useState<LauncherView>("projects");
   const [recovery, setRecovery] = useState<BrowserProjectLoadResult | null>(null);
   const [bridge, setBridge] = useState<BridgeStatus>("checking");
@@ -84,6 +91,8 @@ export function Launcher() {
   const [swiftTarget, setSwiftTarget] = useState(true);
   const [expoTarget, setExpoTarget] = useState(true);
   const [webTarget, setWebTarget] = useState(true);
+  const [startFrom, setStartFrom] = useState<"empty" | "patterns" | "example">("empty");
+  const [projectTheme, setProjectTheme] = useState<"light" | "dark" | "both">("both");
 
   useEffect(() => {
     try {
@@ -101,6 +110,25 @@ export function Launcher() {
         if (!controller.signal.aborted) setBridge("unavailable");
       });
     return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey)) return;
+      const key = event.key.toLowerCase();
+      if (key === "k") {
+        event.preventDefault();
+        searchInput.current?.focus();
+      } else if (key === "n") {
+        event.preventDefault();
+        setView("new");
+      } else if (key === "o") {
+        event.preventDefault();
+        importInput.current?.click();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
   const persistAndOpen = (
@@ -195,6 +223,8 @@ export function Launcher() {
       const targets = [reactTarget ? "react" : null, swiftTarget ? "swiftui" : null, expoTarget ? "expo" : null, projectType === "responsive-web" && webTarget ? "web" : null]
         .filter((target): target is "react" | "swiftui" | "expo" | "web" => target !== null);
       const graph = createStarterGraph({ name, audience, purpose, projectType, targets });
+      const preferredMode = projectTheme === "dark" ? Object.keys(graph.tokens.modes).find((mode) => /dark/i.test(mode)) : undefined;
+      if (preferredMode) graph.tokens.activeMode = preferredMode;
       persistAndOpen(graph, { projectType, source: "created" }, "create");
     } catch (cause) {
       setError(validationMessage(cause));
@@ -230,8 +260,36 @@ export function Launcher() {
   };
 
   return (
-    <main className="studio-grain min-h-[100dvh] bg-[var(--surface)] text-[var(--ink)]">
-      <div className="mx-auto flex min-h-[100dvh] max-w-[1400px] flex-col px-4 py-5 sm:px-7 lg:px-10">
+    <main className="studio-grain flex min-h-[100dvh] bg-[var(--surface)] text-[var(--ink)]">
+      <aside className="hidden w-[248px] shrink-0 flex-col border-r border-[var(--line)] bg-[var(--chrome)] p-3 lg:flex" aria-label="Project launcher navigation">
+        <div className="flex h-11 items-center gap-2.5 px-2">
+          <span className="grid size-7 place-items-center rounded-lg bg-[var(--select)] text-white"><BracketsCurly size={14} weight="bold" /></span>
+          <strong className="text-[13px] tracking-[-.025em]">IntentForm</strong>
+        </div>
+        <nav className="mt-5 grid gap-1 text-[12px]">
+          {[
+            { label: "Recents", icon: ClockCounterClockwise },
+            { label: "Projects", icon: House },
+            { label: "Examples", icon: Sparkle },
+            { label: "Learn", icon: GraduationCap },
+          ].map(({ label, icon: Icon }, index) => (
+            <button key={label} type="button" onClick={() => { setView("projects"); setError(null); }} className={`flex h-8 items-center gap-2 rounded-[7px] px-2 text-left ${index === 0 ? "bg-[var(--control-active,var(--hover))] text-[var(--ink)]" : "text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"}`}>
+              <Icon size={15} /><span>{label}</span>
+            </button>
+          ))}
+        </nav>
+        <span className="mt-6 px-2 text-[10px] font-semibold uppercase tracking-[.1em] text-[var(--faint)]">Workspace</span>
+        <nav className="mt-2 grid gap-1 text-[12px]">
+          <button type="button" onClick={() => importInput.current?.click()} className="flex h-8 items-center gap-2 rounded-[7px] px-2 text-left text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"><FolderOpen size={15} /> Files</button>
+          <button type="button" className="flex h-8 items-center gap-2 rounded-[7px] px-2 text-left text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"><Archive size={15} /> Archive</button>
+          <button type="button" className="flex h-8 items-center gap-2 rounded-[7px] px-2 text-left text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"><Gear size={15} /> Settings</button>
+        </nav>
+        <div className="mt-auto rounded-[9px] border border-[var(--line)] bg-[var(--field)] p-3">
+          <div className="flex items-center gap-2 text-[11px] font-medium"><span className={`size-1.5 rounded-full ${bridge === "available" ? "bg-[var(--success,#55c58b)]" : "bg-[var(--text-muted,var(--faint))]"}`} />{bridge === "available" ? "Agent bridge ready" : "Local workspace"}</div>
+          <p className="mt-1.5 text-[10px] leading-relaxed text-[var(--muted)]">No account required. Files stay on this device.</p>
+        </div>
+      </aside>
+      <div className="mx-auto flex min-h-[100dvh] min-w-0 max-w-[1400px] flex-1 flex-col px-4 py-5 sm:px-7 lg:px-8">
         <header className="flex items-center justify-between border-b border-[var(--line)] pb-5">
           <div className="flex items-center gap-3">
             <span className="grid size-10 place-items-center rounded-[13px] bg-[var(--accent-deep)] text-white shadow-[inset_0_1px_0_var(--float-inset)]">
@@ -242,7 +300,8 @@ export function Launcher() {
               <span className="block font-mono text-[10px] text-[var(--faint)]">Local-first interface compiler</span>
             </div>
           </div>
-          <div className="hidden items-center gap-4 text-[10px] text-[var(--muted)] sm:flex" aria-label="Workspace capabilities">
+          <div className="hidden items-center gap-2 text-[10px] text-[var(--muted)] sm:flex" aria-label="Workspace capabilities">
+            <label className="relative hidden xl:block"><MagnifyingGlass size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2" /><input ref={searchInput} aria-label="Search projects" placeholder="Search projects" className="h-8 w-48 rounded-[7px] border border-[var(--line)] bg-[var(--field)] pl-8 pr-3 outline-none focus:border-[var(--select)]" /></label>
             <span className="inline-flex items-center gap-1.5"><Code size={13} /> React + SwiftUI + Expo</span>
             <span className="inline-flex items-center gap-1.5"><ShieldCheck size={13} /> Validated graph</span>
             <span className="inline-flex items-center gap-1.5">
@@ -300,6 +359,25 @@ export function Launcher() {
                   {projectType === "responsive-web" ? <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-3 text-xs"><input type="checkbox" checked={webTarget} onChange={(event) => setWebTarget(event.target.checked)} className="accent-[var(--accent)]" /> Responsive web</label> : null}
                 </div>
               </fieldset>
+              <div className="mt-5 grid gap-4 sm:grid-cols-3">
+                <label className="grid gap-2 text-xs font-semibold">Start from
+                  <select value={startFrom} onChange={(event) => setStartFrom(event.target.value as typeof startFrom)} className="h-10 rounded-lg border border-[var(--line)] bg-[var(--field)] px-3 text-[12px] font-normal outline-none focus:border-[var(--select)]">
+                    <option value="empty">Empty</option><option value="patterns">Core patterns</option><option value="example">An example</option>
+                  </select>
+                </label>
+                <label className="grid gap-2 text-xs font-semibold">Theme
+                  <select value={projectTheme} onChange={(event) => setProjectTheme(event.target.value as typeof projectTheme)} className="h-10 rounded-lg border border-[var(--line)] bg-[var(--field)] px-3 text-[12px] font-normal outline-none focus:border-[var(--select)]">
+                    <option value="both">Light and dark</option><option value="light">Light</option><option value="dark">Dark</option>
+                  </select>
+                </label>
+                <label className="grid gap-2 text-xs font-semibold">Storage
+                  <span className="flex h-10 items-center rounded-lg border border-[var(--line)] bg-[var(--field)] px-3 text-[11px] font-normal text-[var(--muted)]">Browser recovery · local-first</span>
+                </label>
+              </div>
+              <section aria-label="Project summary" className="mt-5 rounded-xl border border-[var(--line)] bg-[var(--chip)] p-3">
+                <strong className="text-[11px]">Project summary</strong>
+                <p className="mt-1 text-[10px] leading-relaxed text-[var(--muted)]">{name.trim() || "Untitled project"} · {projectTypeLabel(projectType)} · {startFrom} · {projectTheme} theme · {[reactTarget && "React", swiftTarget && "SwiftUI", expoTarget && "Expo", projectType === "responsive-web" && webTarget && "Web"].filter(Boolean).join(", ") || "Design only"}</p>
+              </section>
               <div className="mt-7 flex items-center justify-between gap-4 border-t border-[var(--line)] pt-5">
                 <span className="text-[10px] leading-relaxed text-[var(--muted)]">Saved to browser recovery until you connect a local project.</span>
                 <button type="submit" disabled={opening !== null} className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl bg-[var(--accent)] px-5 text-xs font-semibold text-white transition-transform active:scale-[.98] disabled:opacity-60">Create blank canvas <ArrowRight size={14} /></button>

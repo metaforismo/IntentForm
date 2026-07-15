@@ -1,9 +1,11 @@
-import { spawn } from "node:child_process";
-import { writeFile } from "node:fs/promises";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { IntentFormDesktopApi } from "../packages/desktop-bridge/src/protocol.ts";
+import { demoGraph } from "../packages/proof-report/src/demo.ts";
 import { _electron as electron, type Page } from "playwright";
 
 const root = resolve(import.meta.dirname, "..");
@@ -16,12 +18,23 @@ const defaultPackagedExecutable = process.platform === "darwin"
     : join(root, `output/desktop/IntentForm-linux-${process.arch}/IntentForm`);
 const packagedExecutable = process.env.INTENTFORM_DESKTOP_EXECUTABLE
   ?? (process.argv.includes("--packaged") ? defaultPackagedExecutable : undefined);
+const isolatedProjectRoot = process.env.INTENTFORM_PROJECT_DIR
+  ? undefined
+  : await mkdtemp(join(tmpdir(), "intentform-desktop-smoke-"));
+const projectDirectory = process.env.INTENTFORM_PROJECT_DIR ?? join(isolatedProjectRoot!, ".intentform");
+if (isolatedProjectRoot) {
+  await mkdir(projectDirectory, { recursive: true });
+  await writeFile(join(projectDirectory, "graph.json"), `${JSON.stringify(demoGraph)}\n`, "utf8");
+  const initialized = spawnSync("git", ["init", "--quiet", isolatedProjectRoot], { encoding: "utf8" });
+  if (initialized.error) throw initialized.error;
+  if (initialized.status !== 0) throw new Error(`Could not initialize the isolated desktop Git fixture: ${initialized.stderr}`);
+}
 const consoleErrors: string[] = [];
 const pageErrors: string[] = [];
 
 const desktopEnvironment = {
   ...process.env,
-  INTENTFORM_PROJECT_DIR: join(root, ".intentform"),
+  INTENTFORM_PROJECT_DIR: projectDirectory,
   INTENTFORM_NODE_PATH: process.execPath,
   ELECTRON_ENABLE_SECURITY_WARNINGS: "1",
 };
@@ -134,6 +147,7 @@ async function runPackagedDesktopSmoke(executable: string): Promise<void> {
   // The hardened packaged binary disables Node inspection, so Playwright's
   // Electron launcher is intentionally unavailable. Use the renderer's
   // test-only Chromium target directly without weakening production fuses.
+  await mkdir(projectDirectory, { recursive: true });
   const port = await findOpenPort();
   const child = spawn(executable, [`--remote-debugging-port=${port}`, "--enable-logging=stderr"], {
     cwd: root,
@@ -229,6 +243,7 @@ async function runPackagedDesktopSmoke(executable: string): Promise<void> {
     }
 
     const screenshot = await cdp.send<{ data: string }>("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+    await mkdir(join(root, "output/playwright"), { recursive: true });
     await writeFile(join(root, "output/playwright/studio-desktop-services.png"), Buffer.from(screenshot.data, "base64"));
     const closed = await cdp.evaluate<{ dialogClosed: boolean; focusReturned: boolean }>(`(async () => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
@@ -251,8 +266,12 @@ async function runPackagedDesktopSmoke(executable: string): Promise<void> {
 }
 
 if (packagedExecutable) {
-  await runPackagedDesktopSmoke(packagedExecutable);
-  process.stdout.write("Packaged desktop scenario: signed launch, sandbox, grant, Git/toolchains, MCP token isolation and dialog lifecycle passed\n");
+  try {
+    await runPackagedDesktopSmoke(packagedExecutable);
+    process.stdout.write("Packaged desktop scenario: signed launch, sandbox, grant, Git/toolchains, MCP token isolation and dialog lifecycle passed\n");
+  } finally {
+    if (isolatedProjectRoot) await rm(isolatedProjectRoot, { recursive: true, force: true });
+  }
 } else {
 const desktop = await launchDesktop();
 
@@ -320,5 +339,6 @@ try {
   process.stdout.write("Desktop scenario: sandbox, named IPC, project grant, toolchains, Git, MCP lifecycle and token isolation passed\n");
 } finally {
   await desktop.close();
+  if (isolatedProjectRoot) await rm(isolatedProjectRoot, { recursive: true, force: true });
 }
 }

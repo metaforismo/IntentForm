@@ -4,6 +4,7 @@ import {
   parseGraph,
   type PlatformTarget,
   type SemanticInterfaceGraph,
+  type SemanticNode,
 } from "@intentform/semantic-schema";
 import type { ProjectType } from "./browser-projects";
 
@@ -161,6 +162,118 @@ export function createStarterGraph(input: StarterProjectInput): SemanticInterfac
   });
 }
 
+export function createLumenShowcaseGraph(): SemanticInterfaceGraph {
+  const graph = structuredClone(createStarterGraph({
+    name: "Aster Sound",
+    audience: "Independent artists and curious listeners",
+    purpose: "Discover original releases, organize collections, and keep playback within reach",
+    projectType: "responsive-web",
+    targets: ["react", "swiftui", "expo", "web"],
+  }));
+  graph.product.principles = [
+    "Keep discovery editorial without hiding playback controls",
+    "Share one semantic page across desktop, tablet, and phone projections",
+    "Use original abstract surfaces instead of licensed music artwork",
+  ];
+  graph.tokens.modes.evening = {
+    name: "Dark",
+    values: {
+      colors: { "color.accent": "#7c82ff", "color.ink": "#f4f1ff", "color.canvas": "#111117", "color.surface": "#1d1d26" },
+      spacing: { "space.8": 8, "space.12": 12, "space.16": 16, "space.20": 20, "space.24": 24 },
+      radii: { "radius.control": 16, "radius.surface": 24 },
+    },
+  };
+  graph.tokens.modes.compact = {
+    name: "Compact",
+    values: {
+      colors: { "color.accent": "#5b63e8", "color.ink": "#1c1c27", "color.canvas": "#f2f1f7", "color.surface": "#ffffff" },
+      spacing: { "space.8": 6, "space.12": 8, "space.16": 12, "space.20": 16, "space.24": 20 },
+      radii: { "radius.control": 12, "radius.surface": 18 },
+    },
+  };
+  graph.components = structuredClone(demoGraph.components.slice(0, 2));
+  const seed = graph.screens[0]!.nodes[0]!;
+  const node = (
+    id: string,
+    kind: SemanticNode["kind"],
+    label: string,
+    children: SemanticNode[] = [],
+    layout: Partial<SemanticNode["layout"]> = {},
+    states: SemanticNode["states"] = [],
+  ): SemanticNode => ({
+    ...structuredClone(seed),
+    id,
+    kind,
+    intent: { purpose: `Present ${label.toLowerCase()} in the Aster Sound experience`, label, importance: kind === "action" ? "primary" : "supporting" },
+    layout: { ...structuredClone(seed.layout), ...layout },
+    style: { role: kind === "shape" ? "abstract-artwork" : kind, emphasis: kind === "action" ? "strong" : "normal" },
+    accessibility: { label, live: kind === "status-message" ? "polite" : "off" },
+    states,
+    interactions: [],
+    provenance: { author: "system", revision: 0 },
+    children,
+  });
+  const cover = (id: string, title: string) => node(id, "frame", title, [
+    node(`${id}.art`, "shape", `${title} original abstract cover`, [], { height: "fixed", fixedHeight: 180 }),
+    node(`${id}.title`, "text", title),
+    node(`${id}.artist`, "text", "Aster Editions"),
+    node(`${id}.play`, "action", `Play ${title}`),
+  ], { width: "fill", height: "hug", paddingTokens: { top: "space.16", right: "space.16", bottom: "space.16", left: "space.16" } });
+  graph.screens = [{
+    id: "library", title: "Library", purpose: "Browse original releases and playlists", route: "/", nodes: [
+      node("library.shell", "frame", "Aster Sound library", [
+        node("library.header", "stack", "Responsive library header", [node("library.brand", "text", "ASTER / SOUND"), node("library.search", "input", "Search artists, releases, and playlists")], { axis: "horizontal" }),
+        node("library.featured", "grid", "Featured original releases", [cover("library.tidal", "Tidal Memory"), cover("library.glass", "Glass Hours"), cover("library.orbit", "Soft Orbit")], { columns: 3, gridTracks: [1, 1, 1], gap: 20 }),
+        node("library.playlists", "list", "Playlist table", [node("library.track.1", "text", "01 · Between Signals · 4:12"), node("library.track.2", "text", "02 · Violet Static · 3:48"), node("library.track.3", "text", "03 · Night Geometry · 5:06")]),
+        node("library.player", "frame", "Persistent player · Tidal Memory", [node("library.now", "text", "Now playing · Between Signals"), node("library.pause", "action", "Pause")], { axis: "horizontal", placement: { compact: "persistent-bottom", regular: "persistent-bottom" } }),
+      ]),
+    ],
+  }, {
+    id: "collection", title: "Collection", purpose: "Review a saved collection on tablet", route: "/collection", nodes: [
+      node("collection.shell", "frame", "Saved collection", [
+        node("collection.title", "text", "Collected for late hours"),
+        node("collection.grid", "grid", "Saved releases", [cover("collection.one", "Quiet Current"), cover("collection.two", "Mirror Weather")], { gridTracks: [1, 1], columns: 2 }),
+        node("collection.empty", "status-message", "No downloaded releases yet. Save one for offline listening.", [], {}, [{ name: "empty" }]),
+        node("collection.loading", "status-message", "Refreshing your collection…", [], {}, [{ name: "loading" }]),
+      ]),
+    ],
+  }, {
+    id: "player", title: "Discovery player", purpose: "Discover and play an original release on phone", route: "/player", nodes: [
+      node("player.safe", "safe-area", "Phone discovery flow", [
+        node("player.cover", "shape", "Tidal Memory original generative cover", [], { height: "fixed", fixedHeight: 320 }),
+        node("player.title", "text", "Between Signals"),
+        node("player.artist", "text", "Aster Editions · Tidal Memory"),
+        node("player.controls", "stack", "Playback controls", [node("player.previous", "action", "Previous"), node("player.play", "action", "Play"), node("player.next", "action", "Next")], { axis: "horizontal" }),
+        node("player.error", "status-message", "Playback paused. The local file can be retried safely.", [], {}, [{ name: "failed" }]),
+        node("player.success", "status-message", "Added to Late Hours.", [], {}, [{ name: "completed" }]),
+      ]),
+    ],
+  }];
+  graph.flows = [];
+  graph.contracts = [{
+    screenId: "collection",
+    data: [{ name: "status", type: "status", required: true }],
+    events: [],
+    visualStates: ["idle", "loading", "empty"],
+    fixtures: ["collection.idle", "collection.loading", "collection.empty"],
+  }, {
+    screenId: "player",
+    data: [{ name: "status", type: "status", required: true }],
+    events: [],
+    visualStates: ["idle", "failed", "completed"],
+    fixtures: ["player.idle", "player.failed", "player.completed"],
+  }];
+  graph.fixtures = [
+    { id: "collection.idle", screenId: "collection", state: "idle", data: { status: "idle" } },
+    { id: "collection.loading", screenId: "collection", state: "loading", data: { status: "loading" } },
+    { id: "collection.empty", screenId: "collection", state: "empty", data: { status: "empty" } },
+    { id: "player.idle", screenId: "player", state: "idle", data: { status: "idle" } },
+    { id: "player.failed", screenId: "player", state: "failed", data: { status: "failed" } },
+    { id: "player.completed", screenId: "player", state: "completed", data: { status: "completed" } },
+  ];
+  return parseGraph(graph);
+}
+
 export interface ProjectExample {
   id: string;
   label: string;
@@ -171,9 +284,16 @@ export interface ProjectExample {
 
 export const projectExamples: ProjectExample[] = [
   {
+    id: "aster-sound",
+    label: "Aster Sound creator platform",
+    summary: "Original music discovery across desktop, iPad, and iPhone with responsive grids, persistent playback, token modes, and verified web/native outputs.",
+    projectType: "responsive-web",
+    graph: createLumenShowcaseGraph(),
+  },
+  {
     id: "verdant-pay",
     label: "Adaptive payment flow",
-    summary: "Three screens, typed fixtures, responsive action placement, failure recovery, and two generated targets.",
+    summary: "Verified sample · three screens, typed fixtures, responsive action placement, failure recovery, and two generated targets.",
     projectType: "application",
     graph: demoGraph,
   },

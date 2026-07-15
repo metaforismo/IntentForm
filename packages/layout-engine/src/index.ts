@@ -144,25 +144,37 @@ function layoutNode(
   const mode = resolvedContainerMode(node, context.viewport);
   const width = resolvedWidth(node, available.width);
   const padding = context.spacing[node.layout.paddingToken] ?? 0;
-  const gap = context.spacing[node.layout.gapToken] ?? 0;
+  const paddingBySide = node.layout.paddingTokens ? {
+    top: context.spacing[node.layout.paddingTokens.top] ?? 0,
+    right: context.spacing[node.layout.paddingTokens.right] ?? 0,
+    bottom: context.spacing[node.layout.paddingTokens.bottom] ?? 0,
+    left: context.spacing[node.layout.paddingTokens.left] ?? 0,
+  } : { top: padding, right: padding, bottom: padding, left: padding };
+  const gap = node.layout.gap ?? context.spacing[node.layout.gapToken] ?? 0;
   const safeArea = mode === "safe-area"
     ? context.viewport.safeArea ?? { top: 16, right: 0, bottom: 24, left: 0 }
     : { top: 0, right: 0, bottom: 0, left: 0 };
-  const contentX = origin.x + padding + safeArea.left;
-  const contentY = origin.y + padding + safeArea.top;
-  const contentWidth = Math.max(0, width - padding * 2 - safeArea.left - safeArea.right);
+  const contentX = origin.x + paddingBySide.left + safeArea.left;
+  const contentY = origin.y + paddingBySide.top + safeArea.top;
+  const contentWidth = Math.max(0, width - paddingBySide.left - paddingBySide.right - safeArea.left - safeArea.right);
   const children: NeutralLayoutNode[] = [];
 
   if (mode !== "leaf") {
     if (mode === "grid") {
-      const columns = Math.max(1, node.layout.columns);
-      const cellWidth = Math.max(0, (contentWidth - gap * (columns - 1)) / columns);
+      const tracks = node.layout.gridTracks ?? Array.from({ length: Math.max(1, node.layout.columns) }, () => 1);
+      const columns = tracks.length;
+      const totalWeight = tracks.reduce((sum, track) => sum + track, 0);
+      const availableTrackWidth = Math.max(0, contentWidth - gap * (columns - 1));
+      const widths = tracks.map((track) => availableTrackWidth * track / totalWeight);
+      const offsets = widths.map((_, index) => widths.slice(0, index).reduce((sum, value) => sum + value, 0) + gap * index);
       const rowHeights: number[] = [];
       node.children.forEach((child, index) => {
-        const column = index % columns;
+        const column = Math.min(columns - 1, Math.max(0, (child.layout.gridColumn?.start ?? index % columns + 1) - 1));
+        const span = Math.min(columns - column, child.layout.gridColumn?.span ?? 1);
         const row = Math.floor(index / columns);
         const y = contentY + rowHeights.slice(0, row).reduce((sum, height) => sum + height + gap, 0);
-        const laidOut = layoutNode(child, { x: contentX + column * (cellWidth + gap), y }, { width: cellWidth, height: available.height }, depth + 1, context);
+        const cellWidth = widths.slice(column, column + span).reduce((sum, value) => sum + value, 0) + gap * (span - 1);
+        const laidOut = layoutNode(child, { x: contentX + offsets[column]!, y }, { width: cellWidth, height: available.height }, depth + 1, context);
         rowHeights[row] = Math.max(rowHeights[row] ?? 0, laidOut.frame.height);
         children.push(laidOut);
       });
@@ -233,14 +245,14 @@ function layoutNode(
   const childrenBottom = children.reduce((maximum, child) => Math.max(maximum, child.frame.y + child.frame.height), contentY);
   const intrinsic = mode === "leaf"
     ? leafHeight[node.kind] ?? 64
-    : Math.max(0, childrenBottom - origin.y) + padding + safeArea.bottom;
-  const height = resolvedHeight(node, available.height, Math.max(intrinsic, mode === "leaf" ? 1 : padding * 2 + safeArea.top + safeArea.bottom));
+    : Math.max(0, childrenBottom - origin.y) + paddingBySide.bottom + safeArea.bottom;
+  const height = resolvedHeight(node, available.height, Math.max(intrinsic, mode === "leaf" ? 1 : paddingBySide.top + paddingBySide.bottom + safeArea.top + safeArea.bottom));
 
   const isLinear = mode === "stack" || mode === "page-flow" || mode === "safe-area" || mode === "scroll";
   if (isLinear && children.length > 0) {
     const horizontal = node.layout.axis === "horizontal";
-    const innerWidth = Math.max(0, width - padding * 2 - safeArea.left - safeArea.right);
-    const innerHeight = Math.max(0, height - padding * 2 - safeArea.top - safeArea.bottom);
+    const innerWidth = Math.max(0, width - paddingBySide.left - paddingBySide.right - safeArea.left - safeArea.right);
+    const innerHeight = Math.max(0, height - paddingBySide.top - paddingBySide.bottom - safeArea.top - safeArea.bottom);
     const first = children[0]!;
     const last = children.at(-1)!;
     const used = horizontal

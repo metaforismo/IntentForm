@@ -232,6 +232,13 @@ const registryProfiles = [
     window: { mode: "full", resizable: false },
   },
   {
+    id: "precision.iphone-15-pro", version: "1.0.0", label: "iPhone 15 Pro precision preview", platform: "ios", family: "phone", orientation: "portrait",
+    viewport: { width: 390, height: 844, scale: 3 }, safeArea: { top: 59, right: 0, bottom: 34, left: 0 }, corners: { radius: 47 },
+    cutouts: [{ id: "dynamic-island", shape: "capsule", x: 132, y: 11, width: 126, height: 37 }],
+    input: { touch: true, pointer: false, keyboard: false }, capabilities: ["safe-area", "cutout", "touch", "text-scale"], textScale: 1,
+    window: { mode: "full", resizable: false },
+  },
+  {
     id: "neutral.phone.landscape", version: "1.0.0", label: "Neutral phone landscape", platform: "neutral", family: "phone", orientation: "landscape",
     viewport: { width: 874, height: 402, scale: 3 }, safeArea: { top: 0, right: 59, bottom: 21, left: 59 }, corners: { radius: 44 },
     cutouts: [{ id: "sensor-island", shape: "capsule", x: 11, y: 138, width: 37, height: 126 }],
@@ -246,9 +253,28 @@ const registryProfiles = [
     window: { mode: "full", resizable: false },
   },
   {
+    id: "precision.pixel-phone", version: "1.0.0", label: "Pixel precision preview", platform: "android", family: "phone", orientation: "portrait",
+    viewport: { width: 412, height: 892, scale: 2.625 }, safeArea: { top: 32, right: 0, bottom: 24, left: 0 }, corners: { radius: 38 },
+    cutouts: [{ id: "punch-hole-camera", shape: "circle", x: 194, y: 8, width: 24, height: 24 }],
+    input: { touch: true, pointer: false, keyboard: false }, capabilities: ["safe-area", "cutout", "touch", "text-scale"], textScale: 1,
+    window: { mode: "full", resizable: false },
+  },
+  {
     id: "neutral.tablet.regular", version: "1.0.0", label: "Neutral tablet", platform: "neutral", family: "tablet", orientation: "portrait",
     viewport: { width: 768, height: 1024, scale: 2 }, safeArea: { top: 24, right: 0, bottom: 20, left: 0 }, corners: { radius: 28 }, cutouts: [],
     input: { touch: true, pointer: true, keyboard: true }, capabilities: ["safe-area", "touch", "pointer", "hardware-keyboard", "hover", "text-scale", "multi-window"], textScale: 1,
+    window: { mode: "full", resizable: true },
+  },
+  {
+    id: "precision.ipad.portrait", version: "1.0.0", label: "iPad portrait precision preview", platform: "ios", family: "tablet", orientation: "portrait",
+    viewport: { width: 820, height: 1180, scale: 2 }, safeArea: { top: 24, right: 0, bottom: 20, left: 0 }, corners: { radius: 24 }, cutouts: [],
+    input: { touch: true, pointer: true, keyboard: true }, capabilities: ["safe-area", "touch", "pointer", "hardware-keyboard", "hover", "text-scale", "multi-window", "resizable"], textScale: 1,
+    window: { mode: "full", resizable: true },
+  },
+  {
+    id: "precision.ipad.landscape", version: "1.0.0", label: "iPad landscape precision preview", platform: "ios", family: "tablet", orientation: "landscape",
+    viewport: { width: 1180, height: 820, scale: 2 }, safeArea: { top: 24, right: 0, bottom: 20, left: 0 }, corners: { radius: 24 }, cutouts: [],
+    input: { touch: true, pointer: true, keyboard: true }, capabilities: ["safe-area", "touch", "pointer", "hardware-keyboard", "hover", "text-scale", "multi-window", "resizable"], textScale: 1,
     window: { mode: "full", resizable: true },
   },
   {
@@ -260,6 +286,12 @@ const registryProfiles = [
   {
     id: "neutral.window.custom", version: "1.0.0", label: "Neutral custom viewport", platform: "neutral", family: "custom", orientation: "landscape",
     viewport: { width: 900, height: 700, scale: 1 }, safeArea: { top: 0, right: 0, bottom: 0, left: 0 }, corners: { radius: 12 }, cutouts: [],
+    input: { touch: false, pointer: true, keyboard: true }, capabilities: ["pointer", "hardware-keyboard", "hover", "text-scale", "multi-window", "resizable"], textScale: 1,
+    window: { mode: "floating", resizable: true },
+  },
+  {
+    id: "precision.browser.desktop", version: "1.0.0", label: "Desktop browser precision preview", platform: "neutral", family: "window", orientation: "landscape",
+    viewport: { width: 1440, height: 900, scale: 1 }, safeArea: { top: 0, right: 0, bottom: 0, left: 0 }, corners: { radius: 10 }, cutouts: [],
     input: { touch: false, pointer: true, keyboard: true }, capabilities: ["pointer", "hardware-keyboard", "hover", "text-scale", "multi-window", "resizable"], textScale: 1,
     window: { mode: "floating", resizable: true },
   },

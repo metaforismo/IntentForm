@@ -9,6 +9,7 @@
     "./fingerprint": "./src/fingerprint.ts",
     "./http": "./src/http.ts",
     "./history": "./src/history.ts",
+    "./installers": "./src/installers.ts",
     "./semantic-merge": "./src/semantic-merge.ts",
     "./store": "./src/store.ts",
     "./tools": "./src/tools.ts",

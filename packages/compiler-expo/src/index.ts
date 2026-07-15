@@ -498,7 +498,7 @@ export default function NotFoundRoute() {
 }
 ` },
     { path: "src/runtime/layout.ts", content: layoutRuntimeSource() },
-    { path: "README.generated.md", content: `# ${ir.productName} — generated Expo project\n\nThis Expo Router project targets Expo SDK 57 and React Native 0.86. ${profile.developmentBuild ? "The graph enables a custom development client. Install it with `pnpm ios`, `pnpm android`, or the EAS `development` profile, then run `pnpm start`." : "Run `pnpm start` and open the project in Expo Go. The generated dependencies and APIs stay inside the Expo Go-compatible boundary."} Use the EAS \`preview\` profile for internal distribution.\n\nIntentForm owns the paths listed in \`intentform.expo.json\`. Files under \`src/project-components/\` are project-owned integration points and are never generated.\n` },
+    { path: "INTENTFORM.generated.txt", content: `${ir.productName} — generated Expo project\n\nThis Expo Router project targets Expo SDK 57 and React Native 0.86. ${profile.developmentBuild ? "The graph enables a custom development client. Install it with pnpm ios, pnpm android, or the EAS development profile, then run pnpm start." : "Run pnpm start and open the project in Expo Go. The generated dependencies and APIs stay inside the Expo Go-compatible boundary."} Use the EAS preview profile for internal distribution.\n\nIntentForm owns the paths listed in intentform.expo.json. Files under src/project-components are project-owned integration points and are never generated.\n` },
   ];
 }
 

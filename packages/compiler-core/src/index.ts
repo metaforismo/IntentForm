@@ -55,12 +55,15 @@ export interface PlatformIRNode {
     justify: SemanticNode["layout"]["justify"];
     overflow: SemanticNode["layout"]["overflow"];
     columns: number;
+    gridTracks?: number[];
+    gridColumn?: { start: number; span: number };
     splitRatio: number;
     position?: { x: number; y: number; z: number };
     gapToken: string;
     paddingToken: string;
     gap: number;
     padding: number;
+    paddingBySide: { top: number; right: number; bottom: number; left: number };
     compactPlacement: "inline" | "persistent-bottom";
     regularPlacement: "inline" | "persistent-bottom";
   };
@@ -332,12 +335,25 @@ function resolveNodeSemantics(
       justify: node.layout.justify,
       overflow: node.layout.overflow,
       columns: node.layout.columns,
+      ...(node.layout.gridTracks ? { gridTracks: node.layout.gridTracks } : {}),
+      ...(node.layout.gridColumn ? { gridColumn: node.layout.gridColumn } : {}),
       splitRatio: node.layout.splitRatio,
       ...(node.layout.position ? { position: node.layout.position } : {}),
       gapToken: node.layout.gapToken,
       paddingToken: node.layout.paddingToken,
-      gap: tokens.spacing[node.layout.gapToken] ?? 0,
+      gap: node.layout.gap ?? tokens.spacing[node.layout.gapToken] ?? 0,
       padding: tokens.spacing[node.layout.paddingToken] ?? 0,
+      paddingBySide: node.layout.paddingTokens ? {
+        top: tokens.spacing[node.layout.paddingTokens.top] ?? 0,
+        right: tokens.spacing[node.layout.paddingTokens.right] ?? 0,
+        bottom: tokens.spacing[node.layout.paddingTokens.bottom] ?? 0,
+        left: tokens.spacing[node.layout.paddingTokens.left] ?? 0,
+      } : {
+        top: tokens.spacing[node.layout.paddingToken] ?? 0,
+        right: tokens.spacing[node.layout.paddingToken] ?? 0,
+        bottom: tokens.spacing[node.layout.paddingToken] ?? 0,
+        left: tokens.spacing[node.layout.paddingToken] ?? 0,
+      },
       compactPlacement: node.layout.placement?.compact ?? "inline",
       regularPlacement: node.layout.placement?.regular ?? "inline",
     },

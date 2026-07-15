@@ -146,6 +146,15 @@ interface LocalBezelResponse {
 }
 
 const catalogIcons: Record<SemanticNode["kind"], Icon> = {
+  text: TextT,
+  image: FrameCorners,
+  shape: Selection,
+  action: CursorClick,
+  input: FileText,
+  divider: Minus,
+  spacer: ArrowsOutSimple,
+  frame: FrameCorners,
+  list: ListDashes,
   "primary-action": CursorClick,
   "secondary-action": Selection,
   "money-input": CurrencyEur,
@@ -486,6 +495,8 @@ export function ManualEditor({
       return;
     }
     const targetScreenId = graphIndex.locationById.get(nodeId)?.screenId;
+    const targetNode = graphIndex.locationById.get(nodeId)?.node;
+    if (!targetNode || targetNode.editor?.locked || targetNode.editor?.hidden) return;
     const targetScreen = targetScreenId ? graphIndex.screenById.get(targetScreenId) : undefined;
     if (!targetScreen) return;
     const preorder = graphIndex.screenIndexes.get(targetScreen.id)?.nodes.map((node) => node.id) ?? [];
@@ -936,7 +947,19 @@ export function ManualEditor({
   const handleNodeCommand = (command: NodeCommand, nodeId: string) => {
     if (command === "duplicate") duplicateNodeById(nodeId);
     else if (command === "delete") deleteNodeById(nodeId);
-    else moveNode(nodeId, command === "move-up" ? -1 : 1);
+    else if (command === "move-up" || command === "move-down") moveNode(nodeId, command === "move-up" ? -1 : 1);
+    else {
+      const draft = structuredClone(graph);
+      const location = locateEditorNode(draft, nodeId);
+      if (!location) return;
+      const current = location.node.editor ?? { locked: false, hidden: false };
+      location.node.editor = command === "toggle-lock"
+        ? { ...current, locked: !current.locked }
+        : { ...current, hidden: !current.hidden };
+      commitDraft(draft, command === "toggle-lock"
+        ? `${location.node.editor.locked ? "Locked" : "Unlocked"} ${nodeNames[location.node.kind]}.`
+        : `${location.node.editor.hidden ? "Hid" : "Showed"} ${nodeNames[location.node.kind]}.`);
+    }
   };
 
   const toggleEditorPanel = useCallback((panel: Exclude<MobilePanel, null>) => {
@@ -1160,7 +1183,7 @@ export function ManualEditor({
 
   return (
     <div
-      className={`editor-shell relative grid h-[calc(100dvh-56px)] min-h-0 grid-cols-1 overflow-hidden bg-[var(--workspace)] text-[var(--t-strong)] ${desktopGrid}`}
+      className={`editor-shell relative grid h-full min-h-0 grid-cols-1 overflow-hidden bg-[var(--workspace)] text-[var(--t-strong)] ${desktopGrid}`}
       data-preview-mode={previewMode}
       style={{ "--rail-w": `${panelWidths.rail}px`, "--insp-w": `${panelWidths.inspector}px` } as React.CSSProperties}
     >
@@ -1367,8 +1390,8 @@ export function ManualEditor({
           </div>
         </div>
 
-        <div className="pointer-events-auto absolute inset-x-2 bottom-2 z-[2] flex flex-wrap items-end justify-between gap-2 sm:inset-x-3 sm:bottom-3 sm:flex-nowrap">
-          <div className="floating-chrome flex shrink-0 items-center gap-1.5 rounded-xl p-1 pl-2 text-[10px] text-[var(--muted)]">
+        <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-[2] flex min-h-7 items-center justify-between gap-2 border-t border-[var(--line)] bg-[var(--chrome)]/95 px-2 backdrop-blur sm:flex-nowrap">
+          <div className="flex min-w-0 shrink items-center gap-1.5 text-[10px] text-[var(--muted)]">
             <label className="relative flex items-center gap-1.5 text-[var(--muted)]">
               <DeviceMobile size={12} aria-hidden="true" />
               <span className="sr-only">Preview device</span>
@@ -1421,9 +1444,11 @@ export function ManualEditor({
             <span className="hidden pl-1 pr-2 font-mono text-[11px] text-[var(--faint)] 2xl:inline">
               {previewMode ? "Preview · click actions to follow the flow" : spaceHeld ? "Panning · release Space to select" : tool === "select" ? "Drag the primary action to anchor it" : "Drag to pan the board"}
             </span>
+            <span className="hidden h-4 w-px bg-[var(--line)] lg:block" />
+            <span className="hidden font-mono text-[10px] text-[var(--faint)] lg:inline">{normalizedSelection.length} selected · {activeProfile.breakpoint} · saved · {graph.schemaVersion}</span>
           </div>
 
-          <div className="floating-chrome flex shrink-0 items-center gap-1 rounded-xl p-1">
+          <div className="flex shrink-0 items-center gap-1">
             {activeProfile.presentation === "device" ? (
               <button
                 type="button"

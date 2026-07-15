@@ -298,6 +298,13 @@ export const placementSchema = z.strictObject({
 });
 
 export const LEAF_NODE_KINDS = [
+  "text",
+  "image",
+  "shape",
+  "action",
+  "input",
+  "divider",
+  "spacer",
   "balance-summary",
   "transaction-list",
   "money-input",
@@ -309,6 +316,8 @@ export const LEAF_NODE_KINDS = [
 ] as const;
 
 export const CONTAINER_NODE_KINDS = [
+  "frame",
+  "list",
   "stack",
   "grid",
   "overlay",
@@ -468,6 +477,11 @@ export const semanticLayoutSchema = z.strictObject({
   justify: justificationSchema.default("start"),
   overflow: z.enum(["visible", "clip", "scroll"]).default("visible"),
   columns: z.number().int().min(1).max(12).default(2),
+  gridTracks: z.array(z.number().finite().positive().max(12)).min(1).max(12).optional(),
+  gridColumn: z.strictObject({
+    start: z.number().int().min(1).max(12),
+    span: z.number().int().min(1).max(12).default(1),
+  }).optional(),
   splitRatio: z.number().finite().min(0.1).max(0.9).default(0.5),
   adaptive: z.strictObject({
     compact: containerNodeKindSchema.exclude(["adaptive"]),
@@ -479,7 +493,14 @@ export const semanticLayoutSchema = z.strictObject({
     z: z.number().int().min(-1_000).max(1_000).default(0),
   }).optional(),
   gapToken: tokenKeySchema.default("space.16"),
+  gap: z.number().finite().min(-128).max(512).optional(),
   paddingToken: tokenKeySchema.default("space.20"),
+  paddingTokens: z.strictObject({
+    top: spacingTokenKeySchema,
+    right: spacingTokenKeySchema,
+    bottom: spacingTokenKeySchema,
+    left: spacingTokenKeySchema,
+  }).optional(),
   placement: placementSchema.optional(),
 }).superRefine((layout, context) => {
   for (const dimension of ["Width", "Height"] as const) {
@@ -552,6 +573,10 @@ const semanticNodeBaseSchema = z.strictObject({
     role: tokenKeySchema.default("surface"),
     emphasis: z.enum(["quiet", "normal", "strong"]).default("normal"),
   }),
+  editor: z.strictObject({
+    locked: z.boolean().default(false),
+    hidden: z.boolean().default(false),
+  }).optional(),
   accessibility: z.strictObject({
     label: safeTextSchema(240),
     hint: safeTextSchema(500).optional(),
