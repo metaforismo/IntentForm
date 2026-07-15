@@ -23,16 +23,16 @@ export const CANONICAL_DEVICE_VIEWPORTS = {
 } as const;
 
 export const GRAPH_LIMITS = {
-  maxSerializedBytes: 512_000,
+  maxSerializedBytes: 12_000_000,
   maxIdLength: 96,
   maxTextLength: 1_000,
   maxFixtureStringLength: 2_000,
-  maxScreens: 32,
-  maxNodesPerScreen: 64,
-  maxChildrenPerNode: 64,
+  maxScreens: 128,
+  maxNodesPerScreen: 256,
+  maxChildrenPerNode: 128,
   maxNodeDepth: 16,
-  maxTotalNodesPerScreen: 512,
-  maxTotalNodes: 4_096,
+  maxTotalNodesPerScreen: 4_096,
+  maxTotalNodes: 12_000,
   maxComponents: 128,
   maxComponentProperties: 32,
   maxComponentSlots: 16,
@@ -743,16 +743,27 @@ export function walkSemanticNodes(
 
 export function flattenSemanticNodes(roots: readonly SemanticNode[]): SemanticNode[] {
   const nodes: SemanticNode[] = [];
-  walkSemanticNodes(roots, ({ node }) => nodes.push(node));
+  const pending = [...roots].reverse();
+  while (pending.length > 0) {
+    const node = pending.pop()!;
+    nodes.push(node);
+    for (let index = node.children.length - 1; index >= 0; index -= 1) {
+      pending.push(node.children[index]!);
+    }
+  }
   return nodes;
 }
 
 export function findSemanticNode(roots: readonly SemanticNode[], nodeId: string): SemanticNode | undefined {
-  let match: SemanticNode | undefined;
-  walkSemanticNodes(roots, ({ node }) => {
-    if (!match && node.id === nodeId) match = node;
-  });
-  return match;
+  const pending = [...roots].reverse();
+  while (pending.length > 0) {
+    const node = pending.pop()!;
+    if (node.id === nodeId) return node;
+    for (let index = node.children.length - 1; index >= 0; index -= 1) {
+      pending.push(node.children[index]!);
+    }
+  }
+  return undefined;
 }
 
 export function flattenGraphNodes(graph: Pick<SemanticInterfaceGraph, "screens">): SemanticNode[] {
@@ -1614,7 +1625,8 @@ export function parseGraph(input: unknown): SemanticInterfaceGraph {
     throw new Error(`Graph input exceeds ${GRAPH_LIMITS.maxSerializedBytes} serialized bytes`);
   }
   const authored = semanticInterfaceGraphSchema.parse(input);
-  return semanticInterfaceGraphSchema.parse(synchronizeComponentInstances(authored));
+  const synchronized = synchronizeComponentInstances(authored);
+  return synchronized === authored ? authored : semanticInterfaceGraphSchema.parse(synchronized);
 }
 
 export function setFixtureValue(

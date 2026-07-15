@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { demoGraph } from "@intentform/proof-report/demo";
 import {
   BROWSER_PROJECT_KEY,
+  BROWSER_PROJECT_CHUNK_PREFIX,
+  BROWSER_PROJECT_MANIFEST_KEY,
   BROWSER_MIGRATION_BACKUP_KEY,
   LEGACY_DRAFT_KEY,
   clearBrowserProject,
@@ -10,13 +12,45 @@ import {
 } from "./browser-projects";
 
 class MemoryStorage implements Storage {
-  private values = new Map<string, string>();
+  protected values = new Map<string, string>();
   get length() { return this.values.size; }
   clear() { this.values.clear(); }
   getItem(key: string) { return this.values.get(key) ?? null; }
   key(index: number) { return [...this.values.keys()][index] ?? null; }
   removeItem(key: string) { this.values.delete(key); }
   setItem(key: string, value: string) { this.values.set(key, value); }
+}
+
+class ControlledStorage extends MemoryStorage {
+  failKey: string | null = null;
+  override setItem(key: string, value: string) {
+    if (key === this.failKey) throw new Error("quota");
+    super.setItem(key, value);
+  }
+}
+
+function largeGraph() {
+  const graph = structuredClone(demoGraph);
+  const leaf = structuredClone(graph.screens[0]!.nodes[0]!);
+  graph.components = [];
+  graph.assets = [];
+  graph.flows = [];
+  graph.contracts = [];
+  graph.fixtures = [];
+  graph.screens = Array.from({ length: 20 }, (_, screenIndex) => {
+    const screenId = `large-${screenIndex}`;
+    return {
+      id: screenId,
+      title: `Large screen ${screenIndex}`,
+      purpose: "Exercise chunked browser recovery",
+      route: `/large-${screenIndex}`,
+      nodes: Array.from({ length: 20 }, (_, nodeIndex) => ({
+        ...structuredClone(leaf),
+        id: `${screenId}.node-${nodeIndex}`,
+      })),
+    };
+  });
+  return graph;
 }
 
 function legacyDemoGraph() {
@@ -82,9 +116,46 @@ describe("browser project recovery", () => {
       status: "ready",
       project: expect.objectContaining({ graph: demoGraph, source: "recovery" }),
     });
-    expect(storage.getItem(BROWSER_PROJECT_KEY)).toBeTruthy();
+    expect(storage.getItem(BROWSER_PROJECT_MANIFEST_KEY)).toBeTruthy();
     expect(storage.getItem(LEGACY_DRAFT_KEY)).toBeNull();
     expect(storage.getItem(BROWSER_MIGRATION_BACKUP_KEY)).toBe(source);
+  });
+
+  it("chunks large projects and fails closed when a generation is torn", () => {
+    const storage = new MemoryStorage();
+    expect(saveBrowserProject(storage, largeGraph(), {
+      projectType: "application",
+      source: "created",
+    }, "2026-07-14T20:00:00.000Z").ok).toBe(true);
+
+    const chunkKeys = Array.from({ length: storage.length }, (_, index) => storage.key(index))
+      .filter((key): key is string => key?.startsWith(BROWSER_PROJECT_CHUNK_PREFIX) === true);
+    expect(chunkKeys.length).toBeGreaterThan(1);
+    storage.setItem(chunkKeys[0]!, "torn");
+    expect(loadBrowserProject(storage)).toEqual(expect.objectContaining({
+      status: "invalid",
+      message: expect.stringMatching(/integrity/i),
+    }));
+  });
+
+  it("keeps the previous committed generation when the next manifest swap fails", () => {
+    const storage = new ControlledStorage();
+    expect(saveBrowserProject(storage, demoGraph, {
+      projectType: "application",
+      source: "created",
+    }, "2026-07-14T20:00:00.000Z").ok).toBe(true);
+    const previousManifest = storage.getItem(BROWSER_PROJECT_MANIFEST_KEY);
+
+    storage.failKey = BROWSER_PROJECT_MANIFEST_KEY;
+    expect(saveBrowserProject(storage, largeGraph(), {
+      projectType: "prototype",
+      source: "created",
+    }, "2026-07-14T20:01:00.000Z").ok).toBe(false);
+    expect(storage.getItem(BROWSER_PROJECT_MANIFEST_KEY)).toBe(previousManifest);
+    expect(loadBrowserProject(storage)).toEqual(expect.objectContaining({
+      status: "ready",
+      project: expect.objectContaining({ projectType: "application", graph: demoGraph }),
+    }));
   });
 
   it("upgrades a 0.0.1 browser draft and preserves the exact original source", () => {
@@ -143,9 +214,11 @@ describe("browser project recovery", () => {
     });
     expect(loadBrowserProject(backupFailure)).toEqual(expect.objectContaining({ status: "invalid" }));
     expect(legacyStorage.getItem(LEGACY_DRAFT_KEY)).toBeTruthy();
-    expect(legacyStorage.getItem(BROWSER_PROJECT_KEY)).toBeNull();
+    expect(legacyStorage.getItem(BROWSER_PROJECT_MANIFEST_KEY)).toBeNull();
 
     storage.setItem(BROWSER_PROJECT_KEY, "current");
+    storage.setItem(BROWSER_PROJECT_MANIFEST_KEY, "manifest");
+    storage.setItem(`${BROWSER_PROJECT_CHUNK_PREFIX}generation:000`, "chunk");
     storage.setItem(LEGACY_DRAFT_KEY, "legacy");
     storage.setItem(BROWSER_MIGRATION_BACKUP_KEY, "backup");
     clearBrowserProject(storage);

@@ -68,3 +68,30 @@ jobs:
           name: swiftui-native-evidence
           path: artifacts/swiftui/
           if-no-files-found: error
+
+  desktop:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.28.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.12.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm verify:desktop
+      - name: Inspect desktop fuses
+        run: pnpm --filter @intentform/studio-desktop exec electron-fuses read --app "$PWD/output/desktop/IntentForm-darwin-$(node -p process.arch)/IntentForm.app"
+      - name: Verify desktop signature
+        run: codesign --verify --deep --strict --verbose=4 "output/desktop/IntentForm-darwin-$(node -p process.arch)/IntentForm.app"
+      - name: Upload desktop UI evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-ui-evidence
+          path: output/playwright/studio-desktop-services.png
+          if-no-files-found: error
+          retention-days: 14

@@ -217,6 +217,7 @@ function materializeNode(
 }
 
 export function synchronizeComponentInstances<T extends SemanticInterfaceGraph>(graph: T): T {
+  if (graph.components.length === 0) return graph;
   if (!graph.screens.some((screen) => screen.nodes.some((node) => {
     let found = false;
     walkNodes([node], (candidate) => { if (candidate.componentInstance) found = true; });

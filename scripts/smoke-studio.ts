@@ -10,6 +10,7 @@ import { demoGraph } from "../packages/proof-report/src/demo.ts";
 import { recordAgentActivity } from "../packages/mcp-server/src/activity.ts";
 import { applyHistoryBranchPatch, createHistoryBranch, graphFingerprint } from "../packages/mcp-server/src/history.ts";
 import { assertSecurityHeaders, gotoStudio, runSmokeScenario } from "./smoke-studio-support.ts";
+import { createLargeDocumentGraph } from "./large-document-fixture.ts";
 
 const root = process.cwd();
 const studioRoot = join(root, "apps/studio-web");
@@ -1165,6 +1166,40 @@ try {
       await routePage.getByRole("button", { name: "Design canvas" }).waitFor();
       await routePage.reload({ waitUntil: "networkidle" });
       await routePage.getByRole("button", { name: "Design canvas" }).waitFor();
+    },
+  });
+  await runSmokeScenario(browser, {
+    name: "large document canvas virtualization",
+    run: async (page) => {
+      const graph: unknown = JSON.parse(JSON.stringify(createLargeDocumentGraph(1_000, 100)));
+      await page.addInitScript((project: unknown) => {
+        localStorage.setItem("intentform-browser-project-v1", JSON.stringify({
+          version: 1,
+          graph: project,
+          savedAt: "2026-07-14T20:00:00.000Z",
+          projectType: "application",
+          source: "recovery",
+        }));
+      }, graph);
+      await gotoStudio(page, origin);
+      const viewport = page.getByTestId("canvas-viewport");
+      await viewport.waitFor();
+      await page.waitForFunction(() => document.querySelector('[data-testid="canvas-viewport"]')?.getAttribute("data-total-screen-count") === "100");
+      const initialRendered = Number(await viewport.getAttribute("data-rendered-screen-count"));
+      if (!Number.isFinite(initialRendered) || initialRendered > 6) {
+        throw new Error(`Canvas mounted ${initialRendered} of 100 screens instead of a bounded visible window`);
+      }
+
+      await page.getByRole("button", { name: /^Scale profile 100\b/ }).click();
+      await page.waitForFunction(() => document.querySelector('[data-testid="device-frame"]')?.getAttribute("data-screen-id") === "scale-099");
+      const selectedRendered = Number(await viewport.getAttribute("data-rendered-screen-count"));
+      if (!Number.isFinite(selectedRendered) || selectedRendered > 7) {
+        throw new Error(`Pinned selection expanded the canvas window to ${selectedRendered} screens`);
+      }
+
+      await page.getByRole("button", { name: "Verification" }).click();
+      await page.getByText("WCAG 2.2 AA profile matrix", { exact: true }).waitFor();
+      await page.screenshot({ path: join(root, "output/playwright/studio-large-document.png"), fullPage: true });
     },
   });
 } finally {

@@ -29,6 +29,8 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  output: "standalone",
+  outputFileTracingRoot: resolve(import.meta.dirname, "../.."),
   devIndicators: false,
   poweredByHeader: false,
   async headers() {
@@ -46,6 +48,7 @@ const nextConfig: NextConfig = {
     "@intentform/compiler-react",
     "@intentform/compiler-swiftui",
     "@intentform/compiler-web",
+    "@intentform/desktop-bridge",
     "@intentform/device-registry",
     "@intentform/intent-interpreter",
     "@intentform/mcp-server",

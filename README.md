@@ -38,6 +38,8 @@ This repository began as an OpenAI Build Week vertical slice and now continues t
 - MCP 2025-11-25 over clean stdio or authenticated localhost Streamable HTTP, with typed structured outputs, subscribable project resources, semantic transactions, bounded preview tasks, and metadata-only access activity in Studio.
 - Checksummed named operation history with isolated human/agent branches, stable-property three-way merge, path-level conflict review, cherry-pick, inverse revert, bounded compaction and checkpoint recovery.
 - Versioned WCAG 2.2 AA audits shared by Studio and MCP across baseline, long-text, RTL and increased-contrast profiles, plus axe-rendered browser gates, explicit suppressions and copy-free evidence.
+- A measured 10,000-node runtime with reusable graph indexes, viewport canvas virtualization, bounded worker analysis, on-demand compiler caching, atomic chunked recovery and a CI performance budget.
+- A hardened macOS-first Electron shell with explicit project grants, sandboxed/context-isolated renderers, named IPC, local Studio/MCP supervision, installed-toolchain status, read-only Git context, ASAR integrity, a Developer ID Hardened Runtime signing path and a real ad-hoc packaged-app smoke gate.
 
 ## The proof
 
@@ -81,6 +83,7 @@ pnpm smoke:web-preview
 pnpm verify:expo-preview
 pnpm verify:swiftui
 pnpm verify:swiftui-render
+pnpm verify:desktop # macOS package, signature and packaged-app gate
 ```
 
 With the generated SwiftUI preview running in a booted Simulator and `serve-sim` exposing its accessibility endpoint:
@@ -147,7 +150,9 @@ intentform_preview_history_operation / apply_history_operation
                               preview and cherry-pick or inversely revert named operations
 ```
 
-In the intended MCP workflow an agent edits validated intent rather than generated UI files, and deterministic compilers produce the target code. The Studio opens and saves the same `.intentform/graph.json` (project menu → *Open/Save local project*), so agent edits land on the design board and human edits are visible to agents. Writes use atomic replacement and expected fingerprints; if an agent changes the graph after Studio opens it, Studio refuses the stale save and asks you to reopen instead of overwriting the agent revision. Stdio remains the default; authenticated Streamable HTTP binds only to `127.0.0.1` when explicitly started. See [Accessibility verification](docs/ACCESSIBILITY.md), [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md) for setup and compatibility, and [CLAUDE.md](CLAUDE.md) for in-repo agent conventions.
+In the intended MCP workflow an agent edits validated intent rather than generated UI files, and deterministic compilers produce the target code. The Studio opens and saves the same `.intentform/graph.json` (project menu → *Open/Save local project*), so agent edits land on the design board and human edits are visible to agents. Writes use atomic replacement and expected fingerprints; if an agent changes the graph after Studio opens it, Studio refuses the stale save and asks you to reopen instead of overwriting the agent revision. Stdio remains the default; authenticated Streamable HTTP binds only to `127.0.0.1` when explicitly started. See [Accessibility verification](docs/ACCESSIBILITY.md), [large-document performance](docs/PERFORMANCE.md), [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md) for setup and compatibility, and [CLAUDE.md](CLAUDE.md) for in-repo agent conventions.
+
+The desktop application can start that authenticated endpoint and copy a complete client configuration without exposing its bearer token to the renderer. See [Desktop application](docs/DESKTOP.md) and [Desktop security](docs/DESKTOP_SECURITY.md).
 
 ## How Codex and GPT-5.6 shaped the build
 
@@ -179,10 +184,12 @@ See [architecture](docs/ARCHITECTURE.md), [hackathon scope](docs/HACKATHON_SCOPE
 
 ```text
 apps/studio-web/            Next.js product experience and server routes
+apps/studio-desktop/        hardened Electron host, preload, services and packaging
 apps/react-preview/         Vite harness executing generated React output
 apps/web-preview/           Vite harness compiling generated responsive-web output
 apps/expo-preview/          generated Expo Router iOS/Android verification harness
 packages/semantic-schema/   graph, validation, canonical serialization, patches
+packages/desktop-bridge/    named desktop protocol, grants, probes, Git and supervisor
 packages/device-registry/   neutral versioned geometry, capabilities and checksums
 packages/device-bezels/     kill-switched local manifests, containment and integrity checks
 packages/layout-engine/     deterministic recursive indexing and neutral layout

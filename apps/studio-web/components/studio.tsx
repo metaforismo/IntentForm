@@ -29,7 +29,7 @@ import {
   stableSerialize,
   type SemanticInterfaceGraph,
 } from "@intentform/semantic-schema";
-import { verifyGraph, type VerificationFinding } from "@intentform/verifier";
+import type { VerificationFinding } from "@intentform/verifier";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -49,6 +49,8 @@ import { OutputsStage } from "./stages/outputs-stage";
 import { ReportStage } from "./stages/report-stage";
 import { VerifyStage } from "./stages/verify-stage";
 import { useLocalPreviews, type LocalPreviewTarget } from "./use-local-previews";
+import { useBackgroundVerification } from "./use-background-verification";
+import { DesktopControl } from "./desktop-control";
 
 type Stage = "canvas" | WorkflowStage;
 export type OutputTarget = "react" | "swiftui" | "expo" | "web";
@@ -103,14 +105,22 @@ interface RequestFailure {
 
 class LocalProjectConflictError extends Error {}
 
-function localGraphFingerprint(graph: SemanticInterfaceGraph): string {
-  const input = stableSerialize(graph);
+function localGraphFingerprint(input: string): string {
   let hash = 0x811c9dc5;
   for (let index = 0; index < input.length; index += 1) {
     hash ^= input.charCodeAt(index);
     hash = Math.imul(hash, 0x01000193);
   }
   return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function deferredCompilation(target: OutputTarget) {
+  return {
+    target,
+    status: "disabled" as const,
+    output: null,
+    message: `Open ${target} output to generate this target.`,
+  };
 }
 
 export function Studio() {
@@ -214,12 +224,15 @@ export function Studio() {
 
   useEffect(() => {
     if (!draftReady) return;
-    const saved = saveBrowserProject(window.localStorage, graph, {
-      projectType,
-      source: projectSource,
-      ...(localProjectFingerprint ? { localFingerprint: localProjectFingerprint } : {}),
-    });
-    if (!saved.ok) setNoticeText(saved.message);
+    const timeout = window.setTimeout(() => {
+      const saved = saveBrowserProject(window.localStorage, graph, {
+        projectType,
+        source: projectSource,
+        ...(localProjectFingerprint ? { localFingerprint: localProjectFingerprint } : {}),
+      });
+      if (!saved.ok) setNoticeText(saved.message);
+    }, 250);
+    return () => window.clearTimeout(timeout);
   }, [draftReady, graph, localProjectFingerprint, projectSource, projectType]);
 
   useEffect(() => {
@@ -260,10 +273,26 @@ export function Studio() {
     };
   }, [noticeOpen]);
 
-  const reactCompilation = useMemo(() => compileStudioTarget(graph, "react"), [graph]);
-  const swiftCompilation = useMemo(() => compileStudioTarget(graph, "swiftui"), [graph]);
-  const expoCompilation = useMemo(() => compileStudioTarget(graph, "expo"), [graph]);
-  const webCompilation = useMemo(() => compileStudioTarget(graph, "web"), [graph]);
+  const needsReactCompilation = stage === "report" || (stage === "outputs" && outputTarget === "react");
+  const needsSwiftCompilation = stage === "report" || (stage === "outputs" && outputTarget === "swiftui");
+  const needsExpoCompilation = stage === "report" || (stage === "outputs" && outputTarget === "expo");
+  const needsWebCompilation = stage === "outputs" && outputTarget === "web";
+  const reactCompilation = useMemo(
+    () => needsReactCompilation ? compileStudioTarget(graph, "react") : deferredCompilation("react"),
+    [graph, needsReactCompilation],
+  );
+  const swiftCompilation = useMemo(
+    () => needsSwiftCompilation ? compileStudioTarget(graph, "swiftui") : deferredCompilation("swiftui"),
+    [graph, needsSwiftCompilation],
+  );
+  const expoCompilation = useMemo(
+    () => needsExpoCompilation ? compileStudioTarget(graph, "expo") : deferredCompilation("expo"),
+    [graph, needsExpoCompilation],
+  );
+  const webCompilation = useMemo(
+    () => needsWebCompilation ? compileStudioTarget(graph, "web") : deferredCompilation("web"),
+    [graph, needsWebCompilation],
+  );
   const reactOutput = reactCompilation.output;
   const swiftOutput = swiftCompilation.output;
   const expoOutput = expoCompilation.output;
@@ -275,21 +304,18 @@ export function Studio() {
   ])) as Record<string, { label: string; viewport: { width: number; height: number } }>, [previewProfiles]);
   const scenario = scenarios[scenarioId] ?? scenarios[previewProfiles[0]!.id]!;
   const graphSnapshot = useMemo(() => stableSerialize(graph), [graph]);
-  const currentGraphFingerprint = useMemo(() => localGraphFingerprint(graph), [graph]);
+  const currentGraphFingerprint = useMemo(() => localGraphFingerprint(graphSnapshot), [graphSnapshot]);
   const localPreviews = useLocalPreviews({
     enabled: localProjectFingerprint !== null,
     currentGraphFingerprint,
     profileId: scenarioId,
   });
-  const verificationTarget = outputTarget === "swiftui" && swiftOutput
-    ? "swiftui"
-    : outputTarget === "expo" && expoOutput
-      ? "expo"
-      : outputTarget === "web" && webOutput
-        ? "web"
-        : reactOutput
-          ? "react"
-          : swiftOutput ? "swiftui" : expoOutput ? "expo" : webOutput ? "web" : outputTarget;
+  const enabledVerificationTargets = graph.platforms
+    .filter((platform) => platform.enabled && ["react", "swiftui", "expo", "web"].includes(platform.target))
+    .map((platform) => platform.target as OutputTarget);
+  const verificationTarget = enabledVerificationTargets.includes(outputTarget)
+    ? outputTarget
+    : enabledVerificationTargets[0] ?? outputTarget;
   const previewEvidenceTarget: LocalPreviewTarget = verificationTarget === "swiftui"
     ? "swiftui"
     : verificationTarget === "expo"
@@ -301,11 +327,12 @@ export function Studio() {
     && !("unavailable" in previewEvidence)
     ? previewEvidence.buildStatus
     : "not-run";
-  const verification = useMemo(
-    () => verifyGraph(graph, { target: verificationTarget, viewport: scenario.viewport, buildStatus }),
-    [buildStatus, graph, scenario, verificationTarget],
+  const verificationScenario = useMemo(
+    () => ({ target: verificationTarget, viewport: scenario.viewport, buildStatus }),
+    [buildStatus, scenario.viewport, verificationTarget],
   );
-  const changes = useMemo(() => semanticDiff(baseline, graph), [baseline, graph]);
+  const verification = useBackgroundVerification(graph, verificationScenario);
+  const changes = useMemo(() => stage === "report" ? semanticDiff(baseline, graph) : [], [baseline, graph, stage]);
   const output = outputTarget === "react" ? reactOutput : outputTarget === "swiftui" ? swiftOutput : outputTarget === "expo" ? expoOutput : webOutput;
   const outputMessage = outputTarget === "react" ? reactCompilation.message : outputTarget === "swiftui" ? swiftCompilation.message : outputTarget === "expo" ? expoCompilation.message : webCompilation.message;
   const graphSnapshotRef = useRef(graphSnapshot);
@@ -622,7 +649,7 @@ export function Studio() {
     <main className="studio-grain min-h-[100dvh] overflow-hidden text-[var(--ink)]">
       <a className="skip-link" href="#studio-workspace">Skip to workspace</a>
       <div className="grid min-h-[100dvh] grid-rows-[auto_minmax(0,1fr)] bg-[var(--surface)]">
-        <header className="studio-topbar relative z-[5] grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto] items-center overflow-hidden border-b border-[var(--line)] bg-[rgba(250,251,248,.92)] px-3 py-1 backdrop-blur-xl">
+        <header className="studio-topbar relative z-[5] grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto] items-center overflow-visible border-b border-[var(--line)] bg-[rgba(250,251,248,.92)] px-3 py-1 backdrop-blur-xl">
           <div className="flex min-w-0 items-center gap-2.5">
             <div className="relative">
               <button
@@ -700,6 +727,7 @@ export function Studio() {
           </nav>
 
           <div className="flex items-center justify-end gap-2">
+            <DesktopControl />
             <button
               type="button"
               aria-label="Toggle color theme"

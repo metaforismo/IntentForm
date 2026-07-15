@@ -1,0 +1,28 @@
+{
+  "name": "@intentform/studio-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": ".desktop/app/main.cjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "package": "node scripts/package.mjs",
+    "start": "electron .",
+    "test": "vitest run src/window-options.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@intentform/desktop-bridge": "workspace:*",
+    "@intentform/mcp-server": "workspace:*"
+  },
+  "devDependencies": {
+    "@electron/fuses": "2.1.2",
+    "@electron/osx-sign": "2.5.0",
+    "@electron/packager": "20.0.0",
+    "@types/node": "^25.0.0",
+    "electron": "41.10.2",
+    "esbuild": "0.28.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  }
+}

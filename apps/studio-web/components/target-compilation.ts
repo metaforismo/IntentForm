@@ -14,7 +14,7 @@ export interface StudioTargetCompilation {
   message: string | null;
 }
 
-export function compileStudioTarget(
+function compileStudioTargetUncached(
   graph: SemanticInterfaceGraph,
   target: StudioOutputTarget,
 ): StudioTargetCompilation {
@@ -51,4 +51,35 @@ export function compileStudioTarget(
         : `The ${target} compiler failed without a diagnostic.`,
     };
   }
+}
+
+export interface StudioCompilationCache {
+  compile(graph: SemanticInterfaceGraph, target: StudioOutputTarget): StudioTargetCompilation;
+}
+
+export function createStudioCompilationCache(): StudioCompilationCache {
+  const graphs = new WeakMap<SemanticInterfaceGraph, Map<StudioOutputTarget, StudioTargetCompilation>>();
+  return {
+    compile(graph, target) {
+      let targets = graphs.get(graph);
+      if (!targets) {
+        targets = new Map();
+        graphs.set(graph, targets);
+      }
+      const cached = targets.get(target);
+      if (cached) return cached;
+      const result = compileStudioTargetUncached(graph, target);
+      targets.set(target, result);
+      return result;
+    },
+  };
+}
+
+const sharedCompilationCache = createStudioCompilationCache();
+
+export function compileStudioTarget(
+  graph: SemanticInterfaceGraph,
+  target: StudioOutputTarget,
+): StudioTargetCompilation {
+  return sharedCompilationCache.compile(graph, target);
 }

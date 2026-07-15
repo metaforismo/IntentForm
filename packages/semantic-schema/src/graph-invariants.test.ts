@@ -251,16 +251,17 @@ describe("semantic graph invariants", () => {
 
     expectInvalid((graph) => {
       const template = structuredClone(graph.screens[1]!.nodes[0]!);
-      graph.screens[1]!.nodes = Array.from({ length: 9 }, (_, group) => ({
+      const groupCount = Math.floor(GRAPH_LIMITS.maxTotalNodesPerScreen / (GRAPH_LIMITS.maxChildrenPerNode + 1)) + 1;
+      graph.screens[1]!.nodes = Array.from({ length: groupCount }, (_, group) => ({
         ...structuredClone(template),
         id: `receipt.group-${group}`,
         kind: "stack",
-        children: Array.from({ length: 64 }, (_, index) => ({
+        children: Array.from({ length: GRAPH_LIMITS.maxChildrenPerNode }, (_, index) => ({
           ...structuredClone(template),
           id: `receipt.leaf-${group}-${index}`,
         })),
       }));
-    }, /exceeds 512 total nodes/);
+    }, new RegExp(`exceeds ${GRAPH_LIMITS.maxTotalNodesPerScreen} total nodes`));
   });
 
   it("rejects duplicate descendant ids and in-memory reference cycles", () => {

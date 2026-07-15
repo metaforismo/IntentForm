@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { demoGraph } from "@intentform/proof-report/demo";
 import { parseGraph } from "@intentform/semantic-schema";
-import { compileStudioTarget } from "./target-compilation";
+import { compileStudioTarget, createStudioCompilationCache } from "./target-compilation";
 
 describe("Studio target compilation", () => {
   it("generates enabled targets without changing compiler fingerprints", () => {
@@ -10,6 +10,16 @@ describe("Studio target compilation", () => {
     expect(result.output?.target).toBe("react");
     expect(result.output?.fingerprint).toMatch(/^[a-f0-9]{8}$/);
     expect(result.message).toBeNull();
+  });
+
+  it("reuses deterministic compiler results for the same immutable graph snapshot", () => {
+    const cache = createStudioCompilationCache();
+    const first = cache.compile(demoGraph, "react");
+    const second = cache.compile(demoGraph, "react");
+    const otherTarget = cache.compile(demoGraph, "expo");
+
+    expect(second).toBe(first);
+    expect(otherTarget).not.toBe(first);
   });
 
   it("reports a disabled target without throwing or fabricating output", () => {

@@ -40,7 +40,6 @@ import {
 import {
   flattenGraphNodes,
   flattenSemanticNodes,
-  findSemanticNode,
   parseGraph,
   type ComponentOverride,
   type SemanticInterfaceGraph,
@@ -55,6 +54,7 @@ import {
   setComponentState,
   setComponentVariant,
 } from "@intentform/semantic-schema/component-library";
+import { createGraphIndex, type GraphIndex } from "@intentform/graph-runtime";
 import type { VerificationFinding } from "@intentform/verifier";
 import type { DeviceBezelReference } from "@intentform/device-registry";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -379,8 +379,15 @@ export function ManualEditor({
     }));
   };
 
-  const screen = graph.screens.find((item) => item.id === selectedScreen) ?? graph.screens[0];
-  const selectedNode = screen && selectedNodeId ? findSemanticNode(screen.nodes, selectedNodeId) ?? null : null;
+  const graphIndexRef = useRef<GraphIndex | null>(null);
+  const graphIndex = useMemo(() => {
+    const next = createGraphIndex(graph, graphIndexRef.current ?? undefined);
+    graphIndexRef.current = next;
+    return next;
+  }, [graph]);
+  const screen = graphIndex.screenById.get(selectedScreen) ?? graph.screens[0];
+  const selectedNodeLocation = selectedNodeId ? graphIndex.locationById.get(selectedNodeId) : undefined;
+  const selectedNode = screen && selectedNodeLocation?.screenId === screen.id ? selectedNodeLocation.node : null;
   const selectedLocation = selectedNodeId ? locateEditorNode(graph, selectedNodeId) : null;
   const componentContext = screen && selectedNodeId
     ? componentContextForNode(graph, screen, selectedNodeId)
@@ -464,13 +471,13 @@ export function ManualEditor({
   };
 
   useEffect(() => {
-    const validIds = new Set(screen ? flattenSemanticNodes(screen.nodes).map((node) => node.id) : []);
+    const validIds = new Set(screen ? graphIndex.screenIndexes.get(screen.id)?.nodesById.keys() : []);
     setSelectedNodeIds((current) => {
       if (!selectedNodeId || !validIds.has(selectedNodeId)) return [];
       if (current.includes(selectedNodeId) && current.every((id) => validIds.has(id))) return current;
       return [selectedNodeId];
     });
-  }, [screen, selectedNodeId]);
+  }, [graphIndex, screen, selectedNodeId]);
 
   const selectNode = useCallback((nodeId: string | null, intent: SelectionIntent = "replace") => {
     if (!nodeId) {
@@ -478,14 +485,15 @@ export function ManualEditor({
       onSelectNode(null);
       return;
     }
-    const targetScreen = graph.screens.find((candidate) => flattenSemanticNodes(candidate.nodes).some((node) => node.id === nodeId));
+    const targetScreenId = graphIndex.locationById.get(nodeId)?.screenId;
+    const targetScreen = targetScreenId ? graphIndex.screenById.get(targetScreenId) : undefined;
     if (!targetScreen) return;
-    const preorder = flattenSemanticNodes(targetScreen.nodes).map((node) => node.id);
+    const preorder = graphIndex.screenIndexes.get(targetScreen.id)?.nodes.map((node) => node.id) ?? [];
     const current = selectedNodeIds.filter((id) => preorder.includes(id));
     const next = updateNodeSelection(current, nodeId, preorder, intent);
     setSelectedNodeIds(next);
     onSelectNode(next.includes(nodeId) ? nodeId : next.at(-1) ?? null);
-  }, [graph.screens, onSelectNode, selectedNodeIds]);
+  }, [graphIndex, onSelectNode, selectedNodeIds]);
 
   const normalizedSelection = useMemo(
     () => screen ? normalizeNodeSelection(graph, screen.id, selectedNodeIds) : [],
@@ -504,11 +512,11 @@ export function ManualEditor({
   }, [findings]);
 
   const visualStateFor = useCallback((screenId: string): VisualState => {
-    const contract = graph.contracts.find((item) => item.screenId === screenId);
+    const contract = graphIndex.contractByScreenId.get(screenId);
     const available = (contract?.visualStates ?? ["idle"]) as VisualState[];
     const requested = visualStateByScreen[screenId];
     return requested && available.includes(requested) ? requested : available[0] ?? "idle";
-  }, [graph.contracts, visualStateByScreen]);
+  }, [graphIndex, visualStateByScreen]);
 
   const availableStates = ((graph.contracts.find((item) => item.screenId === screen?.id)?.visualStates ?? ["idle"])) as VisualState[];
   const activeVisualState = screen ? visualStateFor(screen.id) : "idle";

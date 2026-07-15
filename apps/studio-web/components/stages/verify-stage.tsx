@@ -32,12 +32,10 @@ interface EvaluatedRule {
   status: RuleStatus;
 }
 
-function findingEndsWith(findings: VerificationFinding[], suffix: string) {
-  return findings.some((finding) => finding.id.endsWith(suffix));
-}
-
 function evaluateRules(graph: SemanticInterfaceGraph, verification: VerificationResult): EvaluatedRule[] {
   const { findings } = verification;
+  const findingIds = new Set(findings.map((finding) => finding.id));
+  const hasFinding = (id: string) => findingIds.has(id) || findingIds.has(`${verification.scenario.target}.${id}`);
   const rules: EvaluatedRule[] = [{
     id: "build.evidence",
     name: `Current ${verification.scenario.target} output has build evidence`,
@@ -48,8 +46,8 @@ function evaluateRules(graph: SemanticInterfaceGraph, verification: Verification
   }];
 
   for (const screen of graph.screens) {
-    const reachabilityFailed = findingEndsWith(findings, `${screen.id}.primary.compact-reachability`)
-      || findingEndsWith(findings, `${screen.id}.primary.missing`);
+    const reachabilityFailed = hasFinding(`${screen.id}.primary.compact-reachability`)
+      || hasFinding(`${screen.id}.primary.missing`);
     rules.push({
       id: `${screen.id}.primary-reachable`,
       name: "Primary action reachable (compact)",
@@ -57,7 +55,7 @@ function evaluateRules(graph: SemanticInterfaceGraph, verification: Verification
       status: reachabilityFailed ? "failed" : "passed",
     });
 
-    const failureStateMissing = findingEndsWith(findings, `${screen.id}.failure-state.missing`);
+    const failureStateMissing = hasFinding(`${screen.id}.failure-state.missing`);
     rules.push({
       id: `${screen.id}.failure-recovery`,
       name: "Failure states have recovery UI",
@@ -70,7 +68,7 @@ function evaluateRules(graph: SemanticInterfaceGraph, verification: Verification
     id: "tokens.primary-contrast",
     name: "Primary action contrast ≥ 3:1",
     target: "Design tokens",
-    status: findingEndsWith(findings, "tokens.contrast.primary-action") ? "failed" : "passed",
+    status: hasFinding("tokens.contrast.primary-action") ? "failed" : "passed",
   });
   const accessibilityFindings = findings.filter((finding) => finding.rule?.standard === ACCESSIBILITY_RULESET.standard);
   rules.push({
@@ -85,7 +83,7 @@ function evaluateRules(graph: SemanticInterfaceGraph, verification: Verification
     id: "tokens.body-contrast",
     name: "Body text contrast ≥ 4.5:1",
     target: "Design tokens",
-    status: findingEndsWith(findings, "tokens.contrast.body-text") ? "failed" : "passed",
+    status: hasFinding("tokens.contrast.body-text") ? "failed" : "passed",
   });
 
   return rules;
@@ -108,8 +106,21 @@ export function VerifyStage({
   isPending,
 }: VerifyStageProps) {
   const [accessibilityProfileId, setAccessibilityProfileId] = useState<AccessibilityProfile["id"]>("baseline");
+  const [showAllRules, setShowAllRules] = useState(false);
   const accessibilityProfile = ACCESSIBILITY_PROFILES.find((profile) => profile.id === accessibilityProfileId)!;
   const rules = evaluateRules(graph, verification);
+  const summaryRuleIds = new Set([
+    "build.evidence",
+    "tokens.primary-contrast",
+    "tokens.body-contrast",
+    "accessibility.profile-matrix",
+  ]);
+  const priorityRules = rules.filter((rule) => rule.status !== "passed" || summaryRuleIds.has(rule.id));
+  const priorityRuleIds = new Set(priorityRules.map((rule) => rule.id));
+  const visibleRules = showAllRules
+    ? rules
+    : [...priorityRules, ...rules.filter((rule) => !priorityRuleIds.has(rule.id))].slice(0, Math.max(12, priorityRules.length));
+  const hiddenRuleCount = rules.length - visibleRules.length;
   const hasFindings = verification.findings.length > 0;
   const hasErrorFindings = verification.findings.some((finding) => finding.severity === "error" && finding.status !== "suppressed");
   const evidencePending = verification.scenario.buildStatus === "not-run";
@@ -133,13 +144,22 @@ export function VerifyStage({
         <div className="mt-6">
           <span className="font-mono text-[10px] text-[var(--accent)]">RULES EVALUATED</span>
           <div className="mt-2 divide-y divide-[var(--line)] rounded-2xl border border-[var(--line)] bg-[var(--surface)]">
-            {rules.map((rule) => (
+            {visibleRules.map((rule) => (
               <div key={rule.id} className="flex items-center gap-3 px-4 py-2.5">
                 <RuleStatusIcon status={rule.status} />
                 <span className="flex-1 text-xs font-medium text-[var(--t-strong)]">{rule.name}</span>
                 <span className="text-[11px] text-[var(--muted)]">{rule.target}</span>
               </div>
             ))}
+            {hiddenRuleCount > 0 ? (
+              <button type="button" onClick={() => setShowAllRules(true)} className="min-h-11 w-full px-4 py-2.5 text-left text-[11px] font-semibold text-[var(--accent-dark)] hover:bg-[var(--hover)]">
+                Show {hiddenRuleCount} more passing rules
+              </button>
+            ) : showAllRules && rules.length > 12 ? (
+              <button type="button" onClick={() => setShowAllRules(false)} className="min-h-11 w-full px-4 py-2.5 text-left text-[11px] font-semibold text-[var(--accent-dark)] hover:bg-[var(--hover)]">
+                Collapse passing rules
+              </button>
+            ) : null}
           </div>
         </div>
 

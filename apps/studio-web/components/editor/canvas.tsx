@@ -10,6 +10,7 @@ import {
   Warning,
 } from "@phosphor-icons/react";
 import { findSemanticNode, type SemanticInterfaceGraph, type SemanticNode } from "@intentform/semantic-schema";
+import { createHorizontalFrameIndex, queryHorizontalFrames } from "@intentform/graph-runtime";
 import { motion } from "motion/react";
 import {
   useCallback,
@@ -130,15 +131,41 @@ export function CanvasStage({
   const contextMenuReturnFocus = useRef<HTMLElement | null>(null);
   const renameReturnFocus = useRef<HTMLElement | null>(null);
   const renameWasOpen = useRef(false);
+  const visibilityFrame = useRef<number | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string; screenId: string } | null>(null);
   const [rename, setRename] = useState<{ nodeId: string; screenId: string; x: number; y: number; width: number; value: string } | null>(null);
 
-  const frames = useMemo(
-    () => graph.screens.map((screen, index) => ({ screen, x: index * (profile.width + FRAME_GAP) })),
+  const frameSpatialIndex = useMemo(
+    () => createHorizontalFrameIndex(graph.screens.map((screen) => screen.id), profile.width, FRAME_GAP),
     [graph.screens, profile.width],
   );
-  const worldWidth = frames.length > 0 ? frames.length * profile.width + (frames.length - 1) * FRAME_GAP : profile.width;
+  const frames = useMemo(
+    () => frameSpatialIndex.frames.map((frame) => ({ frame, screen: graph.screens[frame.index]!, x: frame.x })),
+    [frameSpatialIndex, graph.screens],
+  );
+  const [visibleFrameIds, setVisibleFrameIds] = useState<readonly string[]>([selectedScreen]);
+  const worldWidth = frameSpatialIndex.worldWidth;
   const worldHeight = profile.height + FRAME_HEADER_WORLD;
+
+  const refreshFrameVisibility = useCallback((view: ViewTransform) => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const visible = queryHorizontalFrames(frameSpatialIndex, {
+      left: -view.x / view.scale,
+      right: (viewport.clientWidth - view.x) / view.scale,
+    }, { includeIds: [selectedScreen] }).map((frame) => frame.id);
+    setVisibleFrameIds((current) => current.length === visible.length && current.every((id, index) => id === visible[index])
+      ? current
+      : visible);
+  }, [frameSpatialIndex, selectedScreen]);
+
+  const scheduleFrameVisibility = useCallback((view: ViewTransform) => {
+    if (visibilityFrame.current !== null) cancelAnimationFrame(visibilityFrame.current);
+    visibilityFrame.current = requestAnimationFrame(() => {
+      visibilityFrame.current = null;
+      refreshFrameVisibility(view);
+    });
+  }, [refreshFrameVisibility]);
 
   const applyView = useCallback((next: ViewTransform, smooth: boolean) => {
     const world = worldRef.current;
@@ -159,8 +186,9 @@ export function CanvasStage({
     viewport.style.backgroundSize = `${24 * next.scale}px ${24 * next.scale}px`;
     // The dot grid reads as noise once frames are small; fade it out.
     viewport.style.backgroundImage = next.scale < 0.45 ? "none" : "";
+    scheduleFrameVisibility(next);
     onZoomChange(Math.round(next.scale * 100));
-  }, [onZoomChange]);
+  }, [onZoomChange, scheduleFrameVisibility]);
 
   const fitAll = useCallback((smooth = true) => {
     const viewport = viewportRef.current;
@@ -228,6 +256,10 @@ export function CanvasStage({
     apiRef.current = { fitAll, fitScreen, zoomBy, zoomTo };
   }, [apiRef, fitAll, fitScreen, zoomBy, zoomTo]);
 
+  useEffect(() => () => {
+    if (visibilityFrame.current !== null) cancelAnimationFrame(visibilityFrame.current);
+  }, []);
+
   /* Wheel: two-finger scroll pans the board, ⌘/ctrl+wheel (and trackpad pinch)
      zooms into the pointer. Registered natively so preventDefault sticks. */
   useEffect(() => {
@@ -276,10 +308,11 @@ export function CanvasStage({
     if (!viewport) return;
     const observer = new ResizeObserver(() => {
       if (!interacted.current) fitScreenRef.current(selectedScreenRef.current, false);
+      else refreshFrameVisibility(viewRef.current);
     });
     observer.observe(viewport);
     return () => observer.disconnect();
-  }, []);
+  }, [refreshFrameVisibility]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -375,14 +408,27 @@ export function CanvasStage({
         : `M ${frames[from]!.x} ${y} C ${frames[from]!.x - 90} ${y - 150}, ${x1 + 90} ${y - 150}, ${frames[to]!.x + profile.width + 10} ${y}`;
       const labelX = forward ? (x1 + x2) / 2 : (frames[to]!.x + profile.width + frames[from]!.x) / 2;
       const labelY = forward ? y - 14 : y - 160;
-      return [{ id: `${flow.id}.${step.from}.${step.event}`, path, event: step.event, labelX, labelY }];
+      return [{
+        id: `${flow.id}.${step.from}.${step.event}`,
+        fromId: step.from,
+        toId: step.to,
+        path,
+        event: step.event,
+        labelX,
+        labelY,
+      }];
     }));
   }, [frames, graph.flows, profile.height, profile.width]);
+  const visibleFrameSet = useMemo(() => new Set([...visibleFrameIds, selectedScreen]), [selectedScreen, visibleFrameIds]);
+  const visibleFrames = frames.filter(({ screen }) => visibleFrameSet.has(screen.id));
+  const visibleFlowEdges = flowEdges.filter((edge) => visibleFrameSet.has(edge.fromId) || visibleFrameSet.has(edge.toId));
 
   return (
     <div
       ref={viewportRef}
       data-testid="canvas-viewport"
+      data-rendered-screen-count={visibleFrames.length}
+      data-total-screen-count={frames.length}
       className={`editor-viewport absolute inset-0 overflow-hidden ${panActive ? "cursor-grab active:cursor-grabbing" : ""}`}
       onPointerDown={(event) => {
         if (panActive || event.button === 1) {
@@ -423,7 +469,7 @@ export function CanvasStage({
               <path d="M 0 0.6 L 7.4 4 L 0 7.4 z" fill="var(--flow-edge)" />
             </marker>
           </defs>
-          {flowEdges.map((edge) => (
+          {visibleFlowEdges.map((edge) => (
             <g key={edge.id}>
               <path d={edge.path} fill="none" stroke="var(--flow-edge)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" markerEnd="url(#flow-arrow)" />
               <text
@@ -443,7 +489,7 @@ export function CanvasStage({
           ))}
         </svg>
 
-        {frames.map(({ screen, x }) => {
+        {visibleFrames.map(({ screen, x }) => {
           const isSelectedScreen = screen.id === selectedScreen;
           const state = visualStateFor(screen.id);
           const status = frameStatus(screen.id);

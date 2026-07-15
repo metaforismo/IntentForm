@@ -1,7 +1,8 @@
-import { semanticInterfaceGraphSchema } from "@intentform/semantic-schema";
+import { GRAPH_LIMITS, semanticInterfaceGraphSchema } from "@intentform/semantic-schema";
 import { z } from "zod";
 
 export const API_BODY_LIMIT_BYTES = 512_000;
+export const LOCAL_PROJECT_BODY_LIMIT_BYTES = GRAPH_LIMITS.maxSerializedBytes + 256_000;
 
 const boundedText = (maximum: number) => z.string().trim().min(1).max(maximum);
 const identifier = z.string().min(1).max(160).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
@@ -123,9 +124,10 @@ export async function parseRequestBody<T>(
   request: Request,
   schema: z.ZodType<T>,
   invalidMessage: string,
+  maximumBytes = API_BODY_LIMIT_BYTES,
 ): Promise<T> {
   const contentLength = Number(request.headers.get("content-length"));
-  if (Number.isFinite(contentLength) && contentLength > API_BODY_LIMIT_BYTES) {
+  if (Number.isFinite(contentLength) && contentLength > maximumBytes) {
     throw new ApiInputError(413, "The request body is too large.");
   }
 
@@ -138,7 +140,7 @@ export async function parseRequestBody<T>(
       const { done, value } = await reader.read();
       if (done) break;
       bytesRead += value.byteLength;
-      if (bytesRead > API_BODY_LIMIT_BYTES) {
+      if (bytesRead > maximumBytes) {
         await reader.cancel();
         throw new ApiInputError(413, "The request body is too large.");
       }

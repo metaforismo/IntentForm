@@ -14,6 +14,7 @@ artifacts/
 playwright-report/
 test-results/
 output/
+apps/studio-desktop/.desktop/
 examples/preview-ios/Sources/IntentFormPreview/Generated/
 apps/react-preview/src/generated/
 apps/react-preview/dist/

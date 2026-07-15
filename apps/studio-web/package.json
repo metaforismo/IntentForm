@@ -11,11 +11,13 @@
   "dependencies": {
     "@intentform/device-bezels": "workspace:*",
     "@intentform/device-registry": "workspace:*",
+    "@intentform/desktop-bridge": "workspace:*",
     "@intentform/compiler-expo": "workspace:*",
     "@intentform/compiler-react": "workspace:*",
     "@intentform/compiler-swiftui": "workspace:*",
     "@intentform/compiler-web": "workspace:*",
     "@intentform/intent-interpreter": "workspace:*",
+    "@intentform/graph-runtime": "workspace:*",
     "@intentform/layout-engine": "workspace:*",
     "@intentform/mcp-server": "workspace:*",
     "@intentform/proof-report": "workspace:*",

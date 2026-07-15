@@ -12,6 +12,7 @@ import { GraphMigrationError } from "@intentform/semantic-schema/migrations";
 import {
   inputErrorResponse,
   isLocalProjectRequestAllowed,
+  LOCAL_PROJECT_BODY_LIMIT_BYTES,
   parseRequestBody,
   projectMigrationRequestSchema,
   projectSaveRequestSchema,
@@ -121,6 +122,7 @@ export async function PUT(request: Request) {
       request,
       projectSaveRequestSchema,
       "The local project save request is invalid.",
+      LOCAL_PROJECT_BODY_LIMIT_BYTES,
     );
   } catch (error) {
     return inputErrorResponse(error)
