@@ -1,8 +1,65 @@
 import type { VerificationFinding } from "@intentform/verifier";
 import type { OutputTarget } from "../studio";
 import type { LocalPreviewEntry, LocalPreviewTarget } from "../use-local-previews";
+import type { DeviceProfile } from "../editor/support";
 
 export type VerificationSeverity = VerificationFinding["severity"];
+
+export const COMPARISON_PROFILE_LIMIT = 3;
+
+function comparisonCategory(profile: DeviceProfile): "phone" | "tablet" | "desktop" {
+  if (profile.width < 600) return "phone";
+  if (profile.width < 1_000) return "tablet";
+  return "desktop";
+}
+
+function preferredProfile(
+  profiles: readonly DeviceProfile[],
+  category: ReturnType<typeof comparisonCategory>,
+): DeviceProfile | undefined {
+  const candidates = profiles.filter((profile) => comparisonCategory(profile) === category);
+  if (category === "desktop") {
+    return candidates.find((profile) => profile.presentation === "browser")
+      ?? candidates.find((profile) => profile.id.includes("browser"))
+      ?? [...candidates].sort((left, right) => right.width - left.width)[0];
+  }
+  return candidates.find((profile) => profile.presentation === "device" && profile.orientation === "portrait")
+    ?? candidates.find((profile) => profile.presentation === "device")
+    ?? candidates[0];
+}
+
+export function defaultComparisonProfileIds(profiles: readonly DeviceProfile[]): string[] {
+  const preferred = (["desktop", "tablet", "phone"] as const)
+    .map((category) => preferredProfile(profiles, category))
+    .filter((profile): profile is DeviceProfile => Boolean(profile));
+  const remaining = profiles.filter((profile) => !preferred.some((candidate) => candidate.id === profile.id));
+  return [...preferred, ...remaining].slice(0, COMPARISON_PROFILE_LIMIT).map((profile) => profile.id);
+}
+
+export function reconcileComparisonProfileIds(
+  selectedIds: readonly string[],
+  profiles: readonly DeviceProfile[],
+): string[] {
+  const availableIds = new Set<string>(profiles.map((profile) => profile.id));
+  const valid = selectedIds.filter((id, index) => availableIds.has(id) && selectedIds.indexOf(id) === index);
+  const defaults = defaultComparisonProfileIds(profiles).filter((id) => !valid.includes(id));
+  return [...valid, ...defaults].slice(0, Math.min(COMPARISON_PROFILE_LIMIT, profiles.length));
+}
+
+export function replaceComparisonProfile(
+  selectedIds: readonly string[],
+  index: number,
+  profileId: string,
+  profiles: readonly DeviceProfile[],
+): string[] {
+  const reconciled = reconcileComparisonProfileIds(selectedIds, profiles);
+  if (index < 0 || index >= reconciled.length || !profiles.some((profile) => profile.id === profileId)) return reconciled;
+  const existingIndex = reconciled.indexOf(profileId);
+  const next = [...reconciled];
+  if (existingIndex >= 0) next[existingIndex] = reconciled[index]!;
+  next[index] = profileId;
+  return next;
+}
 
 export function localPreviewTarget(target: OutputTarget): LocalPreviewTarget {
   if (target === "swiftui") return "swiftui";

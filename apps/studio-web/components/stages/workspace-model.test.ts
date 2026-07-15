@@ -2,11 +2,23 @@ import { describe, expect, it } from "vitest";
 import type { VerificationFinding } from "@intentform/verifier";
 import {
   countVerificationFindings,
+  defaultComparisonProfileIds,
   filterVerificationFindings,
   localPreviewTarget,
   matchingCodeLineNumbers,
+  reconcileComparisonProfileIds,
+  replaceComparisonProfile,
   usableLocalPreview,
 } from "./workspace-model";
+import type { DeviceProfile } from "../editor/support";
+
+function profile(id: string, width: number, presentation: DeviceProfile["presentation"] = "device"): DeviceProfile {
+  return {
+    id: id as DeviceProfile["id"], label: id, detail: `${width}px`, width, height: width < 600 ? 844 : 900,
+    breakpoint: width < 600 ? "compact" : "regular", presentation, scale: 1, orientation: width < 600 ? "portrait" : "landscape",
+    safeArea: { top: 0, right: 0, bottom: 0, left: 0 }, corners: { radius: 0 }, cutouts: [], capabilities: [], textScale: 1,
+  };
+}
 
 function finding(overrides: Partial<VerificationFinding> = {}): VerificationFinding {
   return {
@@ -23,6 +35,35 @@ function finding(overrides: Partial<VerificationFinding> = {}): VerificationFind
 }
 
 describe("Code and Verify workspace model", () => {
+  it("chooses one desktop, tablet, and phone comparison profile in visual order", () => {
+    const profiles = [
+      profile("device:phone", 390),
+      profile("device:tablet", 768),
+      profile("device:precision.browser.desktop", 1_440),
+      profile("web:desktop", 1_440, "browser"),
+    ];
+    expect(defaultComparisonProfileIds(profiles)).toEqual(["web:desktop", "device:tablet", "device:phone"]);
+  });
+
+  it("prefers a registry browser profile when the graph has no Web frames", () => {
+    const profiles = [profile("device:ipad-landscape", 1_180), profile("device:precision.browser.desktop", 1_440), profile("device:tablet", 768), profile("device:phone", 390)];
+    expect(defaultComparisonProfileIds(profiles)[0]).toBe("device:precision.browser.desktop");
+  });
+
+  it("reconciles removed and duplicate comparison profiles without exceeding three frames", () => {
+    const profiles = [profile("device:phone", 390), profile("device:tablet", 768), profile("web:desktop", 1_440, "browser")];
+    expect(reconcileComparisonProfileIds(["missing", "device:phone", "device:phone"], profiles))
+      .toEqual(["device:phone", "web:desktop", "device:tablet"]);
+  });
+
+  it("swaps an already visible comparison profile instead of rendering duplicates", () => {
+    const profiles = [profile("device:phone", 390), profile("device:tablet", 768), profile("web:desktop", 1_440, "browser")];
+    expect(replaceComparisonProfile(["web:desktop", "device:tablet", "device:phone"], 0, "device:phone", profiles))
+      .toEqual(["device:phone", "device:tablet", "web:desktop"]);
+    expect(replaceComparisonProfile(["web:desktop", "device:tablet", "device:phone"], 8, "missing", profiles))
+      .toEqual(["web:desktop", "device:tablet", "device:phone"]);
+  });
+
   it("maps generated targets onto the correct local preview runtime", () => {
     expect(localPreviewTarget("web")).toBe("browser");
     expect(localPreviewTarget("react")).toBe("browser");
