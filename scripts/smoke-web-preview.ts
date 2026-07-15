@@ -69,14 +69,16 @@ try {
   });
 
   await page.goto(`${origin}/?state=idle`, { waitUntil: "networkidle" });
-  await page.getByRole("navigation", { name: "Primary" }).waitFor();
   await page.getByRole("main").waitFor();
+  if (await page.getByRole("navigation", { name: "Primary" }).count() !== 0) {
+    throw new Error("Generated Web output restored the removed universal primary navigation");
+  }
   await page.keyboard.press("Tab");
   if (await page.evaluate(() => document.activeElement?.textContent?.trim()) !== "Skip to content") {
     throw new Error("Skip navigation was not the first keyboard focus target");
   }
 
-  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Request payment" }).click();
+  await page.getByRole("button", { name: "Request payment" }).click();
   await page.waitForURL(`${origin}/request`);
   await page.goBack({ waitUntil: "networkidle" });
   await page.waitForURL(`${origin}/?state=idle`);

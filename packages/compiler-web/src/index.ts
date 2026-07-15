@@ -125,12 +125,84 @@ function nodeSource(node: PlatformIRNode): string {
     content = `<figure className="if-media" data-asset-id=${JSON.stringify(node.asset.id)}>${media}${content}</figure>`;
   }
 
-  const wrapped = `<div className="if-web-node ${nodeClass(node.id)}" data-node-id=${JSON.stringify(node.id)} data-intent=${JSON.stringify(node.intent.purpose)}>${content}</div>`;
+  const wrapped = `<div className="if-web-node ${nodeClass(node.id)}" data-node-id=${JSON.stringify(node.id)} data-intent=${JSON.stringify(node.intent.purpose)} data-style-role=${JSON.stringify(node.style.role)} data-emphasis=${JSON.stringify(node.style.emphasis)}>${content}</div>`;
   if (node.visibility.length === 0) return wrapped;
   const condition = node.visibility.map((entry) => entry.expression
     ? reactExpression(entry.expression)
     : node.bindings.status ? `data.${node.bindings.status.name} === ${JSON.stringify(entry.state)}` : "true").join(" || ");
   return `{${condition} ? (${wrapped}) : null}`;
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function staticFieldValue(node: PlatformIRNode, fixture: PlatformIR["screens"][number]["defaultFixture"], binding: "value" | "detail"): string {
+  const field = node.bindings[binding];
+  return field ? escapeHtml(fixture.data[field.name] ?? "") : "";
+}
+
+function staticNodeSource(node: PlatformIRNode, fixture: PlatformIR["screens"][number]["defaultFixture"]): string {
+  const label = escapeHtml(node.intent.label);
+  const aria = ` aria-label="${escapeHtml(node.accessibility.label)}"`;
+  const value = staticFieldValue(node, fixture, "value");
+  const detail = staticFieldValue(node, fixture, "detail");
+  const children = node.children.map((child) => staticNodeSource(child, fixture)).join("\n");
+  let content: string;
+  switch (node.kind) {
+    case "text": content = `<p${aria}>${label}</p>`; break;
+    case "image": content = `<figure class="if-media"${aria}><figcaption>${label}</figcaption></figure>`; break;
+    case "shape": content = '<div class="if-shape" aria-hidden="true"></div>'; break;
+    case "action":
+    case "secondary-action": content = `<button type="button" class="if-action if-action-secondary"${aria}>${label}</button>`; break;
+    case "primary-action": content = `<button type="button" class="if-action if-action-primary"${aria}>${label}</button>`; break;
+    case "input": content = `<label class="if-field"><span>${label}</span><input${aria}></label>`; break;
+    case "money-input": content = `<label class="if-field"><span>${label}</span><input inputmode="decimal" value="${value}"${aria}></label>`; break;
+    case "divider": content = '<hr aria-hidden="true">'; break;
+    case "spacer": content = '<span class="if-spacer" aria-hidden="true"></span>'; break;
+    case "balance-summary": content = `<section class="if-card if-balance"${aria}><p>${label}</p>${value ? `<strong>${value}</strong>` : ""}</section>`; break;
+    case "transaction-list": content = `<section class="if-section"${aria}><h2>${label}</h2>${value ? `<p>${value}</p>` : ""}</section>`; break;
+    case "recipient-identity": content = `<address class="if-card if-address"${aria}><strong>${value || label}</strong>${detail ? `<span>${detail}</span>` : ""}</address>`; break;
+    case "status-message": content = `<p role="status" class="if-status"${aria}>${label}</p>`; break;
+    case "receipt-summary": content = `<section class="if-card if-receipt"${aria}><h2>${label}</h2>${detail ? `<strong>${detail}</strong>` : ""}${value ? `<p>${value}</p>` : ""}</section>`; break;
+    default: content = `<section class="if-layout"${aria}>${children}</section>`;
+  }
+  if (node.asset && node.asset.exportPolicy !== "blocked") {
+    const path = `../${escapeHtml(node.asset.storageKey)}`;
+    const alt = node.asset.decorative ? "" : escapeHtml(node.accessibility.label);
+    const media = node.asset.kind === "video"
+      ? `<video src="${path}" controls preload="metadata"></video>`
+      : node.asset.kind === "audio"
+        ? `<audio src="${path}" controls preload="metadata"></audio>`
+        : `<img src="${path}" alt="${alt}" loading="lazy" decoding="async">`;
+    content = `<figure class="if-media" data-asset-id="${escapeHtml(node.asset.id)}">${media}${content}</figure>`;
+  }
+  return `<div class="if-web-node ${nodeClass(node.id)}" data-node-id="${escapeHtml(node.id)}" data-intent="${escapeHtml(node.intent.purpose)}" data-style-role="${escapeHtml(node.style.role)}" data-emphasis="${node.style.emphasis}">${content}</div>`;
+}
+
+function staticDocumentSource(ir: PlatformIR, index: number): string {
+  const screen = ir.screens[index]!;
+  return `<!doctype html>
+<html lang="en" dir="auto">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${escapeHtml(screen.title)}</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <a class="if-skip-link" href="#main-content">Skip to content</a>
+  <main id="main-content" class="if-page" aria-label="${escapeHtml(screen.title)}" data-screen-id="${escapeHtml(screen.id)}" data-token-mode="${escapeHtml(ir.activeTokenMode)}">
+    ${screen.nodes.map((node) => staticNodeSource(node, screen.defaultFixture)).join("\n    ")}
+  </main>
+</body>
+</html>
+`;
 }
 
 function contractSource(ir: PlatformIR, index: number): string {
@@ -157,15 +229,8 @@ export interface ${name}Props {
 
 export function ${name}({ data, events }: ${name}Props) {
   return (
-    <main id="main-content" className="if-page" data-screen-id=${JSON.stringify(screen.id)} data-token-mode=${JSON.stringify(ir.activeTokenMode)}>
-      <header className="if-page-header">
-        <p className="if-eyebrow">{${JSON.stringify(ir.productName)}}</p>
-        <h1>{${JSON.stringify(screen.title)}}</h1>
-        <p>{${JSON.stringify(screen.purpose)}}</p>
-      </header>
-      <div className="if-page-content">
-        ${screen.nodes.map(nodeSource).join("\n        ")}
-      </div>
+    <main id="main-content" className="if-page" aria-label=${JSON.stringify(screen.title)} data-screen-id=${JSON.stringify(screen.id)} data-token-mode=${JSON.stringify(ir.activeTokenMode)}>
+      ${screen.nodes.map(nodeSource).join("\n      ")}
     </main>
   );
 }
@@ -189,7 +254,6 @@ function appSource(ir: PlatformIR): string {
     const fixtureName = `${componentName(screen.id)}Fixtures`;
     return `      {active === ${JSON.stringify(screen.id)} ? <${componentName(screen.id)} data={${fixtureName}[visualState as keyof typeof ${fixtureName}] ?? ${fixtureName}[${JSON.stringify(screen.defaultFixture.state)}]} events={{\n${events}\n        }} /> : null}`;
   }).join("\n");
-  const nav = ir.screens.map((screen) => `<a href=${JSON.stringify(screen.route)} aria-current={active === ${JSON.stringify(screen.id)} ? "page" : undefined} onClick={(event) => { event.preventDefault(); navigate(${JSON.stringify(screen.route)}); }}>{${JSON.stringify(screen.title)}}</a>`).join("\n          ");
   const fallback = ir.screens[0]!;
   return `import { useEffect, useState } from "react";
 ${imports}
@@ -224,12 +288,6 @@ export function App() {
   return (
     <>
       <a className="if-skip-link" href="#main-content">Skip to content</a>
-      <nav className="if-site-nav" aria-label="Primary">
-        <strong>{${JSON.stringify(ir.productName)}}</strong>
-        <div>
-          ${nav}
-        </div>
-      </nav>
 ${branches}
     </>
   );
@@ -298,6 +356,23 @@ function declarations(style: Omit<WebStyle, "breakpointOverrides">, node: Platfo
     ...(node.layout.height === "fixed" && node.layout.fixedHeight ? [`height: ${node.layout.fixedHeight}px`] : []),
     ...(node.layout.minHeight !== undefined ? [`min-height: ${node.layout.minHeight}px`] : []),
     ...(node.layout.maxHeight !== undefined ? [`max-height: ${node.layout.maxHeight}px`] : []),
+    ...(style.visual?.color ? [`color: ${style.visual.color}`] : []),
+    ...(style.visual?.backgroundColor ? [`background-color: ${style.visual.backgroundColor}`] : []),
+    ...(style.visual?.borderColor ? [`border-color: ${style.visual.borderColor}`] : []),
+    ...(style.visual?.borderWidth !== undefined ? [`border-width: ${style.visual.borderWidth}px`] : []),
+    ...(style.visual?.borderStyle ? [`border-style: ${style.visual.borderStyle}`] : []),
+    ...(style.visual?.borderRadius !== undefined ? [`border-radius: ${style.visual.borderRadius}px`] : []),
+    ...(style.visual?.paddingTop !== undefined && style.visual.paddingRight !== undefined
+      && style.visual.paddingBottom !== undefined && style.visual.paddingLeft !== undefined
+      ? [`padding: ${style.visual.paddingTop}px ${style.visual.paddingRight}px ${style.visual.paddingBottom}px ${style.visual.paddingLeft}px`]
+      : []),
+    ...(style.visual?.opacity !== undefined ? [`opacity: ${style.visual.opacity}`] : []),
+    ...(style.visual?.fontFamily ? [`font-family: ${style.visual.fontFamily}`] : []),
+    ...(style.visual?.fontSize !== undefined ? [`font-size: ${style.visual.fontSize}px`] : []),
+    ...(style.visual?.fontWeight !== undefined ? [`font-weight: ${style.visual.fontWeight}`] : []),
+    ...(style.visual?.lineHeight !== undefined ? [`line-height: ${style.visual.lineHeight}px`] : []),
+    ...(style.visual?.letterSpacing !== undefined ? [`letter-spacing: ${style.visual.letterSpacing}px`] : []),
+    ...(style.visual?.textAlign ? [`text-align: ${style.visual.textAlign}`] : []),
   ];
   return result;
 }
@@ -319,7 +394,12 @@ function stylesSource(ir: PlatformIR): string {
     .map(([modeId, mode]) => `.if-page[data-token-mode=${JSON.stringify(modeId)}] {\n${declarationsForMode(mode)}\n}`)
     .join("\n");
   const allNodes = ir.screens.flatMap((screen) => flattenNodes(screen.nodes));
-  const nodeRules = allNodes.map((node) => `.${nodeClass(node.id)} {\n  ${declarations(resolvedWebStyle(node), node).join(";\n  ")};\n}`).join("\n");
+  const nodeRules = allNodes.map((node) => {
+    const assetRule = node.asset
+      ? `\n.${nodeClass(node.id)} img, .${nodeClass(node.id)} video { object-fit: ${node.asset.fit}; object-position: ${node.asset.focalPoint.x * 100}% ${node.asset.focalPoint.y * 100}%; }`
+      : "";
+    return `.${nodeClass(node.id)} {\n  ${declarations(resolvedWebStyle(node), node).join(";\n  ")};\n}${assetRule}`;
+  }).join("\n");
   const breakpointRules = [...ir.web.breakpoints].sort((left, right) => left.minWidth - right.minWidth).map((breakpoint) => {
     const rules = allNodes.flatMap((node) => {
       const override = node.web?.breakpointOverrides[breakpoint.id];
@@ -333,7 +413,7 @@ function stylesSource(ir: PlatformIR): string {
   const padding = cssVarName(ir.web.inlinePaddingToken);
   return `:root {
   color-scheme: light;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--if-font-family, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
   --if-content-max: ${ir.web.contentMaxWidth}px;
 ${declarationsForMode(ir.tokenModes[ir.tokenCollection.defaultMode] ?? ir.tokens)}
   --if-accent: var(${cssVarName("color.accent")}, #397461);
@@ -350,36 +430,22 @@ button, a { touch-action: manipulation; }
 :focus-visible { outline: 3px solid color-mix(in oklab, var(--if-accent) 58%, white); outline-offset: 3px; }
 .if-skip-link { position: fixed; inset-block-start: 12px; inset-inline-start: 12px; z-index: 100; min-height: 44px; padding: 12px 14px; color: white; background: var(--if-ink); transform: translateY(-180%); }
 .if-skip-link:focus { transform: translateY(0); }
-.if-site-nav { position: sticky; inset-block-start: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 64px; padding-inline: max(var(${padding}), calc((100vw - var(--if-content-max)) / 2)); border-bottom: 1px solid color-mix(in oklab, var(--if-ink) 12%, transparent); background: color-mix(in oklab, var(--if-surface) 92%, transparent); backdrop-filter: blur(16px); }
-.if-site-nav div { display: flex; flex-wrap: wrap; gap: 16px; }
-.if-site-nav a { color: inherit; text-decoration: none; }
-.if-site-nav a[aria-current="page"] { color: var(--if-accent); }
-.if-page { min-height: 100dvh; }
-.if-page-header, .if-page-content { width: min(calc(100% - 2 * var(${padding})), var(--if-content-max)); margin-inline: auto; }
-.if-page-header { padding-block: clamp(56px, 9vw, 128px) clamp(36px, 6vw, 80px); }
-.if-page-header h1 { max-width: 16ch; margin: 8px 0 18px; font-size: clamp(2.5rem, 7vw, 6.8rem); line-height: .92; letter-spacing: -.065em; }
-.if-page-header > p:last-child { max-width: 62ch; color: color-mix(in oklab, var(--if-ink) 66%, transparent); font-size: clamp(1rem, 1.8vw, 1.35rem); line-height: 1.55; }
-.if-eyebrow { color: var(--if-accent); font-size: .75rem; font-weight: 750; letter-spacing: .14em; text-transform: uppercase; }
-.if-page-content { display: grid; gap: clamp(20px, 4vw, 48px); padding-block-end: 96px; }
+.if-page { width: min(calc(100% - 2 * var(${padding})), var(--if-content-max)); min-height: 100dvh; margin-inline: auto; }
 .if-web-node { min-width: 0; gap: var(--if-node-gap); padding: var(--if-node-padding); }
 .if-layout { display: contents; }
 .if-card, .if-section, .if-status, .if-field { display: grid; gap: 10px; }
-.if-card, .if-section, .if-status { padding: clamp(20px, 4vw, 42px); border: 1px solid color-mix(in oklab, var(--if-ink) 10%, transparent); border-radius: var(${cssVarName("radius.surface")}, 24px); background: var(--if-surface); }
-.if-card strong { font-size: clamp(2rem, 5vw, 4.8rem); letter-spacing: -.05em; }
 .if-address { font-style: normal; }
-.if-field input { min-height: 54px; padding: 12px 16px; border: 1px solid color-mix(in oklab, var(--if-ink) 18%, transparent); border-radius: var(${cssVarName("radius.control")}, 14px); background: var(--if-surface); }
-.if-action { min-height: 48px; padding: 14px 20px; border: 0; border-radius: var(${cssVarName("radius.control")}, 14px); font-weight: 750; cursor: pointer; }
+.if-field input { min-height: 44px; max-width: 100%; }
+.if-action { min-height: 44px; cursor: pointer; }
 .if-action-primary { color: white; background: var(--if-accent); }
-.if-action-secondary { color: var(--if-ink); background: color-mix(in oklab, var(--if-accent) 14%, var(--if-surface)); }
-.if-status { border-inline-start: 4px solid var(--if-accent); }
-.if-media { display: grid; gap: 16px; margin: 0; }
-.if-media img, .if-media video { display: block; width: 100%; height: auto; border-radius: var(${cssVarName("radius.surface")}, 24px); }
+.if-action-secondary { color: inherit; background: transparent; }
+.if-media { display: grid; margin: 0; }
+.if-media img, .if-media video { display: block; width: 100%; height: 100%; }
 .if-media audio { width: 100%; }
+.if-web-node[data-emphasis="quiet"] { opacity: .72; }
+.if-web-node[data-emphasis="strong"] { font-weight: 650; }
 ${nodeRules}
 ${breakpointRules}
-@media (max-width: 640px) {
-  .if-site-nav { align-items: flex-start; flex-direction: column; padding-block: 14px; }
-}
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
@@ -387,7 +453,6 @@ ${breakpointRules}
 @media (forced-colors: active) {
   :focus-visible { outline: 3px solid Highlight !important; }
   button, input, select, textarea { border: 1px solid ButtonText; }
-  .if-site-nav { backdrop-filter: none; }
 }
 `;
 }
@@ -416,13 +481,16 @@ export class WebCompiler implements CompilerBackend {
 
   generate(ir: PlatformIR): GeneratedFileSet {
     if (!ir.web) throw new Error("The web target requires a responsive-web profile");
+    const css = stylesSource(ir);
     const files: GeneratedFile[] = [
       ...generatedPackageFiles(),
       ...ir.screens.map((_, index) => ({ path: `src/routes/${ir.screens[index]!.id}.tsx`, content: routeSource(ir, index) })),
       ...ir.screens.map((_, index) => ({ path: `src/contracts/${ir.screens[index]!.id}.ts`, content: contractSource(ir, index) })),
+      ...ir.screens.map((_, index) => ({ path: `html/${ir.screens[index]!.id}.html`, content: staticDocumentSource(ir, index) })),
       { path: "src/app.tsx", content: appSource(ir) },
-      { path: "src/styles.css", content: stylesSource(ir) },
-      { path: "intentform.web.json", content: `${JSON.stringify({ version: 1, strategy: ir.web.strategy, frames: ir.web.frames, breakpoints: ir.web.breakpoints, routes: ir.screens.map((screen) => ({ id: screen.id, route: screen.route })), ownedPaths: ["src/routes", "src/contracts", "src/app.tsx", "src/styles.css"] }, null, 2)}\n` },
+      { path: "src/styles.css", content: css },
+      { path: "html/styles.css", content: css },
+      { path: "intentform.web.json", content: `${JSON.stringify({ version: 1, strategy: ir.web.strategy, frames: ir.web.frames, breakpoints: ir.web.breakpoints, routes: ir.screens.map((screen) => ({ id: screen.id, route: screen.route })), ownedPaths: ["src/routes", "src/contracts", "src/app.tsx", "src/styles.css", "html"] }, null, 2)}\n` },
     ];
     return { target: this.id, files, fingerprint: fingerprintFiles(files), diagnostics: ir.diagnostics };
   }
@@ -441,8 +509,8 @@ export class WebCompiler implements CompilerBackend {
     }
     const app = output.files.find((file) => file.path === "src/app.tsx")?.content ?? "";
     const styles = output.files.find((file) => file.path === "src/styles.css")?.content ?? "";
-    if (!app.includes("Skip to content") || !app.includes('aria-label="Primary"')) {
-      diagnostics.push({ severity: "error", path: "src/app.tsx", message: "Generated web shell requires skip navigation and a labelled primary landmark" });
+    if (!app.includes("Skip to content")) {
+      diagnostics.push({ severity: "error", path: "src/app.tsx", message: "Generated web shell requires skip navigation" });
     }
     if (!styles.includes("@media")) {
       diagnostics.push({ severity: "error", path: "src/styles.css", message: "Generated web CSS requires responsive media rules" });

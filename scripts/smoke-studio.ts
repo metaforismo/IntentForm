@@ -355,8 +355,9 @@ try {
 
   if (!remoteOrigin) await runSmokeScenario(browser, {
     name: "local bezel pack acknowledgement and neutral fallback",
-    allowRequestFailure: (request) => request.url().includes("/api/project/agent-activity?stream=1")
-      && request.failure()?.errorText === "net::ERR_ABORTED",
+    allowRequestFailure: (request) => request.failure()?.errorText === "net::ERR_ABORTED"
+      && (request.url().includes("/api/project/agent-activity?stream=1")
+        || request.url().includes("/api/project/previews")),
     run: async (page) => {
       await gotoStudio(page, origin, "/");
       const openLocal = page.locator("header").getByRole("button", { name: "Open project" });
@@ -538,6 +539,9 @@ try {
 
   await runSmokeScenario(browser, {
     name: "responsive web project compiler",
+    allowConsoleError: (message) => message.text().includes("Blocked script execution in 'about:srcdoc'")
+      && message.text().includes("frame is sandboxed")
+      && message.text().includes("allow-scripts"),
     run: async (page) => {
       await gotoStudio(page, origin, "/");
       await page.getByRole("button", { name: "New file" }).click();
@@ -569,10 +573,40 @@ try {
         throw new Error("Responsive-web projects did not open their dedicated output target");
       }
       await page.getByTestId("responsive-web-preview").waitFor();
-      await page.getByRole("treeitem", { name: "styles.css" }).click();
+      const compiledFrame = page.getByTestId("responsive-web-preview").locator("iframe").contentFrame();
+      await compiledFrame.locator("main[data-screen-id='home']").waitFor();
+      await page.getByRole("treeitem", { name: "src/styles.css", exact: true }).click();
       const css = await page.getByRole("region", { name: "Generated source" }).textContent();
       if (!css?.includes("grid-template-columns: repeat(auto-fit, minmax(") || !css.includes("@media (min-width: 1200px)")) {
         throw new Error("Responsive-web output omitted intrinsic grid or declared breakpoint CSS");
+      }
+      if (css.includes("if-site-nav") || css.includes("if-page-header") || css.includes("font-size: clamp(2.5rem")) {
+        throw new Error("Responsive-web output still imposed the removed universal navigation or hero template");
+      }
+      await page.getByRole("treeitem", { name: "html/home.html", exact: true }).click();
+      const htmlExport = await page.getByRole("region", { name: "Generated source" }).textContent();
+      if (!htmlExport?.includes('data-screen-id="home"') || !htmlExport.includes("Skip to content")) {
+        throw new Error("Responsive-web output omitted its runnable semantic HTML export");
+      }
+
+      await page.getByRole("button", { name: "Import HTML/CSS" }).click();
+      const importDialog = page.getByRole("dialog", { name: "Import HTML/CSS" });
+      await importDialog.getByLabel(/^HTML/).fill('<main class="imported"><h1>Browser oracle</h1><button onclick="alert(1)">Continue</button><script>window.parent.postMessage("unsafe", "*")</script><img src="https://example.com/tracker.png" alt="Cover"></main>');
+      await importDialog.getByLabel(/^CSS/).fill('.imported { display: grid; grid-template-columns: 1fr 2fr; gap: 16px; padding: 20px; background: rgb(250, 250, 250); } h1 { font-size: 32px; line-height: 40px; } button { min-height: 44px; color: white; background: rgb(79, 143, 247); border: 0; border-radius: 7px; }');
+      await importDialog.getByRole("button", { name: "Analyze" }).click();
+      await importDialog.getByText("Review ready", { exact: true }).waitFor();
+      await importDialog.getByText(/executable, embedded, or URL-bearing items were removed/i).waitFor();
+      const isolatedFrame = importDialog.getByTitle("Isolated HTML and CSS import preview").contentFrame();
+      if (await isolatedFrame.locator("script").count() !== 0 || await isolatedFrame.locator("img[src]").count() !== 0) {
+        throw new Error("HTML/CSS import sandbox retained executable content or a network-bearing image source");
+      }
+      await importDialog.getByRole("button", { name: "Apply reviewed import" }).click();
+      await importDialog.waitFor({ state: "detached" });
+      await page.getByTestId("responsive-web-preview").locator("iframe").contentFrame().getByText("Browser oracle", { exact: true }).waitFor();
+      await page.getByRole("treeitem", { name: "src/styles.css", exact: true }).click();
+      const importedCss = await page.getByRole("region", { name: "Generated source" }).textContent();
+      if (!importedCss?.includes("grid-template-columns: 1fr 2fr") || !importedCss.includes("font-size: 32px")) {
+        throw new Error(`Browser-computed grid or typography did not survive the reviewed graph projection: ${importedCss?.slice(0, 4_000) ?? "no source"}`);
       }
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       if (overflow > 1) throw new Error(`Responsive-web Studio has ${overflow}px horizontal overflow`);

@@ -8,9 +8,11 @@ import {
   Copy,
   MagnifyingGlass,
   Play,
+  UploadSimple,
   Warning,
 } from "@phosphor-icons/react";
-import { resolveTokenMode, type SemanticInterfaceGraph } from "@intentform/semantic-schema";
+import type { DomImportProjection } from "@intentform/compiler-web/dom-import";
+import type { SemanticInterfaceGraph } from "@intentform/semantic-schema";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { OutputTarget } from "../studio";
 import type { StudioGeneratedFileSet } from "../target-compilation";
@@ -23,6 +25,7 @@ import {
 } from "../runtime-preview-protocol";
 import type { LocalPreviewsController } from "../use-local-previews";
 import { HistoryPanel } from "../history-panel";
+import { WebImportDialog } from "../web-import-dialog";
 import { PhonePreview } from "./phone-preview";
 import { localPreviewTarget, matchingCodeLineNumbers, usableLocalPreview } from "./workspace-model";
 
@@ -44,6 +47,7 @@ interface OutputsStageProps {
   localPreviews: LocalPreviewsController;
   scenarioLabel: string;
   onLocalProjectChanged: () => void;
+  onApplyWebImport: (projection: DomImportProjection) => void;
 }
 
 export function OutputsStage({
@@ -62,6 +66,7 @@ export function OutputsStage({
   localPreviews,
   scenarioLabel,
   onLocalProjectChanged,
+  onApplyWebImport,
 }: OutputsStageProps) {
   const previewFrame = useRef<HTMLIFrameElement>(null);
   const fileTree = useRef<HTMLDivElement>(null);
@@ -72,14 +77,21 @@ export function OutputsStage({
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [evidenceTab, setEvidenceTab] = useState<EvidenceTab>("build");
   const [projectDrawerOpen, setProjectDrawerOpen] = useState(false);
+  const [webImportOpen, setWebImportOpen] = useState(false);
   const webScreen = graph.screens.find((screen) => screen.id === selectedScreen) ?? graph.screens[0];
-  const webTokens = resolveTokenMode(graph.tokens);
   const previewTarget = localPreviewTarget(outputTarget);
   const previewEvidence = usableLocalPreview(localPreviews.byTarget[previewTarget]);
   const outputFreshness = previewEvidence?.freshness ?? "not-run";
   const files = output?.files ?? [];
   const selectedLines = selectedCode?.content.split("\n") ?? [];
   const matchingLines = useMemo(() => matchingCodeLineNumbers(selectedLines, codeQuery), [codeQuery, selectedLines]);
+  const webPreviewSource = useMemo(() => {
+    if (outputTarget !== "web" || !output || !webScreen) return null;
+    const html = output.files.find((file) => file.path === `html/${webScreen.id}.html`)?.content;
+    const css = output.files.find((file) => file.path === "html/styles.css")?.content;
+    if (!html || !css) return null;
+    return html.replace('<link rel="stylesheet" href="./styles.css">', `<style>${css.replaceAll("</style", "<\\/style")}</style>`);
+  }, [output, outputTarget, webScreen]);
 
   const sendPreview = useCallback(() => {
     if (!reactOutput) return;
@@ -144,10 +156,10 @@ export function OutputsStage({
       </div>
     );
     if ((outputTarget === "swiftui" || outputTarget === "expo")) return <div className="h-full overflow-auto bg-[var(--canvas)] p-4"><PhonePreview graph={graph} selectedScreen={selectedScreen} /></div>;
-    if (outputTarget === "web" && graph.web && webScreen) return (
+    if (outputTarget === "web" && graph.web && webScreen && webPreviewSource) return (
       <div className="flex h-full justify-center overflow-auto bg-[var(--canvas)] p-3">
-        <div data-testid="responsive-web-preview" className="h-full overflow-auto border border-[var(--line)] bg-white text-zinc-900" style={{ width: `${previewWidth}%`, background: webTokens.colors["color.canvas"] ?? "#f3f5f1" }}>
-          <div className="p-[clamp(24px,5vw,64px)]"><h2 className="text-3xl font-semibold">{webScreen.title}</h2><p className="mt-3 text-sm text-zinc-600">{webScreen.purpose}</p><div className="mt-8 grid gap-3">{webScreen.nodes.map((node) => <div key={node.id} className="border border-zinc-200 p-4"><strong className="text-sm">{node.intent.label ?? node.intent.purpose}</strong></div>)}</div></div>
+        <div data-testid="responsive-web-preview" className="h-full overflow-hidden border border-[var(--line)] bg-white" style={{ width: `${previewWidth}%` }}>
+          <iframe title={`Generated Web preview: ${webScreen.title}`} sandbox="" srcDoc={webPreviewSource} className="h-full w-full border-0 bg-white" />
         </div>
       </div>
     );
@@ -176,6 +188,7 @@ export function OutputsStage({
           <button type="button" disabled={!localPreviews.enabled || localPreviews.pendingTarget === previewTarget} onClick={() => void localPreviews.mutate("start", previewTarget)} className="inline-flex h-7 items-center gap-1 rounded bg-[var(--accent-deep)] px-2.5 font-semibold text-white disabled:opacity-40"><Play size={11} /> Build</button>
           <button type="button" disabled={!selectedCode} onClick={copyGeneratedFile} className="inline-flex h-7 items-center gap-1 rounded border border-[var(--line)] px-2 font-semibold disabled:opacity-40">{copied ? <CheckCircle size={11} /> : <Copy size={11} />}{copied ? "Copied" : "Copy file"}</button>
           <button type="button" disabled={!selectedCode} onClick={openGeneratedFile} className="inline-flex h-7 items-center gap-1 rounded border border-[var(--line)] px-2 font-semibold disabled:opacity-40"><ArrowSquareOut size={11} /> Open output</button>
+          {outputTarget === "web" ? <button type="button" onClick={() => setWebImportOpen(true)} className="inline-flex h-7 items-center gap-1 rounded border border-[var(--line)] px-2 font-semibold"><UploadSimple size={11} /> Import HTML/CSS</button> : null}
           <button type="button" aria-expanded={projectDrawerOpen} onClick={() => setProjectDrawerOpen((open) => !open)} className="h-7 rounded border border-[var(--line)] px-2 font-semibold">History</button>
         </div>
       </header>
@@ -211,6 +224,7 @@ export function OutputsStage({
         {evidenceOpen ? <div className="grid min-h-[180px] grid-cols-[140px_minmax(0,1fr)] border-t border-[var(--line)]"><div role="tablist" aria-label="Evidence category" className="border-r border-[var(--line)] p-1">{(["build", "accessibility", "layout", "screenshot", "logs"] as const).map((tab) => <button key={tab} type="button" role="tab" aria-selected={evidenceTab === tab} onClick={() => setEvidenceTab(tab)} className={`block min-h-8 w-full rounded px-2 text-left text-[10px] capitalize ${evidenceTab === tab ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>{tab}</button>)}</div><div role="tabpanel" className="p-4 text-[10px] leading-relaxed text-[var(--muted)]">{evidenceContent()}{output?.diagnostics.length ? <div className="mt-3 border-t border-[var(--line)] pt-3">{output.diagnostics.map((diagnostic) => <p key={`${diagnostic.path}:${diagnostic.message}`}><strong>{diagnostic.path}</strong> · {diagnostic.message}</p>)}</div> : null}</div></div> : null}
       </section>
       {projectDrawerOpen ? <><button type="button" aria-label="Close project history" onClick={() => setProjectDrawerOpen(false)} className="absolute inset-0 z-[4] bg-[var(--backdrop)]/40" /><aside className="absolute inset-y-0 right-0 z-[5] w-[min(390px,92vw)] overflow-auto border-l border-[var(--line)] bg-[var(--panel)] p-3 shadow-[-20px_0_50px_-32px_var(--shadow-strong)]" aria-label="Project history drawer"><div className="mb-2 flex items-center justify-between"><strong className="text-[11px] text-[var(--ink)]">Project history</strong><button type="button" aria-label="Close history drawer" onClick={() => setProjectDrawerOpen(false)} className="rounded px-2 py-1 text-[10px] text-[var(--muted)] hover:bg-[var(--hover)]">Close</button></div><HistoryPanel enabled={localPreviews.enabled} onProjectChanged={onLocalProjectChanged} /></aside></> : null}
+      <WebImportDialog open={webImportOpen} graph={graph} screenId={selectedScreen} onClose={() => setWebImportOpen(false)} onApply={(projection) => { onApplyWebImport(projection); setWebImportOpen(false); }} />
     </div>
   );
 }
