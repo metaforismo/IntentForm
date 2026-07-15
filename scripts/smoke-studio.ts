@@ -1153,6 +1153,13 @@ try {
       await inspector.getByText("Component instance", { exact: true }).waitFor();
       await inspector.getByText("intent.primary-action · v1.1.0", { exact: true }).waitFor();
 
+      const gapPicker = inspector.getByRole("button", { name: /Gap token:/ });
+      await gapPicker.click();
+      const tokenSearch = inspector.getByLabel("Search Gap token");
+      await tokenSearch.fill("space.24");
+      await tokenSearch.press("Enter");
+      await gapPicker.getByText("space.24", { exact: true }).waitFor();
+
       await inspector.getByLabel("Component variant").selectOption("quiet");
       await inspector.getByLabel("Component state").selectOption("working");
       await instance.getByText("Working…", { exact: true }).waitFor();
