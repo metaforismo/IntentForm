@@ -41,6 +41,7 @@ import {
   type ProjectSource,
   type ProjectType,
 } from "../lib/browser-projects";
+import { hasUnsavedLocalChanges, serializedGraphFingerprint } from "../lib/project-save-state";
 import { ManualEditor, type WorkflowStage } from "./manual-editor";
 import { reconcileGraphSelection } from "./editor/direct-manipulation";
 import { editorProfiles, type DeviceId } from "./editor/support";
@@ -108,15 +109,6 @@ interface RequestFailure {
 
 class LocalProjectConflictError extends Error {}
 
-function localGraphFingerprint(input: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < input.length; index += 1) {
-    hash ^= input.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
 function deferredCompilation(target: OutputTarget) {
   return {
     target,
@@ -148,6 +140,7 @@ export function Studio() {
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [noticeOpen, setNoticeOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
   const [theme, setThemeState] = useState<"light" | "dark">("light");
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
@@ -168,6 +161,10 @@ export function Studio() {
   const projectMenuContent = useRef<HTMLDivElement>(null);
   const projectMenuWasOpen = useRef(false);
   const noticeTrigger = useRef<HTMLButtonElement>(null);
+  const resetCancelButton = useRef<HTMLButtonElement>(null);
+  const resetDialog = useRef<HTMLElement>(null);
+  const resetReturnFocus = useRef<HTMLElement | null>(null);
+  const resetShouldRestoreFocus = useRef(false);
 
   useEffect(() => {
     if (document.documentElement.dataset.theme === "dark") setThemeState("dark");
@@ -296,6 +293,39 @@ export function Studio() {
   }, [menuOpen]);
 
   useEffect(() => {
+    if (!resetConfirmOpen) return;
+    requestAnimationFrame(() => resetCancelButton.current?.focus());
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        resetShouldRestoreFocus.current = true;
+        setResetConfirmOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const controls = [...(resetDialog.current?.querySelectorAll<HTMLElement>("button:not([disabled])") ?? [])];
+      const first = controls[0];
+      const last = controls.at(-1);
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [resetConfirmOpen]);
+
+  useEffect(() => {
+    if (resetConfirmOpen || !resetShouldRestoreFocus.current) return;
+    resetShouldRestoreFocus.current = false;
+    resetReturnFocus.current?.focus();
+  }, [resetConfirmOpen]);
+
+  useEffect(() => {
     if (!noticeOpen) return;
     const close = () => setNoticeOpen(false);
     const onKeyDown = (event: KeyboardEvent) => {
@@ -343,7 +373,11 @@ export function Studio() {
   ])) as Record<string, { label: string; viewport: { width: number; height: number } }>, [previewProfiles]);
   const scenario = scenarios[scenarioId] ?? scenarios[previewProfiles[0]!.id]!;
   const graphSnapshot = useMemo(() => stableSerialize(graph), [graph]);
-  const currentGraphFingerprint = useMemo(() => localGraphFingerprint(graphSnapshot), [graphSnapshot]);
+  const currentGraphFingerprint = useMemo(() => serializedGraphFingerprint(graphSnapshot), [graphSnapshot]);
+  const localChangesAreUnsaved = useMemo(
+    () => hasUnsavedLocalChanges(graph, localProjectFingerprint),
+    [graph, localProjectFingerprint],
+  );
   const localPreviews = useLocalPreviews({
     enabled: localProjectFingerprint !== null,
     currentGraphFingerprint,
@@ -381,6 +415,16 @@ export function Studio() {
     ?? output?.files.find((file) => file.path.includes(`screens/${selectedScreen}`))
     ?? output?.files[Math.max(0, graph.screens.findIndex((screen) => screen.id === selectedScreen))]
     ?? output?.files[0];
+
+  useEffect(() => {
+    if (!localChangesAreUnsaved) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [localChangesAreUnsaved]);
 
   const beginRequest = (action: PendingAction) => {
     activeRequest.current?.controller.abort();
@@ -465,6 +509,22 @@ export function Studio() {
     lastCommit.current = { at: 0, notice: "" };
     setMenuOpen(false);
     setNotice("Reset the workspace to the verified sample project.");
+  };
+
+  const requestProjectReset = () => {
+    resetReturnFocus.current = projectMenuTrigger.current;
+    setMenuOpen(false);
+    setResetConfirmOpen(true);
+  };
+
+  const cancelProjectReset = () => {
+    resetShouldRestoreFocus.current = true;
+    setResetConfirmOpen(false);
+  };
+
+  const confirmProjectReset = () => {
+    setResetConfirmOpen(false);
+    resetProject();
   };
 
   const exportGraph = () => {
@@ -709,7 +769,7 @@ export function Studio() {
               >
                 <BracketsCurly size={13} className="shrink-0 text-[var(--accent)]" />
                 <span className="truncate">{label}</span>
-                {tab === "design" && history.length > 0 ? <span className="size-1.5 shrink-0 rounded-full bg-[var(--warning,#e4ad5a)]" aria-label="Unsaved changes" /> : null}
+                {tab === "design" && localChangesAreUnsaved ? <span className="size-1.5 shrink-0 rounded-full bg-[var(--warning,#e4ad5a)]" aria-label="Unsaved local changes" /> : null}
                 {tab === "design" && activity.length > 0 ? <span className="size-1.5 shrink-0 rounded-full bg-[var(--success,#55c58b)]" aria-label="Agent activity" /> : null}
                 <span data-close-tab aria-hidden="true" className="grid size-5 shrink-0 place-items-center rounded opacity-0 hover:bg-[var(--control-hover,var(--hover))] group-hover:opacity-100 group-focus-visible:opacity-100"><X size={11} /></span>
               </div>
@@ -752,7 +812,7 @@ export function Studio() {
                     <button type="button" role="menuitem" onClick={exportGraph} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
                       <DownloadSimple size={13} /> Export graph as JSON
                     </button>
-                    <button type="button" role="menuitem" onClick={resetProject} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
+                    <button type="button" role="menuitem" onClick={requestProjectReset} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
                       <ArrowsCounterClockwise size={13} /> Reset to verified sample
                     </button>
                   </div>
@@ -887,7 +947,7 @@ export function Studio() {
                   onUndo={undo}
                   onRedo={redo}
                   onOpenStage={setStage}
-                  onResetProject={resetProject}
+                  onResetProject={requestProjectReset}
                   onExportGraph={exportGraph}
                 />
               ) : null}
@@ -968,6 +1028,20 @@ export function Studio() {
           </AnimatePresence>
         </section>
       </div>
+      {resetConfirmOpen ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/35 p-4 backdrop-blur-[2px]" onPointerDown={(event) => { if (event.target === event.currentTarget) cancelProjectReset(); }}>
+          <section ref={resetDialog} role="alertdialog" aria-modal="true" aria-labelledby="reset-project-title" aria-describedby="reset-project-description" className="menu-pop w-full max-w-md p-5 shadow-2xl">
+            <span className="grid size-10 place-items-center rounded-xl bg-red-100 text-red-700"><ArrowsCounterClockwise size={18} weight="bold" /></span>
+            <h2 id="reset-project-title" className="mt-4 text-lg font-semibold tracking-[-.03em]">Reset this workspace?</h2>
+            <p id="reset-project-description" className="mt-2 text-[12px] leading-relaxed text-[var(--muted)]">This replaces the current semantic graph with the verified sample and removes its browser recovery. Export first if you need to keep this version.</p>
+            {localChangesAreUnsaved ? <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-950">This local project also has changes that have not been saved to disk.</p> : null}
+            <div className="mt-5 flex justify-end gap-2">
+              <button ref={resetCancelButton} type="button" onClick={cancelProjectReset} className="min-h-10 rounded-xl border border-[var(--line)] px-4 text-[12px] font-semibold hover:bg-[var(--hover)]">Cancel</button>
+              <button type="button" onClick={confirmProjectReset} className="min-h-10 rounded-xl bg-red-700 px-4 text-[12px] font-semibold text-white hover:bg-red-800">Reset workspace</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
