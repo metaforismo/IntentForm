@@ -52,6 +52,7 @@ function selectSimulator() {
 async function waitForAccessibility(axUrl, simulator) {
   let lastTree = [];
   let dismissedVoiceOverIntro = false;
+  let emptyResponses = 0;
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
       const response = await fetch(axUrl, { signal: AbortSignal.timeout(15_000) });
@@ -60,6 +61,15 @@ async function waitForAccessibility(axUrl, simulator) {
         lastTree = tree;
         const serialized = JSON.stringify(tree);
         if (serialized.includes("intentform.payment-request.confirm")) return;
+        if (Array.isArray(tree) && tree.length === 0) {
+          emptyResponses += 1;
+          if ([5, 20, 40].includes(emptyResponses)) {
+            console.warn(`Native accessibility tree remained empty for ${emptyResponses} responses; relaunching the preview application.`);
+            tryRun("xcrun", ["simctl", "launch", "--terminate-running-process", simulator, bundleId]);
+          }
+        } else {
+          emptyResponses = 0;
+        }
         if (!dismissedVoiceOverIntro && serialized.includes("VoiceOver")) {
           const nodes = [];
           const collect = (items) => {
@@ -135,7 +145,6 @@ try {
   if (!existsSync(appPath)) throw new Error(`Native preview app was not produced at ${appPath}`);
 
   run("xcrun", ["simctl", "install", simulator.udid, appPath]);
-  run("xcrun", ["simctl", "launch", "--terminate-running-process", simulator.udid, bundleId]);
 
   tryRun(serveSim, ["--kill", simulator.udid]);
   const helper = JSON.parse(run(serveSim, ["--detach", "-q", simulator.udid], { capture: true }));
@@ -143,6 +152,10 @@ try {
   const streamUrl = new URL(helper.streamUrl);
   const axUrl = new URL(streamUrl.pathname.replace(/stream\.mjpeg$/, "ax"), streamUrl.origin).href;
   console.log(`Native accessibility endpoint: ${axUrl}`);
+  // Starting the accessibility helper can briefly steal foreground ownership.
+  // Launch only after the helper is ready, then recover from any empty-tree
+  // simulator state inside waitForAccessibility.
+  run("xcrun", ["simctl", "launch", "--terminate-running-process", simulator.udid, bundleId]);
   await waitForAccessibility(axUrl, simulator.udid);
 
   run(process.execPath, ["--experimental-strip-types", join(root, "scripts/capture-swiftui-evidence.ts")], {

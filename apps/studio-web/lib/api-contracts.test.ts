@@ -5,6 +5,7 @@ import {
   historyMutationRequestSchema,
   isLocalProjectRequestAllowed,
   parseRequestBody,
+  transactionReviewMutationSchema,
 } from "./api-contracts";
 
 describe("local history API contracts", () => {
@@ -41,6 +42,17 @@ describe("local history API contracts", () => {
     expect(isLocalProjectRequestAllowed(local)).toBe(true);
     expect(isLocalProjectRequestAllowed(remoteHost)).toBe(false);
     expect(isLocalProjectRequestAllowed(crossOrigin)).toBe(false);
+  });
+
+  it("accepts only fingerprint-bound agent transaction decisions", () => {
+    const valid = {
+      action: "commit",
+      transactionId: "8e6941eb-d125-4c4a-b220-36f78fb9f32c",
+      expectedPreviewFingerprint: "1234abcd",
+    };
+    expect(transactionReviewMutationSchema.parse(valid)).toEqual(valid);
+    expect(transactionReviewMutationSchema.safeParse({ ...valid, expectedPreviewFingerprint: "stale" }).success).toBe(false);
+    expect(transactionReviewMutationSchema.safeParse({ ...valid, action: "approve", shell: "git commit" }).success).toBe(false);
   });
 
   it("keeps the public body limit while allowing an explicit bounded local-project envelope", async () => {

@@ -83,6 +83,7 @@ const readCanonicalGraph = () => parseGraph(JSON.parse(getGraph(projectDir)));
 export interface ToolContext {
   ownerId: string;
   signal: AbortSignal;
+  transport: "stdio" | "http";
 }
 
 export interface ToolDefinition {
@@ -842,6 +843,7 @@ export const toolDefinitions: ToolDefinition[] = [
       context.ownerId,
       String(args.expectedFingerprint ?? ""),
       String(args.rationale ?? ""),
+      context.transport,
     ),
   },
   {
@@ -1162,6 +1164,7 @@ export function createIntentFormMcpServer(
     const context: ToolContext = {
       ownerId: extra.sessionId ?? ownerId,
       signal: extra.signal,
+      transport,
     };
     transactionOwners.add(context.ownerId);
 

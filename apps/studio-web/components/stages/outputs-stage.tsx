@@ -22,7 +22,6 @@ import {
   type ActivePreviewStatus,
 } from "../runtime-preview-protocol";
 import type { LocalPreviewsController } from "../use-local-previews";
-import { AgentActivityPanel } from "../agent-activity-panel";
 import { HistoryPanel } from "../history-panel";
 import { PhonePreview } from "./phone-preview";
 import { localPreviewTarget, matchingCodeLineNumbers, usableLocalPreview } from "./workspace-model";
@@ -177,7 +176,7 @@ export function OutputsStage({
           <button type="button" disabled={!localPreviews.enabled || localPreviews.pendingTarget === previewTarget} onClick={() => void localPreviews.mutate("start", previewTarget)} className="inline-flex h-7 items-center gap-1 rounded bg-[var(--accent-deep)] px-2.5 font-semibold text-white disabled:opacity-40"><Play size={11} /> Build</button>
           <button type="button" disabled={!selectedCode} onClick={copyGeneratedFile} className="inline-flex h-7 items-center gap-1 rounded border border-[var(--line)] px-2 font-semibold disabled:opacity-40">{copied ? <CheckCircle size={11} /> : <Copy size={11} />}{copied ? "Copied" : "Copy file"}</button>
           <button type="button" disabled={!selectedCode} onClick={openGeneratedFile} className="inline-flex h-7 items-center gap-1 rounded border border-[var(--line)] px-2 font-semibold disabled:opacity-40"><ArrowSquareOut size={11} /> Open output</button>
-          <button type="button" aria-expanded={projectDrawerOpen} onClick={() => setProjectDrawerOpen((open) => !open)} className="h-7 rounded border border-[var(--line)] px-2 font-semibold">More</button>
+          <button type="button" aria-expanded={projectDrawerOpen} onClick={() => setProjectDrawerOpen((open) => !open)} className="h-7 rounded border border-[var(--line)] px-2 font-semibold">History</button>
         </div>
       </header>
 
@@ -211,7 +210,7 @@ export function OutputsStage({
         <button type="button" aria-expanded={evidenceOpen} onClick={() => setEvidenceOpen((open) => !open)} className="flex h-9 w-full items-center justify-between px-3 text-[10px] font-semibold text-[var(--muted)] hover:bg-[var(--hover)]"><span>Evidence and diagnostics · {output?.diagnostics.length ?? 0} compiler findings</span>{evidenceOpen ? <CaretDown size={12} /> : <CaretRight size={12} />}</button>
         {evidenceOpen ? <div className="grid min-h-[180px] grid-cols-[140px_minmax(0,1fr)] border-t border-[var(--line)]"><div role="tablist" aria-label="Evidence category" className="border-r border-[var(--line)] p-1">{(["build", "accessibility", "layout", "screenshot", "logs"] as const).map((tab) => <button key={tab} type="button" role="tab" aria-selected={evidenceTab === tab} onClick={() => setEvidenceTab(tab)} className={`block min-h-8 w-full rounded px-2 text-left text-[10px] capitalize ${evidenceTab === tab ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>{tab}</button>)}</div><div role="tabpanel" className="p-4 text-[10px] leading-relaxed text-[var(--muted)]">{evidenceContent()}{output?.diagnostics.length ? <div className="mt-3 border-t border-[var(--line)] pt-3">{output.diagnostics.map((diagnostic) => <p key={`${diagnostic.path}:${diagnostic.message}`}><strong>{diagnostic.path}</strong> · {diagnostic.message}</p>)}</div> : null}</div></div> : null}
       </section>
-      {projectDrawerOpen ? <><button type="button" aria-label="Close project activity" onClick={() => setProjectDrawerOpen(false)} className="absolute inset-0 z-[4] bg-[var(--backdrop)]/40" /><aside className="absolute inset-y-0 right-0 z-[5] w-[min(390px,92vw)] overflow-auto border-l border-[var(--line)] bg-[var(--panel)] p-3 shadow-[-20px_0_50px_-32px_var(--shadow-strong)]" aria-label="Project activity drawer"><div className="mb-2 flex items-center justify-between"><strong className="text-[11px] text-[var(--ink)]">Project activity</strong><button type="button" aria-label="Close activity drawer" onClick={() => setProjectDrawerOpen(false)} className="rounded px-2 py-1 text-[10px] text-[var(--muted)] hover:bg-[var(--hover)]">Close</button></div><AgentActivityPanel enabled={localPreviews.enabled} /><HistoryPanel enabled={localPreviews.enabled} onProjectChanged={onLocalProjectChanged} /></aside></> : null}
+      {projectDrawerOpen ? <><button type="button" aria-label="Close project history" onClick={() => setProjectDrawerOpen(false)} className="absolute inset-0 z-[4] bg-[var(--backdrop)]/40" /><aside className="absolute inset-y-0 right-0 z-[5] w-[min(390px,92vw)] overflow-auto border-l border-[var(--line)] bg-[var(--panel)] p-3 shadow-[-20px_0_50px_-32px_var(--shadow-strong)]" aria-label="Project history drawer"><div className="mb-2 flex items-center justify-between"><strong className="text-[11px] text-[var(--ink)]">Project history</strong><button type="button" aria-label="Close history drawer" onClick={() => setProjectDrawerOpen(false)} className="rounded px-2 py-1 text-[10px] text-[var(--muted)] hover:bg-[var(--hover)]">Close</button></div><HistoryPanel enabled={localPreviews.enabled} onProjectChanged={onLocalProjectChanged} /></aside></> : null}
     </div>
   );
 }
