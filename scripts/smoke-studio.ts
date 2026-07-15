@@ -369,6 +369,57 @@ try {
     },
   });
 
+  if (!remoteOrigin) await runSmokeScenario(browser, {
+    name: "truthful local save state and save-race protection",
+    run: async (page) => {
+      await gotoStudio(page, origin, "/");
+      await page.getByRole("button", { name: "Open local project" }).click();
+      await page.waitForURL(`${origin}/studio`);
+      await page.getByTestId("layer-payment-request.confirm").click();
+      const label = page.getByTestId("semantic-inspector").getByLabel("Label", { exact: true });
+      const unsaved = page.locator('[aria-label="Unsaved local changes"]');
+      if (await unsaved.count() !== 0) throw new Error("A freshly opened local graph was marked unsaved");
+
+      await label.fill("Save state smoke");
+      await label.press("Enter");
+      await unsaved.waitFor();
+      const dirtyUnloadWasCancelled = await page.evaluate(() => {
+        const event = new Event("beforeunload", { cancelable: true });
+        return !window.dispatchEvent(event);
+      });
+      if (!dirtyUnloadWasCancelled) throw new Error("Unsaved local changes did not install unload protection");
+
+      await page.getByRole("button", { name: "IntentForm project menu" }).click();
+      await page.getByRole("menuitem", { name: "Save to local project" }).click();
+      await unsaved.waitFor({ state: "detached" });
+
+      await label.fill("Captured save");
+      await label.press("Enter");
+      await page.route("**/api/project", async (route) => {
+        if (route.request().method() !== "PUT") { await route.continue(); return; }
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        await route.continue();
+      });
+      await page.getByRole("button", { name: "IntentForm project menu" }).click();
+      await page.getByRole("menuitem", { name: "Save to local project" }).click();
+      await label.fill("Newer unsaved edit");
+      await label.press("Enter");
+      await page.getByRole("button", { name: "Show workspace status" }).click();
+      await page.getByRole("status").getByText(/Saved the captured graph revision atomically; newer Studio edits remain unsaved/).waitFor();
+      await unsaved.waitFor();
+      await page.unroute("**/api/project");
+
+      await page.getByRole("button", { name: "IntentForm project menu" }).click();
+      await page.getByRole("menuitem", { name: "Save to local project" }).click();
+      await unsaved.waitFor({ state: "detached" });
+      const cleanUnloadWasCancelled = await page.evaluate(() => {
+        const event = new Event("beforeunload", { cancelable: true });
+        return !window.dispatchEvent(event);
+      });
+      if (cleanUnloadWasCancelled) throw new Error("Unload protection remained after the local graph was saved");
+    },
+  });
+
   await runSmokeScenario(browser, {
     name: "Expo Adaptive project compiler",
     run: async (page) => {
@@ -1014,6 +1065,25 @@ try {
 
       await transactionPage.getByRole("button", { name: "IntentForm project menu" }).click();
       await transactionPage.getByRole("menuitem", { name: "Reset to verified sample" }).click();
+      const resetDialog = transactionPage.getByRole("alertdialog", { name: "Reset this workspace?" });
+      await resetDialog.waitFor();
+      await transactionPage.waitForTimeout(200);
+      await transactionPage.screenshot({ path: join(root, "output/playwright/reset-project-confirmation.png"), fullPage: true });
+      const cancelReset = resetDialog.getByRole("button", { name: "Cancel" });
+      const confirmReset = resetDialog.getByRole("button", { name: "Reset workspace" });
+      if (!await cancelReset.evaluate((element) => element === document.activeElement)) throw new Error("Reset dialog did not focus its safe action");
+      await transactionPage.keyboard.press("Shift+Tab");
+      if (!await confirmReset.evaluate((element) => element === document.activeElement)) throw new Error("Reset dialog did not wrap backward focus");
+      await transactionPage.keyboard.press("Tab");
+      if (!await cancelReset.evaluate((element) => element === document.activeElement)) throw new Error("Reset dialog did not wrap forward focus");
+      await cancelReset.click();
+      await resetDialog.waitFor({ state: "detached" });
+      if (!await transactionPage.getByRole("button", { name: "IntentForm project menu" }).evaluate((element) => element === document.activeElement)) throw new Error("Reset cancellation did not restore focus to the project menu");
+      await transactionPage.getByRole("button", { name: "Request payment 4", exact: true }).waitFor();
+      await transactionPage.getByRole("button", { name: "IntentForm project menu" }).click();
+      await transactionPage.getByRole("menuitem", { name: "Reset to verified sample" }).click();
+      await transactionPage.getByRole("alertdialog", { name: "Reset this workspace?" }).getByRole("button", { name: "Reset workspace" }).click();
+      await transactionPage.getByRole("button", { name: "Request payment 4", exact: true }).waitFor();
       await transactionPage.getByRole("button", { name: "Verification" }).click();
       await transactionPage.getByRole("button", { name: "Plan repair" }).click();
       await transactionPage.getByRole("heading", { name: "The repair changed the graph. Available output was regenerated; verification is still pending." }).waitFor();
