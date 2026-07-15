@@ -36,6 +36,7 @@ import {
 } from "@intentform/semantic-schema";
 import { buildNodeIndex } from "@intentform/layout-engine";
 import { importDtcg, serializeDtcg, TOKEN_ASSET_LIMITS } from "@intentform/token-assets";
+import { extractSvgPaints, replaceSvgPaint, type SvgPaint } from "@intentform/token-assets/svg-paints";
 import { Reorder } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IconButton } from "../ui/controls";
@@ -112,6 +113,67 @@ function AssetThumbnail({ asset }: { asset: SemanticInterfaceGraph["assets"][num
       />
       {state === "error" ? <button type="button" onClick={() => { setState("loading"); setAttempt((value) => value + 1); }} className="relative z-[1] rounded-md bg-[var(--danger-soft)] px-2 py-1 text-[9px] font-semibold text-[var(--danger)]">Missing · Retry</button> : null}
     </div>
+  );
+}
+
+function SvgPaintEditor({
+  asset,
+  disabled,
+  onRecolor,
+}: {
+  asset: SemanticInterfaceGraph["assets"][number];
+  disabled: boolean;
+  onRecolor(paint: SvgPaint, color: string): void;
+}) {
+  const [state, setState] = useState<{ status: "loading" | "ready" | "error"; paints: SvgPaint[]; message?: string }>({ status: "loading", paints: [] });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setState({ status: "loading", paints: [] });
+    void fetch(`/api/project/assets/${asset.digest}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("SVG source is unavailable.");
+        const paints = extractSvgPaints(await response.text());
+        setState({
+          status: "ready",
+          paints,
+          ...(paints.length === 0 ? { message: "No editable literal fills or strokes. Paint servers, currentColor, and keywords stay unchanged." } : {}),
+        });
+      })
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setState({ status: "error", paints: [], message: error instanceof Error ? error.message : "SVG paints could not be inspected." });
+      });
+    return () => controller.abort();
+  }, [asset.digest]);
+
+  return (
+    <section aria-label={`Paints in ${asset.name}`} data-testid="svg-paint-editor" className="mt-2 rounded-md border border-[var(--line)] bg-[var(--canvas)] p-2">
+      <div className="flex items-center justify-between gap-2">
+        <strong className="text-[9px] font-semibold text-[var(--muted)]">Editable SVG paints</strong>
+        {state.status === "ready" && state.paints.length > 0 ? <span className="font-mono text-[8px] tabular-nums text-[var(--faint)]">{state.paints.length} color{state.paints.length === 1 ? "" : "s"}</span> : null}
+      </div>
+      {state.status === "loading" ? <p role="status" className="mt-1.5 text-[9px] text-[var(--faint)]">Inspecting fills and strokes…</p> : null}
+      {state.message ? <p role={state.status === "error" ? "alert" : "status"} className={`mt-1.5 text-[9px] leading-relaxed ${state.status === "error" ? "text-[var(--danger)]" : "text-[var(--faint)]"}`}>{state.message}</p> : null}
+      {state.paints.length > 0 ? (
+        <div className="mt-1.5 grid gap-1">
+          {state.paints.map((paint) => (
+            <label key={paint.normalized} className="flex min-h-8 items-center gap-2 rounded-md border border-[var(--line)] bg-[var(--field)] px-2 text-[9px] text-[var(--muted)]">
+              <input
+                type="color"
+                aria-label={`Recolor ${paint.normalized} in ${asset.name}`}
+                value={paint.normalized.slice(0, 7)}
+                disabled={disabled}
+                onChange={(event) => onRecolor(paint, event.target.value)}
+                className="size-5 shrink-0 cursor-pointer rounded border-0 bg-transparent p-0 disabled:cursor-not-allowed"
+              />
+              <span className="min-w-0 flex-1"><span className="block font-mono text-[9px] font-semibold text-[var(--ink)]">{paint.normalized}</span><span className="block truncate text-[8px] text-[var(--faint)]">{paint.properties.join(" + ")} · {paint.usages} use{paint.usages === 1 ? "" : "s"}</span></span>
+              {paint.normalized.length === 9 ? <span className="rounded bg-[var(--chip)] px-1 py-0.5 font-mono text-[7px] uppercase text-[var(--faint)]">alpha</span> : null}
+            </label>
+          ))}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -412,20 +474,16 @@ export function LayersPanel({
     setAssetTransferStatus({ kind: "success", message: `Exported ${asset.name} at intrinsic size.` });
   };
 
-  const recolorSvg = async (asset: SemanticInterfaceGraph["assets"][number], color: string) => {
+  const recolorSvg = async (asset: SemanticInterfaceGraph["assets"][number], paint: SvgPaint, color: string) => {
     try {
       setAssetTransferStatus({ kind: "working", message: `Recoloring ${asset.name}…` });
       const response = await fetch(`/api/project/assets/${asset.digest}`, { cache: "no-store" });
       if (!response.ok) throw new Error("The SVG source is missing or invalid.");
       const source = await response.text();
-      let replacements = 0;
-      const recolored = source.replace(/\b(fill|stroke)=(['"])(#[0-9a-fA-F]{3,8})\2/g, (_match, property: string, quote: string) => {
-        replacements += 1;
-        return `${property}=${quote}${color}${quote}`;
-      });
-      if (replacements === 0) throw new Error("This SVG has no literal fill or stroke colors to recolor.");
+      const recolored = replaceSvgPaint(source, paint.normalized, color);
+      if (recolored.replacements === 0) throw new Error(`The selected paint ${paint.normalized} is no longer present.`);
       replacingAssetId.current = asset.id;
-      await importAssetFile(new File([recolored], `${asset.id}.svg`, { type: "image/svg+xml" }));
+      await importAssetFile(new File([recolored.source], `${asset.id}.svg`, { type: "image/svg+xml" }));
     } catch (error) {
       replacingAssetId.current = null;
       setAssetTransferStatus({ kind: "error", message: error instanceof Error ? error.message : "SVG recolor failed." });
@@ -794,7 +852,7 @@ export function LayersPanel({
                   <button type="button" onClick={() => void navigator.clipboard.writeText(asset.id).then(() => setAssetTransferStatus({ kind: "success", message: `Copied ${asset.id}.` })).catch(() => setAssetTransferStatus({ kind: "error", message: "Clipboard access was denied." }))} className="min-h-7 rounded-md border border-[var(--line)] px-1 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)]">Copy ref</button>
                   <button type="button" disabled={asset.kind === "font" || asset.exportPolicy === "blocked"} onClick={() => exportAsset(asset)} className="min-h-7 rounded-md border border-[var(--line)] px-1 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)] disabled:opacity-35">Export</button>
                 </div>
-                {["svg", "icon"].includes(asset.kind) ? <label className="mt-2 flex min-h-8 items-center justify-between rounded-md border border-[var(--line)] px-2 text-[9px] font-semibold text-[var(--muted)]">Recolor fills and strokes<input type="color" aria-label={`Recolor ${asset.name}`} defaultValue="#4f8ff7" disabled={!localProjectFingerprint || !localProjectSaved || assetTransferStatus?.kind === "working"} onChange={(event) => void recolorSvg(asset, event.target.value)} className="size-5 cursor-pointer rounded border-0 bg-transparent p-0" /></label> : null}
+                {["svg", "icon"].includes(asset.kind) ? <SvgPaintEditor asset={asset} disabled={!localProjectFingerprint || !localProjectSaved || assetTransferStatus?.kind === "working"} onRecolor={(paint, color) => void recolorSvg(asset, paint, color)} /> : null}
                 <AssetPolicyEditor asset={asset} onChange={(mutate, notice) => onUpdateAssets((assets) => { const draft = assets.find((candidate) => candidate.id === asset.id); if (draft) mutate(draft); }, notice)} />
               </article>
             ))}
