@@ -129,6 +129,7 @@ export function moveNodeTransaction(
     if (targetParent && targetParent.screen.id !== source.screen.id) {
       throw new Error("Nodes cannot move across screens without an explicit cross-screen operation");
     }
+    if (targetParent) assertMutable(draft, targetParent, "receive moved children");
     if (targetParent && !isContainerNode(targetParent.node)) {
       throw new Error(`Target parent is not a container: ${targetParentId}`);
     }

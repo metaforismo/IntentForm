@@ -708,9 +708,6 @@ export function CanvasStage({
           onMoveFreeform={onMoveFreeform}
           onResize={onResizeNode}
           onAnchor={onAnchor}
-          onGroup={onGroupSelection}
-          onDuplicate={onDuplicateSelection}
-          onDelete={onDeleteSelection}
           onOpenContextMenu={(clientPosition) => {
             const nodeId = selectedNodeId ?? selectedNodeIds.at(-1);
             const escaped = nodeId && typeof CSS !== "undefined" && CSS.escape ? CSS.escape(nodeId) : nodeId;

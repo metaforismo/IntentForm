@@ -4,12 +4,16 @@ import {
   ArrowDown,
   ArrowUp,
   Copy,
+  CaretDown,
+  CaretRight,
   DownloadSimple,
   DotsSixVertical,
   Eye,
   EyeSlash,
   FrameCorners,
   MagnifyingGlass,
+  Lock,
+  LockOpen,
   Plus,
   Selection,
   Stack,
@@ -20,6 +24,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import {
+  findGraphNodeLocation,
   flattenSemanticNodes,
   isContainerNode,
   parseGraph,
@@ -32,7 +37,7 @@ import { importDtcg, serializeDtcg, TOKEN_ASSET_LIMITS } from "@intentform/token
 import { Reorder } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IconButton } from "../ui/controls";
-import { isNodeVisible, nodeNames, type RailTab, type VisualState } from "./support";
+import { isNodeVisible, nodeNames, type NodeCommand, type RailTab, type VisualState } from "./support";
 import type { SelectionIntent } from "./direct-manipulation";
 
 interface LayersPanelProps {
@@ -53,7 +58,9 @@ interface LayersPanelProps {
   onReorderScreens(orderedIds: string[]): void;
   onDuplicateScreen(screenId: string): void;
   onDeleteScreen(screenId: string): void;
-  onReorderNodes(screenId: string, orderedIds: string[]): void;
+  onReorderNodes(screenId: string, parentId: string | null, orderedIds: string[]): void;
+  onMoveNode(nodeId: string, targetParentId: string | null, targetIndex: number): void;
+  onNodeCommand(command: NodeCommand, nodeId: string): void;
   onInstantiateComponent(definitionId: string): void;
   onUpdateTokens(mutate: (tokens: SemanticInterfaceGraph["tokens"]) => void, notice: string): void;
   onClose(): void;
@@ -125,6 +132,8 @@ export function LayersPanel({
   onDuplicateScreen,
   onDeleteScreen,
   onReorderNodes,
+  onMoveNode,
+  onNodeCommand,
   onInstantiateComponent,
   onUpdateTokens,
   onClose,
@@ -136,6 +145,9 @@ export function LayersPanel({
   const layersListRef = useRef<HTMLDivElement>(null);
   const tokenFileRef = useRef<HTMLInputElement>(null);
   const [tokenTransferStatus, setTokenTransferStatus] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set());
+  const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ nodeId: string; mode: "before" | "inside" } | null>(null);
 
   useEffect(() => {
     setOrder(screen.nodes.map((node) => node.id));
@@ -157,7 +169,7 @@ export function LayersPanel({
   const commitOrder = () => {
     const current = screen.nodes.map((node) => node.id);
     if (order.length === current.length && order.every((id, index) => id === current[index])) return;
-    onReorderNodes(screen.id, order);
+    onReorderNodes(screen.id, null, order);
   };
 
   const commitPageOrder = () => {
@@ -212,36 +224,118 @@ export function LayersPanel({
     onReorderScreens(next);
   };
 
-  const layerRow = (node: SemanticNode, draggable: boolean, depth = 0) => {
-    const nodeVisible = isNodeVisible(node, activeVisualState);
+  const toggleCollapsed = (nodeId: string) => setCollapsedIds((current) => {
+    const next = new Set(current);
+    if (next.has(nodeId)) next.delete(nodeId);
+    else next.add(nodeId);
+    return next;
+  });
+
+  const focusAdjacentTreeItem = (current: HTMLElement, direction: -1 | 1) => {
+    const items = [...(layersListRef.current?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? [])];
+    const index = items.indexOf(current);
+    items[index + direction]?.focus();
+  };
+
+  const finishNodeDrop = (event: React.DragEvent<HTMLElement>, target: SemanticNode) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const sourceId = draggedNodeId ?? event.dataTransfer.getData("text/intentform-node");
+    const mode = dropTarget?.nodeId === target.id ? dropTarget.mode : "before";
+    setDraggedNodeId(null);
+    setDropTarget(null);
+    if (!sourceId || sourceId === target.id || target.editor?.locked || target.editor?.hidden) return;
+    const targetLocation = findGraphNodeLocation(graph, target.id);
+    if (!targetLocation) return;
+    if (mode === "inside" && isContainerNode(target)) {
+      onMoveNode(sourceId, target.id, target.children.length);
+      setCollapsedIds((current) => {
+        const next = new Set(current);
+        next.delete(target.id);
+        return next;
+      });
+      return;
+    }
+    onMoveNode(sourceId, targetLocation.parent?.id ?? null, targetLocation.index);
+  };
+
+  const layerRow = (node: SemanticNode, allowDrag: boolean, depth = 0) => {
+    const stateVisible = isNodeVisible(node, activeVisualState);
+    const nodeVisible = !node.editor?.hidden && stateVisible;
+    const collapsed = collapsedIds.has(node.id);
+    const canContain = isContainerNode(node);
+    const draggable = allowDrag && !node.editor?.locked && !node.editor?.hidden;
+    const currentDrop = dropTarget?.nodeId === node.id ? dropTarget.mode : null;
     return (
-      <button
-        type="button"
+      <div
+        role="treeitem"
+        tabIndex={selectedNodeIds.includes(node.id) ? 0 : -1}
         data-testid={`layer-${node.id}`}
         data-state-visible={nodeVisible}
-        aria-pressed={selectedNodeIds.includes(node.id)}
-        onClick={(event) => {
-          onSelectNode(node.id, event.shiftKey ? "range" : event.metaKey || event.ctrlKey ? "toggle" : "replace");
-          if (!event.shiftKey && !event.metaKey && !event.ctrlKey) onDismissMobile();
+        data-drop-target={currentDrop ?? undefined}
+        aria-selected={selectedNodeIds.includes(node.id)}
+        aria-expanded={canContain ? !collapsed : undefined}
+        draggable={draggable}
+        onDragStart={(event) => {
+          if (!draggable) { event.preventDefault(); return; }
+          setDraggedNodeId(node.id);
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/intentform-node", node.id);
         }}
+        onDragEnd={() => { setDraggedNodeId(null); setDropTarget(null); }}
+        onDragOver={(event) => {
+          if (!draggedNodeId || draggedNodeId === node.id || node.editor?.locked || node.editor?.hidden) return;
+          event.preventDefault();
+          event.stopPropagation();
+          event.dataTransfer.dropEffect = "move";
+          const rect = event.currentTarget.getBoundingClientRect();
+          const mode = canContain && event.clientX >= rect.left + Math.min(48, rect.width * 0.25) ? "inside" : "before";
+          setDropTarget({ nodeId: node.id, mode });
+        }}
+        onDrop={(event) => finishNodeDrop(event, node)}
         onMouseEnter={() => onHoverNode(node.id)}
         onMouseLeave={() => onHoverNode(null)}
-        className={`group flex h-8 w-full items-center gap-2 rounded-lg pr-2 text-left text-[12px] ${selectedNodeIds.includes(node.id) ? "bg-[var(--accent-soft)] font-medium text-[var(--accent-text)]" : nodeVisible ? "text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]" : "text-[var(--faint)] hover:bg-[var(--hover)]"}`}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            focusAdjacentTreeItem(event.currentTarget, event.key === "ArrowDown" ? 1 : -1);
+          } else if (event.key === "ArrowRight" && canContain && collapsed) {
+            event.preventDefault();
+            toggleCollapsed(node.id);
+          } else if (event.key === "ArrowLeft" && canContain && !collapsed) {
+            event.preventDefault();
+            toggleCollapsed(node.id);
+          } else if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onSelectNode(node.id, "replace");
+          }
+        }}
+        className={`group relative flex h-7 w-full items-center rounded-md text-left text-[12px] outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--accent)] ${currentDrop === "inside" ? "bg-[var(--accent-soft)] ring-1 ring-inset ring-[var(--accent)]" : currentDrop === "before" ? "before:absolute before:inset-x-1 before:top-0 before:h-px before:bg-[var(--accent)]" : selectedNodeIds.includes(node.id) ? "bg-[var(--accent-soft)] font-medium text-[var(--accent-text)]" : nodeVisible ? "text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]" : "text-[var(--faint)] hover:bg-[var(--hover)]"}`}
         style={{ paddingLeft: 6 + depth * 14 }}
       >
-        <DotsSixVertical size={12} className={`shrink-0 ${draggable ? "cursor-grab opacity-0 group-hover:opacity-40" : "opacity-0"}`} />
-        <span className="shrink-0 opacity-70">{layerIcon(node)}</span>
-        <span className="min-w-0 flex-1 truncate">{node.intent.label ?? nodeNames[node.kind]}</span>
-        {nodeVisible
-          ? <Eye size={12} className="shrink-0 opacity-0 group-hover:opacity-50" />
-          : <EyeSlash size={12} aria-label={`Hidden in ${activeVisualState} state`} className="shrink-0 opacity-60" />}
-      </button>
+        <button type="button" aria-label={`${collapsed ? "Expand" : "Collapse"} ${node.intent.label ?? nodeNames[node.kind]}`} disabled={!canContain} onClick={() => canContain && toggleCollapsed(node.id)} className={`grid size-5 shrink-0 place-items-center rounded ${canContain ? "hover:bg-[var(--field)]" : "pointer-events-none opacity-0"}`}>{collapsed ? <CaretRight size={10} /> : <CaretDown size={10} />}</button>
+        <button
+          type="button"
+          aria-pressed={selectedNodeIds.includes(node.id)}
+          onClick={(event) => {
+            onSelectNode(node.id, event.shiftKey ? "range" : event.metaKey || event.ctrlKey ? "toggle" : "replace");
+            if (!event.shiftKey && !event.metaKey && !event.ctrlKey) onDismissMobile();
+          }}
+          className="flex min-w-0 flex-1 items-center gap-1.5 self-stretch text-left"
+        >
+          <DotsSixVertical size={11} className={`shrink-0 ${draggable ? "cursor-grab opacity-0 group-hover:opacity-45" : "opacity-0"}`} />
+          <span className="shrink-0 opacity-70">{layerIcon(node)}</span>
+          <span className="min-w-0 flex-1 truncate">{node.intent.label ?? nodeNames[node.kind]}</span>
+        </button>
+        <button type="button" aria-label={`${node.editor?.locked ? "Unlock" : "Lock"} ${node.intent.label ?? nodeNames[node.kind]}`} aria-pressed={Boolean(node.editor?.locked)} onClick={() => onNodeCommand("toggle-lock", node.id)} className={`grid size-6 shrink-0 place-items-center rounded hover:bg-[var(--field)] ${node.editor?.locked ? "opacity-80" : "opacity-0 group-hover:opacity-60 group-focus-within:opacity-60"}`}>{node.editor?.locked ? <Lock size={11} /> : <LockOpen size={11} />}</button>
+        <button type="button" aria-label={`${node.editor?.hidden ? "Show" : "Hide"} ${node.intent.label ?? nodeNames[node.kind]}`} aria-pressed={Boolean(node.editor?.hidden)} onClick={() => onNodeCommand("toggle-hidden", node.id)} className={`grid size-6 shrink-0 place-items-center rounded hover:bg-[var(--field)] ${node.editor?.hidden || !stateVisible ? "opacity-80" : "opacity-0 group-hover:opacity-60 group-focus-within:opacity-60"}`}>{nodeVisible ? <Eye size={11} /> : <EyeSlash size={11} />}</button>
+      </div>
     );
   };
 
-  const nestedRows = (node: SemanticNode, depth: number): React.ReactNode => node.children.map((child) => (
-    <div key={child.id}>
-      {layerRow(child, false, depth)}
+  const nestedRows = (node: SemanticNode, depth: number): React.ReactNode => collapsedIds.has(node.id) ? null : node.children.map((child) => (
+    <div key={child.id} role="none">
+      {layerRow(child, true, depth)}
       {nestedRows(child, depth + 1)}
     </div>
   ));
@@ -340,12 +434,12 @@ export function LayersPanel({
 
           <div className="min-h-0 overflow-y-auto overflow-x-hidden px-2 pb-2 pt-1">
             {filteredNodes ? (
-              <div className="grid grid-cols-1 gap-px">
+              <div ref={layersListRef} role="tree" aria-label="Filtered layers" className="grid grid-cols-1 gap-px">
                 {filteredNodes.map((node) => layerRow(node, false, (nodeIndex.get(node.id)?.depth ?? 1) - 1))}
                 {filteredNodes.length === 0 ? <div className="mx-1 mt-3 rounded-lg border border-dashed border-[var(--line-strong)] px-3 py-5 text-center text-[11px] leading-relaxed text-[var(--muted)]">No layers match “{layerQuery}”.</div> : null}
               </div>
             ) : (
-              <Reorder.Group ref={layersListRef} axis="y" as="div" values={order} onReorder={setOrder} className="relative grid grid-cols-1 gap-px">
+              <Reorder.Group ref={layersListRef} role="tree" aria-label="Layers" axis="y" as="div" values={order} onReorder={setOrder} className="relative grid grid-cols-1 gap-px">
                 {order.map((nodeId) => {
                   const node = nodesById.get(nodeId);
                   if (!node) return null;
@@ -354,6 +448,7 @@ export function LayersPanel({
                       key={nodeId}
                       value={nodeId}
                       as="div"
+                      role="none"
                       dragConstraints={layersListRef}
                       dragElastic={0.03}
                       onDragEnd={commitOrder}

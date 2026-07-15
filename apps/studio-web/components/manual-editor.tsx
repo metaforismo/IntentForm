@@ -69,6 +69,7 @@ import {
   editorTransactionError,
   insertionStateBindings,
   locateEditorNode,
+  moveNodeTransaction,
   moveSelectionTransaction,
   removeNodesTransaction,
   removeNodeTransaction,
@@ -601,16 +602,25 @@ export function ManualEditor({
     commitDraft(draft, `Moved ${nodeNames[nodes[target]!.kind]} ${direction < 0 ? "up" : "down"} in the semantic stack.`);
   }, [commitDraft, graph]);
 
-  const reorderNodes = useCallback((screenId: string, orderedIds: string[]) => {
-    const draft = structuredClone(graph);
-    const draftScreen = draft.screens.find((item) => item.id === screenId);
-    if (!draftScreen) return;
-    const byId = new Map(draftScreen.nodes.map((node) => [node.id, node]));
-    const next = orderedIds.map((id) => byId.get(id)).filter((node): node is SemanticNode => Boolean(node));
-    if (next.length !== draftScreen.nodes.length) return;
-    draftScreen.nodes = next;
-    commitDraft(draft, "Reordered the semantic stack.");
-  }, [commitDraft, graph]);
+  const reorderNodes = useCallback((screenId: string, parentId: string | null, orderedIds: string[]) => {
+    try {
+      const next = reorderChildrenTransaction(graph, screenId, parentId, orderedIds);
+      commitDraft(next, "Reordered the semantic stack.");
+    } catch (error) {
+      onNotice(editorTransactionError(error));
+    }
+  }, [commitDraft, graph, onNotice]);
+
+  const reparentNode = useCallback((nodeId: string, targetParentId: string | null, targetIndex: number) => {
+    try {
+      const next = moveNodeTransaction(graph, nodeId, targetParentId, targetIndex);
+      const source = locateEditorNode(graph, nodeId);
+      const target = targetParentId ? locateEditorNode(graph, targetParentId)?.node : null;
+      commitDraft(next, `Moved ${source?.node.intent.label ?? "layer"} into ${target?.intent.label ?? source?.screen.title ?? "screen"}.`);
+    } catch (error) {
+      onNotice(editorTransactionError(error));
+    }
+  }, [commitDraft, graph, onNotice]);
 
   const deleteNodeById = useCallback((nodeId: string) => {
     const found = locateEditorNode(graph, nodeId);
@@ -739,6 +749,8 @@ export function ManualEditor({
         layout.fixedWidth = size.width;
         layout.height = "fixed";
         layout.fixedHeight = size.height;
+        if (layout.position && size.offsetX) layout.position.x += size.offsetX;
+        if (layout.position && size.offsetY) layout.position.y += size.offsetY;
       });
       commitDraft(next, `Resized the selected layer to ${Math.round(size.width)} × ${Math.round(size.height)}.`);
     } catch (error) {
@@ -1236,6 +1248,8 @@ export function ManualEditor({
         onDuplicateScreen={duplicateScreen}
         onDeleteScreen={deleteScreen}
         onReorderNodes={reorderNodes}
+        onMoveNode={reparentNode}
+        onNodeCommand={handleNodeCommand}
         onInstantiateComponent={insertLibraryComponent}
         onUpdateTokens={updateTokens}
         onClose={() => closeEditorPanel("structure")}
