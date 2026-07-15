@@ -4,6 +4,7 @@ import {
   applyMigration,
   applyPatch,
   collectProjectAssets,
+  cancelProjectPreview,
   compileProject,
   componentSchema,
   describeProject,
@@ -17,9 +18,11 @@ import {
   instantiateProjectComponent,
   listTokenModes,
   projectRevisions,
+  projectPreviewStatus,
   previewMigration,
   previewPatch,
   replaceGraph,
+  runProjectPreview,
   revertProject,
   searchComponents,
   searchProjectAssets,
@@ -28,11 +31,12 @@ import {
   type ScenarioId,
 } from "./tools.ts";
 import { resolveProjectDir } from "./store.ts";
+import type { PreviewTarget } from "@intentform/preview-daemon";
 
 /* A minimal MCP stdio server (JSON-RPC 2.0, newline-delimited) with no
    transport dependencies. It exposes the IntentForm project in `.intentform/`
    to coding agents: inspect the semantic graph, apply typed patches, compile
-   both platforms and verify the result — the same operations the Studio uses. */
+   every enabled platform and verify the result — the same operations the Studio uses. */
 
 const PROTOCOL_VERSION = "2024-11-05";
 const projectDir = resolveProjectDir();
@@ -261,7 +265,7 @@ export const toolDefinitions: ToolDefinition[] = [
   },
   {
     name: "intentform_replace_graph",
-    description: "Replace the entire Semantic Interface Graph (current schemaVersion 0.6.0). Use for structural edits a typed operation cannot express. Recursive hierarchy, components, token modes, licensed assets, logical device profiles, responsive-web profiles, node-count and layout constraints are fully validated; invalid graphs are rejected without side effects. Returns the semantic diff and fresh verification findings.",
+    description: "Replace the entire Semantic Interface Graph (current schemaVersion 0.7.0). Use for structural edits a typed operation cannot express. Recursive hierarchy, components, token modes, licensed assets, logical device profiles, responsive-web and Expo profiles, node-count and layout constraints are fully validated; invalid graphs are rejected without side effects. Returns the semantic diff and fresh verification findings.",
     inputSchema: {
       type: "object",
       properties: {
@@ -288,17 +292,69 @@ export const toolDefinitions: ToolDefinition[] = [
     run: () => verifyWebProject(projectDir),
   },
   {
-    name: "intentform_compile",
-    description: "Compile the current graph with a deterministic backend ('react', 'swiftui', or 'web'). With write=true generated files and license-permitted copy-policy assets are emitted under .intentform/output/<target>/. The web backend emits an owned, buildable React/TypeScript route and CSS project. Same graph + same compiler always yields byte-identical source output.",
+    name: "intentform_preview_status",
+    description: "Read local browser, Expo iOS, Expo Android and SwiftUI build evidence for the exact current graph/compiler/device binding. Stale evidence is always returned as not-run and cannot satisfy verification.",
+    inputSchema: {
+      type: "object",
+      properties: { profileId: { type: "string", pattern: "^(device|web):[a-z][a-z0-9.-]*$" } },
+      additionalProperties: false,
+    },
+    run: (args) => projectPreviewStatus(projectDir, typeof args.profileId === "string" ? args.profileId : undefined),
+  },
+  {
+    name: "intentform_run_preview",
+    description: "Start or restart one bounded local preview build using fixed argument arrays and the current graph. Requires the current project fingerprint and returns immediately; poll intentform_preview_status for evidence.",
     inputSchema: {
       type: "object",
       properties: {
-        target: { type: "string", enum: ["react", "swiftui", "web"] },
+        target: { type: "string", enum: ["browser", "expo-ios", "expo-android", "swiftui"] },
+        expectedFingerprint: { type: "string", pattern: "^[a-f0-9]{8}$" },
+        restart: { type: "boolean", description: "Cancel an active run for this target before starting the current binding" },
+        profileId: { type: "string", pattern: "^(device|web):[a-z][a-z0-9.-]*$" },
+      },
+      required: ["target", "expectedFingerprint"],
+      additionalProperties: false,
+    },
+    run: (args) => runProjectPreview(
+      projectDir,
+      (["browser", "expo-ios", "expo-android", "swiftui"].includes(String(args.target)) ? args.target : "browser") as PreviewTarget,
+      String(args.expectedFingerprint ?? ""),
+      args.restart === true,
+      typeof args.profileId === "string" ? args.profileId : undefined,
+    ),
+  },
+  {
+    name: "intentform_cancel_preview",
+    description: "Cancel one queued or running local preview process without mutating the graph. Requires the current graph fingerprint and records a terminal cancelled state.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        target: { type: "string", enum: ["browser", "expo-ios", "expo-android", "swiftui"] },
+        expectedFingerprint: { type: "string", pattern: "^[a-f0-9]{8}$" },
+        profileId: { type: "string", pattern: "^(device|web):[a-z][a-z0-9.-]*$" },
+      },
+      required: ["target", "expectedFingerprint"],
+      additionalProperties: false,
+    },
+    run: (args) => cancelProjectPreview(
+      projectDir,
+      (["browser", "expo-ios", "expo-android", "swiftui"].includes(String(args.target)) ? args.target : "browser") as PreviewTarget,
+      String(args.expectedFingerprint ?? ""),
+      typeof args.profileId === "string" ? args.profileId : undefined,
+    ),
+  },
+  {
+    name: "intentform_compile",
+    description: "Compile the current graph with a deterministic backend ('react', 'swiftui', 'expo', or 'web'). With write=true generated files and license-permitted copy-policy assets are emitted under .intentform/output/<target>/. Expo emits an owned Expo Router TypeScript project with explicit adapter boundaries. Same graph + same compiler always yields byte-identical source output.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        target: { type: "string", enum: ["react", "swiftui", "expo", "web"] },
         write: { type: "boolean", description: "Write generated files to .intentform/output/<target>/ (default true)" },
       },
       required: ["target"],
     },
-    run: (args) => compileProject(projectDir, args.target === "swiftui" ? "swiftui" : args.target === "web" ? "web" : "react", args.write !== false),
+    run: (args) => compileProject(projectDir, args.target === "swiftui" ? "swiftui" : args.target === "expo" ? "expo" : args.target === "web" ? "web" : "react", args.write !== false),
   },
   {
     name: "intentform_list_revisions",

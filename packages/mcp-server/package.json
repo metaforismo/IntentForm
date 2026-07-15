@@ -12,10 +12,12 @@
   "dependencies": {
     "@intentform/device-bezels": "workspace:*",
     "@intentform/device-registry": "workspace:*",
+    "@intentform/compiler-expo": "workspace:*",
     "@intentform/compiler-react": "workspace:*",
     "@intentform/compiler-swiftui": "workspace:*",
     "@intentform/compiler-web": "workspace:*",
     "@intentform/proof-report": "workspace:*",
+    "@intentform/preview-daemon": "workspace:*",
     "@intentform/semantic-schema": "workspace:*",
     "@intentform/token-assets": "workspace:*",
     "@intentform/verifier": "workspace:*",

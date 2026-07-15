@@ -1,0 +1,203 @@
+{
+  "version": 1,
+  "sdkVersion": "57.0.0",
+  "strategy": "expo-router",
+  "routes": [
+    {
+      "id": "home",
+      "route": "/",
+      "file": "app/index.tsx"
+    },
+    {
+      "id": "payment-request",
+      "route": "/request",
+      "file": "app/request.tsx"
+    },
+    {
+      "id": "receipt",
+      "route": "/receipt",
+      "file": "app/receipt.tsx"
+    },
+    {
+      "id": "layout-lab",
+      "route": "/layout-lab",
+      "file": "app/layout-lab.tsx"
+    }
+  ],
+  "nodeStrategies": [
+    {
+      "screenId": "home",
+      "nodeId": "home.balance",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "home",
+      "nodeId": "home.activity",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "home",
+      "nodeId": "home.confirm",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "payment-request",
+      "nodeId": "payment-request.amount",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "payment-request",
+      "nodeId": "payment-request.recipient",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "payment-request",
+      "nodeId": "payment-request.failure",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "payment-request",
+      "nodeId": "payment-request.confirm",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "receipt",
+      "nodeId": "receipt.summary",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "receipt",
+      "nodeId": "receipt.confirm",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "layout-lab",
+      "nodeId": "layout-lab.adaptive",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "layout-lab",
+      "nodeId": "layout-lab.safe-area",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "layout-lab",
+      "nodeId": "layout-lab.grid",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "layout-lab",
+      "nodeId": "layout-lab.grid-a",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "layout-lab",
+      "nodeId": "layout-lab.grid-b",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "layout-lab",
+      "nodeId": "layout-lab.overlay",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "layout-lab",
+      "nodeId": "layout-lab.overlay-a",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "layout-lab",
+      "nodeId": "layout-lab.overlay-b",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "layout-lab",
+      "nodeId": "layout-lab.scroll",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "layout-lab",
+      "nodeId": "layout-lab.wrap",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "layout-lab",
+      "nodeId": "layout-lab.wrap-a",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "layout-lab",
+      "nodeId": "layout-lab.wrap-b",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "layout-lab",
+      "nodeId": "layout-lab.split",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "layout-lab",
+      "nodeId": "layout-lab.page-flow",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "layout-lab",
+      "nodeId": "layout-lab.page",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "layout-lab",
+      "nodeId": "layout-lab.stack",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "layout-lab",
+      "nodeId": "layout-lab.stack-item",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "layout-lab",
+      "nodeId": "layout-lab.freeform",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "layout-lab",
+      "nodeId": "layout-lab.freeform-a",
+      "strategy": "universal-react-native"
+    },
+    {
+      "screenId": "layout-lab",
+      "nodeId": "layout-lab.freeform-b",
+      "strategy": "universal-react-native"
+    }
+  ],
+  "platformAdapters": [],
+  "requiredProjectComponents": [],
+  "ownedPaths": [
+    ".gitignore",
+    "README.generated.md",
+    "app.json",
+    "app/+not-found.tsx",
+    "app/_layout.tsx",
+    "app/index.tsx",
+    "app/layout-lab.tsx",
+    "app/receipt.tsx",
+    "app/request.tsx",
+    "eas.json",
+    "expo-env.d.ts",
+    "package.json",
+    "src/contracts/home.ts",
+    "src/contracts/layout-dash-lab.ts",
+    "src/contracts/payment-dash-request.ts",
+    "src/contracts/receipt.ts",
+    "src/runtime/layout.ts",
+    "src/screens/home.tsx",
+    "src/screens/layout-dash-lab.tsx",
+    "src/screens/payment-dash-request.tsx",
+    "src/screens/receipt.tsx",
+    "src/theme/styles.ts",
+    "src/theme/tokens.ts",
+    "tsconfig.json",
+    "intentform.expo.json"
+  ]
+}

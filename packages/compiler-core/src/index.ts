@@ -79,6 +79,7 @@ export interface PlatformIRNode {
     decorative: boolean;
   } | null;
   web: SemanticNode["web"] | null;
+  expo: NonNullable<SemanticNode["expo"]> | null;
   events: PlatformIREvent[];
   visibility: Array<{ state: string; expression?: Expression }>;
   bindings: {
@@ -112,6 +113,7 @@ export interface PlatformIR {
   assets: AssetDefinition[];
   devices: ResolvedDeviceConfiguration;
   web: SemanticInterfaceGraph["web"];
+  expo: SemanticInterfaceGraph["expo"];
   screens: PlatformIRScreen[];
   diagnostics: CompilerDiagnostic[];
 }
@@ -476,6 +478,7 @@ export function lowerGraph(graph: SemanticInterfaceGraph, target: PlatformTarget
     assets: graph.assets,
     devices: resolveDeviceConfiguration(graph.devices),
     web: graph.web,
+    expo: graph.expo,
     screens: graph.screens.map((screen) => {
       const contract = graph.contracts.find((candidate) => candidate.screenId === screen.id);
       const referencedFixtures = contract
@@ -550,6 +553,7 @@ export function lowerGraph(graph: SemanticInterfaceGraph, target: PlatformTarget
             decorative: node.asset.decorative,
           } : null,
           web: node.web ?? null,
+          expo: node.expo ?? (graph.expo ? { strategy: graph.expo.defaultRenderStrategy } : null),
           events: eventsForNode(node, contract),
           visibility: node.states.map((state) => ({
             state: state.name,

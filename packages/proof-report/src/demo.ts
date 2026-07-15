@@ -78,7 +78,7 @@ export const demoBrief =
   "Create a calm payment flow for independent professionals. Keep the amount, recipient and next action unmistakable. Never expose blockchain terminology. Every failure must provide a recovery path.";
 
 export const demoGraph: SemanticInterfaceGraph = parseGraph({
-  schemaVersion: "0.6.0",
+  schemaVersion: "0.7.0",
   product: {
     name: "Verdant Pay",
     audience: ["independent professionals", "non-technical customers"],
@@ -126,9 +126,18 @@ export const demoGraph: SemanticInterfaceGraph = parseGraph({
   },
   assets: [],
   devices: defaultDeviceConfiguration(),
+  expo: {
+    strategy: "expo-router",
+    sdkVersion: "57.0.0",
+    slug: "verdant-pay",
+    scheme: "verdant-pay",
+    defaultRenderStrategy: "universal-react-native",
+    developmentBuild: true,
+  },
   platforms: [
     { target: "react", enabled: true, capabilities: ["responsive-layout", "aria", "sticky-actions"] },
     { target: "swiftui", enabled: true, capabilities: ["safe-area", "dynamic-type", "native-controls"] },
+    { target: "expo", enabled: true, capabilities: ["expo-router", "safe-area", "adaptive-layout", "platform-files"] },
   ],
   components: [
     {

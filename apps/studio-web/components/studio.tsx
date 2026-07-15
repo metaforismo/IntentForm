@@ -48,9 +48,10 @@ import { GraphStage } from "./stages/graph-stage";
 import { OutputsStage } from "./stages/outputs-stage";
 import { ReportStage } from "./stages/report-stage";
 import { VerifyStage } from "./stages/verify-stage";
+import { useLocalPreviews, type LocalPreviewTarget } from "./use-local-previews";
 
 type Stage = "canvas" | WorkflowStage;
-export type OutputTarget = "react" | "swiftui" | "web";
+export type OutputTarget = "react" | "swiftui" | "expo" | "web";
 export type ScenarioId = DeviceId;
 
 const stages: Array<{ id: Stage; label: string; shortLabel: string; icon: typeof Sparkle }> = [
@@ -101,6 +102,16 @@ interface RequestFailure {
 }
 
 class LocalProjectConflictError extends Error {}
+
+function localGraphFingerprint(graph: SemanticInterfaceGraph): string {
+  const input = stableSerialize(graph);
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
 
 export function Studio() {
   const [stage, setStage] = useState<Stage>("canvas");
@@ -251,9 +262,11 @@ export function Studio() {
 
   const reactCompilation = useMemo(() => compileStudioTarget(graph, "react"), [graph]);
   const swiftCompilation = useMemo(() => compileStudioTarget(graph, "swiftui"), [graph]);
+  const expoCompilation = useMemo(() => compileStudioTarget(graph, "expo"), [graph]);
   const webCompilation = useMemo(() => compileStudioTarget(graph, "web"), [graph]);
   const reactOutput = reactCompilation.output;
   const swiftOutput = swiftCompilation.output;
+  const expoOutput = expoCompilation.output;
   const webOutput = webCompilation.output;
   const previewProfiles = useMemo(() => editorProfiles(graph), [graph]);
   const scenarios = useMemo(() => Object.fromEntries(previewProfiles.map((profile) => [
@@ -261,15 +274,40 @@ export function Studio() {
     { label: profile.label, viewport: { width: profile.width, height: profile.height } },
   ])) as Record<string, { label: string; viewport: { width: number; height: number } }>, [previewProfiles]);
   const scenario = scenarios[scenarioId] ?? scenarios[previewProfiles[0]!.id]!;
-  const verificationTarget = swiftOutput ? "swiftui" : reactOutput ? "react" : webOutput ? "web" : outputTarget;
+  const graphSnapshot = useMemo(() => stableSerialize(graph), [graph]);
+  const currentGraphFingerprint = useMemo(() => localGraphFingerprint(graph), [graph]);
+  const localPreviews = useLocalPreviews({
+    enabled: localProjectFingerprint !== null,
+    currentGraphFingerprint,
+    profileId: scenarioId,
+  });
+  const verificationTarget = outputTarget === "swiftui" && swiftOutput
+    ? "swiftui"
+    : outputTarget === "expo" && expoOutput
+      ? "expo"
+      : outputTarget === "web" && webOutput
+        ? "web"
+        : reactOutput
+          ? "react"
+          : swiftOutput ? "swiftui" : expoOutput ? "expo" : webOutput ? "web" : outputTarget;
+  const previewEvidenceTarget: LocalPreviewTarget = verificationTarget === "swiftui"
+    ? "swiftui"
+    : verificationTarget === "expo"
+      ? scenarioId.includes("android") ? "expo-android" : "expo-ios"
+      : "browser";
+  const previewEvidence = localPreviews.byTarget[previewEvidenceTarget];
+  const buildStatus = localPreviews.graphIsSaved
+    && previewEvidence
+    && !("unavailable" in previewEvidence)
+    ? previewEvidence.buildStatus
+    : "not-run";
   const verification = useMemo(
-    () => verifyGraph(graph, { target: verificationTarget, viewport: scenario.viewport, buildStatus: "not-run" }),
-    [graph, scenario, verificationTarget],
+    () => verifyGraph(graph, { target: verificationTarget, viewport: scenario.viewport, buildStatus }),
+    [buildStatus, graph, scenario, verificationTarget],
   );
   const changes = useMemo(() => semanticDiff(baseline, graph), [baseline, graph]);
-  const output = outputTarget === "react" ? reactOutput : outputTarget === "swiftui" ? swiftOutput : webOutput;
-  const outputMessage = outputTarget === "react" ? reactCompilation.message : outputTarget === "swiftui" ? swiftCompilation.message : webCompilation.message;
-  const graphSnapshot = useMemo(() => stableSerialize(graph), [graph]);
+  const output = outputTarget === "react" ? reactOutput : outputTarget === "swiftui" ? swiftOutput : outputTarget === "expo" ? expoOutput : webOutput;
+  const outputMessage = outputTarget === "react" ? reactCompilation.message : outputTarget === "swiftui" ? swiftCompilation.message : outputTarget === "expo" ? expoCompilation.message : webCompilation.message;
   const graphSnapshotRef = useRef(graphSnapshot);
   graphSnapshotRef.current = graphSnapshot;
   const isPending = pendingAction !== null;
@@ -793,6 +831,7 @@ export function Studio() {
                   copied={copied}
                   graph={graph}
                   selectedScreen={selectedScreen}
+                  localPreviews={localPreviews}
                 />
               ) : null}
 
@@ -814,8 +853,10 @@ export function Studio() {
                   graph={graph}
                   reactOutput={reactOutput}
                   swiftOutput={swiftOutput}
+                  expoOutput={expoOutput}
                   reactMessage={reactCompilation.message}
                   swiftMessage={swiftCompilation.message}
+                  expoMessage={expoCompilation.message}
                   scenario={scenario}
                   verification={verification}
                   changes={changes}

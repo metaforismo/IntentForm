@@ -17,8 +17,10 @@ interface ReportStageProps {
   graph: SemanticInterfaceGraph;
   reactOutput: StudioGeneratedFileSet | null;
   swiftOutput: StudioGeneratedFileSet | null;
+  expoOutput: StudioGeneratedFileSet | null;
   reactMessage: string | null;
   swiftMessage: string | null;
+  expoMessage: string | null;
   scenario: { label: string; viewport: { width: number; height: number } };
   verification: VerificationResult;
   changes: SemanticChange[];
@@ -30,8 +32,10 @@ export function ReportStage({
   graph,
   reactOutput,
   swiftOutput,
+  expoOutput,
   reactMessage,
   swiftMessage,
+  expoMessage,
   scenario,
   verification,
   changes,
@@ -70,6 +74,17 @@ export function ReportStage({
       complete: Boolean(swiftOutput),
     },
     {
+      label: expoOutput ? "Expo source generated" : "Expo source unavailable",
+      detail: expoOutput
+        ? expoOutput.diagnostics.length > 0
+          ? `Expo Router output with ${expoOutput.diagnostics.length} reported adapter fallback${expoOutput.diagnostics.length === 1 ? "" : "s"}`
+          : "Deterministic Expo Router source for iOS and Android"
+        : expoMessage,
+      chip: expoOutput?.fingerprint ?? "NOT GENERATED",
+      icon: DeviceMobile,
+      complete: Boolean(expoOutput),
+    },
+    {
       label: verification.passed ? `${scenario.label} verified` : `${scenario.label} verification incomplete`,
       detail: verification.passed
         ? "Current build evidence exists and no blocking findings remain"
@@ -85,7 +100,7 @@ export function ReportStage({
       complete: verification.passed,
     },
   ];
-  const availableOutputCount = Number(Boolean(reactOutput)) + Number(Boolean(swiftOutput));
+  const availableOutputCount = Number(Boolean(reactOutput)) + Number(Boolean(swiftOutput)) + Number(Boolean(expoOutput));
 
   return (
     <div className="mx-auto grid max-w-[1200px] gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(330px,.8fr)]">

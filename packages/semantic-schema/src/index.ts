@@ -368,6 +368,33 @@ export const webProjectProfileSchema = z.strictObject({
   inlinePaddingToken: spacingTokenKeySchema,
 });
 
+export const expoRenderStrategySchema = z.enum([
+  "universal-react-native",
+  "platform-native",
+  "project-component",
+]);
+
+export const expoProjectProfileSchema = z.strictObject({
+  strategy: z.literal("expo-router"),
+  sdkVersion: z.literal("57.0.0"),
+  slug: z.string().min(1).max(80).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  scheme: z.string().min(1).max(80).regex(/^[a-z][a-z0-9+.-]*$/),
+  defaultRenderStrategy: z.literal("universal-react-native"),
+  developmentBuild: z.boolean().default(false),
+});
+
+export const expoNodeAdapterSchema = z.discriminatedUnion("strategy", [
+  z.strictObject({ strategy: z.literal("universal-react-native") }),
+  z.strictObject({
+    strategy: z.literal("platform-native"),
+    adapter: idSchema,
+  }),
+  z.strictObject({
+    strategy: z.literal("project-component"),
+    componentId: idSchema,
+  }),
+]);
+
 const webNodeStyleFields = {
   display: z.enum(["block", "flex", "grid"]),
   direction: z.enum(["row", "column"]),
@@ -534,6 +561,7 @@ const semanticNodeBaseSchema = z.strictObject({
     decorative: z.boolean().default(false),
   }).optional(),
   web: webNodeLayoutSchema.optional(),
+  expo: expoNodeAdapterSchema.optional(),
   states: z.array(z.strictObject({ name: visualStateSchema, visibleWhen: expressionSchema.optional() })).max(5).default([]),
   interactions: z.array(
     z.strictObject({
@@ -820,7 +848,7 @@ export function isTransactionalScreen(
 
 export const semanticInterfaceGraphSchema = z
   .strictObject({
-    schemaVersion: z.literal("0.6.0"),
+    schemaVersion: z.literal("0.7.0"),
     product: z.strictObject({
       name: safeTextSchema(120),
       audience: z.array(safeTextSchema(240)).min(1).max(20),
@@ -830,6 +858,7 @@ export const semanticInterfaceGraphSchema = z
     assets: z.array(assetDefinitionSchema).max(GRAPH_LIMITS.maxAssets).default([]),
     devices: deviceConfigurationSchema,
     web: webProjectProfileSchema.optional(),
+    expo: expoProjectProfileSchema.optional(),
     platforms: z.array(
       z.strictObject({
         target: platformTargetSchema,
@@ -963,8 +992,12 @@ export const semanticInterfaceGraphSchema = z
     const fixtureById = new Map(graph.fixtures.map((fixture) => [fixture.id, fixture]));
     const platformTargets = new Set(graph.platforms.map((platform) => platform.target));
     const webTarget = graph.platforms.find((platform) => platform.target === "web");
+    const expoTarget = graph.platforms.find((platform) => platform.target === "expo");
     if (webTarget?.enabled && !graph.web) {
       addIssue("The enabled web target requires a responsive-web profile", ["web"]);
+    }
+    if (expoTarget?.enabled && !graph.expo) {
+      addIssue("The enabled Expo target requires an Expo Router profile", ["expo"]);
     }
     if (graph.web && !Object.hasOwn(activeTokens.spacing, graph.web.inlinePaddingToken)) {
       addIssue(`Unknown web inline padding token: ${graph.web.inlinePaddingToken}`, ["web", "inlinePaddingToken"]);
@@ -998,6 +1031,12 @@ export const semanticInterfaceGraphSchema = z
         if (!breakpoints.has(breakpointId)) {
           addIssue(`Node references unknown web breakpoint: ${breakpointId}`, [...path, "web", "breakpointOverrides", breakpointId]);
         }
+      }
+    };
+
+    const validateNodeExpo = (node: SemanticNode, path: Array<string | number>) => {
+      if (node.expo && !graph.expo) {
+        addIssue("Node Expo adaptation requires an Expo Router project profile", [...path, "expo"]);
       }
     };
 
@@ -1147,6 +1186,7 @@ export const semanticInterfaceGraphSchema = z
         }
         validateNodeAsset(node, nodePath);
         validateNodeWeb(node, nodePath);
+        validateNodeExpo(node, nodePath);
         if (!Object.hasOwn(activeTokens.spacing, node.layout.gapToken)) {
           addIssue(`Unknown spacing token: ${node.layout.gapToken}`, [...nodePath, "layout", "gapToken"]);
         }
@@ -1315,6 +1355,7 @@ export const semanticInterfaceGraphSchema = z
 
         validateNodeAsset(node, nodePath);
         validateNodeWeb(node, nodePath);
+        validateNodeExpo(node, nodePath);
         if (!Object.hasOwn(activeTokens.spacing, node.layout.gapToken)) {
           addIssue(`Unknown spacing token: ${node.layout.gapToken}`, [...nodePath, "layout", "gapToken"]);
         }
@@ -1458,6 +1499,9 @@ export const semanticInterfaceGraphSchema = z
   });
 
 export type PlatformTarget = z.infer<typeof platformTargetSchema>;
+export type ExpoRenderStrategy = z.infer<typeof expoRenderStrategySchema>;
+export type ExpoNodeAdapter = z.infer<typeof expoNodeAdapterSchema>;
+export type ExpoProjectProfile = z.infer<typeof expoProjectProfileSchema>;
 export type ScreenDefinition = z.infer<typeof screenSchema>;
 export type SemanticInterfaceGraph = z.infer<typeof semanticInterfaceGraphSchema>;
 export type UIContract = z.infer<typeof uiContractSchema>;

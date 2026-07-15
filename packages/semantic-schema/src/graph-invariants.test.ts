@@ -24,7 +24,7 @@ function makeValidGraph() {
   };
 
   return {
-    schemaVersion: "0.6.0",
+    schemaVersion: "0.7.0",
     product: {
       name: "Invariant test",
       audience: ["product teams"],
@@ -144,7 +144,7 @@ describe("semantic graph invariants", () => {
 
   it("migrates flat roots into recursive nodes with deterministic layout defaults", () => {
     const parsed = parseGraph(makeValidGraph());
-    expect(parsed.schemaVersion).toBe("0.6.0");
+    expect(parsed.schemaVersion).toBe("0.7.0");
     expect(parsed.screens[0]?.nodes[0]).toMatchObject({
       children: [],
       layout: {
@@ -655,6 +655,67 @@ describe("semantic graph invariants", () => {
       graph.web!.frames = [{ id: "custom", label: "Custom", mode: "custom", height: 900 }];
       graph.web!.defaultFrame = "custom";
     }, /require an explicit width/i);
+  });
+
+  it("accepts explicit Expo project and per-node rendering strategies", () => {
+    const graph: GraphDraft = makeValidGraph();
+    graph.expo = {
+      strategy: "expo-router",
+      sdkVersion: "57.0.0",
+      slug: "invariant-test",
+      scheme: "invariant-test",
+      defaultRenderStrategy: "universal-react-native",
+      developmentBuild: false,
+    };
+    graph.platforms.push({ target: "expo", enabled: true, capabilities: ["expo-router", "safe-area"] });
+    graph.screens[0]!.nodes[0]!.expo = { strategy: "platform-native", adapter: "intent.primary-action" };
+    graph.screens[1]!.nodes[0]!.expo = { strategy: "project-component", componentId: "receipt.summary" };
+    graph.components[0]!.template.expo = { strategy: "universal-react-native" };
+
+    const parsed = parseGraph(graph);
+    expect(parsed.expo).toEqual(expect.objectContaining({ sdkVersion: "57.0.0", developmentBuild: false }));
+    expect(parsed.screens[0]?.nodes[0]?.expo).toEqual({ strategy: "platform-native", adapter: "intent.primary-action" });
+    expect(parsed.screens[1]?.nodes[0]?.expo).toEqual({ strategy: "project-component", componentId: "receipt.summary" });
+  });
+
+  it("fails closed for incoherent Expo declarations", () => {
+    const withExpo = (graph: GraphDraft) => {
+      graph.expo = {
+        strategy: "expo-router",
+        sdkVersion: "57.0.0",
+        slug: "invariant-test",
+        scheme: "invariant-test",
+        defaultRenderStrategy: "universal-react-native",
+        developmentBuild: false,
+      };
+      graph.platforms.push({ target: "expo", enabled: true, capabilities: ["expo-router"] });
+    };
+    expectInvalid((graph) => {
+      graph.platforms.push({ target: "expo", enabled: true, capabilities: [] });
+    }, /requires an Expo Router profile/i);
+    expectInvalid((graph) => {
+      graph.screens[0]!.nodes[0]!.expo = { strategy: "universal-react-native" };
+    }, /requires an Expo Router project profile/i);
+    expectInvalid((graph) => {
+      withExpo(graph);
+      graph.expo.slug = "Unsafe Slug";
+    }, /invalid string/i);
+    expectInvalid((graph) => {
+      withExpo(graph);
+      graph.expo.scheme = "1invalid";
+    }, /invalid string/i);
+    expectInvalid((graph) => {
+      withExpo(graph);
+      graph.expo.sdkVersion = "latest";
+    }, /57\.0\.0/i);
+    expectInvalid((graph) => {
+      withExpo(graph);
+      graph.screens[0]!.nodes[0]!.expo = { strategy: "platform-native" };
+    }, /adapter/i);
+    expectInvalid((graph) => {
+      withExpo(graph);
+      graph.screens[0]!.nodes[0]!.expo = { strategy: "project-component", componentId: "../outside" };
+    }, /invalid string/i);
   });
 
   it("bounds graphs, patches and serialized request size", () => {

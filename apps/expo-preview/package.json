@@ -1,0 +1,31 @@
+{
+  "name": "intentform-verdant-pay",
+  "private": true,
+  "version": "1.0.0",
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "ios": "expo start --ios",
+    "android": "expo start --android",
+    "typecheck": "tsc --noEmit",
+    "export:ios": "expo export --platform ios --output-dir dist/ios",
+    "export:android": "expo export --platform android --output-dir dist/android"
+  },
+  "dependencies": {
+    "expo": "~57.0.4",
+    "expo-image": "~57.0.0",
+    "expo-linking": "~57.0.2",
+    "expo-router": "~57.0.4",
+    "expo-status-bar": "~57.0.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.0",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "4.25.2",
+    "expo-dev-client": "~57.0.5"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  }
+}

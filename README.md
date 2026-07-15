@@ -2,11 +2,11 @@
 
 **Compile product intent into platform-native, runnable, verified interfaces.**
 
-IntentForm is an agent-native interface compiler. A product brief becomes a validated Semantic Interface Graph; deterministic backends lower that graph into normal React, SwiftUI and responsive-web projects; evidence-based checks identify intent violations and accept a repair only after an independent rerun.
+IntentForm is an agent-native interface compiler. A product brief becomes a validated Semantic Interface Graph; deterministic backends lower that graph into normal React, SwiftUI, Expo Router and responsive-web projects; evidence-based checks identify intent violations and accept a repair only after an independent rerun.
 
 > Manipulate it like a design. Compile it like software.
 
-This repository began as an OpenAI Build Week vertical slice and now continues toward the complete local-first product. The original React and SwiftUI proof remains intact alongside the dedicated responsive-web surface.
+This repository began as an OpenAI Build Week vertical slice and now continues toward the complete local-first product. The original React and SwiftUI proof remains intact alongside production Expo Router and responsive-web surfaces.
 
 ## What works today
 
@@ -24,6 +24,7 @@ This repository began as an OpenAI Build Week vertical slice and now continues t
 - Project launcher with guided blank application/prototype/library starters, validated imports, copy-only examples, browser recovery diagnostics and an optional local-agent workspace bridge.
 - Versioned browser project recovery carrying project type, source, timestamp and local conflict fingerprint; invalid recovery remains inspectable instead of silently replacing a project.
 - Deterministic React and SwiftUI compiler backends for stack, grid, overlay, scroll, safe-area, adaptive, wrap, split, bounded freeform and page-flow hierarchy.
+- Production Expo Router compiler for typed iOS/Android routes, contracts, fixtures, token modes, safe areas, adaptive layout, optional development builds and explicit universal, platform-native or project-component ownership.
 - Dedicated responsive-web compiler and verifier for semantic HTML routes, block/flex/intrinsic-grid layout, wrapping, sticky/fixed positioning, overflow, aspect ratio, container declarations and named breakpoint overrides.
 - Active React preview embedded in Studio: it validates the current graph, verifies the exact compiler fingerprint, lowers the shared IR into an isolated runtime, and executes typed navigation events without evaluating arbitrary generated source.
 - Playwright screenshot, computed-style and layout-bounds verification for compact and regular viewports.
@@ -74,6 +75,7 @@ pnpm generate:demo
 pnpm verify:react-preview
 pnpm verify:web-preview
 pnpm smoke:web-preview
+pnpm verify:expo-preview
 pnpm verify:swiftui
 pnpm verify:swiftui-render
 ```
@@ -124,7 +126,7 @@ intentform_apply_patch        smallest typed semantic or hierarchy edit, validat
 intentform_replace_graph      structural edits with full schema validation
 intentform_verify             deterministic intent rules per device scenario
 intentform_verify_web         responsive frames, breakpoint coverage and web compiler diagnostics
-intentform_compile            byte-stable React, SwiftUI or web plus permitted assets into output/
+intentform_compile            byte-stable React, SwiftUI, Expo or web plus permitted assets into output/
 intentform_diff / revert      semantic history — every agent edit is reversible
 ```
 
@@ -145,6 +147,7 @@ Brief or semantic edit
   -> shared Platform IR
      -> React compiler -> runnable web UI
      -> SwiftUI compiler -> native iOS UI
+     -> Expo compiler -> routed iOS and Android app
      -> responsive-web compiler -> routed Vite site
   -> deterministic verifier + evidence
   -> GPT-5.6 or deterministic repair planner
@@ -161,6 +164,7 @@ See [architecture](docs/ARCHITECTURE.md), [hackathon scope](docs/HACKATHON_SCOPE
 apps/studio-web/            Next.js product experience and server routes
 apps/react-preview/         Vite harness executing generated React output
 apps/web-preview/           Vite harness compiling generated responsive-web output
+apps/expo-preview/          generated Expo Router iOS/Android verification harness
 packages/semantic-schema/   graph, validation, canonical serialization, patches
 packages/device-registry/   neutral versioned geometry, capabilities and checksums
 packages/device-bezels/     kill-switched local manifests, containment and integrity checks
@@ -168,6 +172,7 @@ packages/layout-engine/     deterministic recursive indexing and neutral layout
 packages/compiler-core/     shared lowering and compiler contracts
 packages/compiler-react/    accessible responsive React output
 packages/compiler-swiftui/  native SwiftUI output
+packages/compiler-expo/     Expo Router and React Native output
 packages/compiler-web/      semantic responsive-web output
 packages/verifier/          deterministic findings and evidence
 packages/web-verifier/      frame and breakpoint verification for web projects
@@ -187,7 +192,7 @@ Submission closes **July 21, 2026 at 5:00 PM PT**. IntentForm is entered in Deve
 
 ## Product direction
 
-The full product is local-first and Expo Adaptive-first, with SwiftUI as the reference native renderer. Responsive web, direct semantic manipulation and MCP are now implemented; planned layers include native preview daemons, Expo iOS/Android, standalone Compose, operation-log-based Git workflows, repository adoption through managed zones, and optional collaboration cloud. No production app requires an IntentForm runtime.
+The full product is local-first and Expo Adaptive-first, with SwiftUI as the reference native renderer. Expo iOS/Android, responsive web, direct semantic manipulation, MCP and fingerprint-bound local preview builds are implemented; planned layers include standalone Compose, operation-log-based Git workflows, repository adoption through managed zones, and optional collaboration cloud. No production app requires an IntentForm runtime.
 
 ## License
 

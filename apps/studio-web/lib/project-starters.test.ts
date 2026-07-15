@@ -15,14 +15,14 @@ describe("project starters", () => {
         audience: "Distributed research teams",
         purpose: "Review and organize field observations",
         projectType,
-        targets: projectType === "responsive-web" ? ["react", "swiftui", "web"] : ["react", "swiftui"],
+        targets: projectType === "responsive-web" ? ["react", "swiftui", "expo", "web"] : ["react", "swiftui", "expo"],
       });
       const second = createStarterGraph({
         name: "Northline Field Notes",
         audience: "Distributed research teams",
         purpose: "Review and organize field observations",
         projectType,
-        targets: projectType === "responsive-web" ? ["react", "swiftui", "web"] : ["react", "swiftui"],
+        targets: projectType === "responsive-web" ? ["react", "swiftui", "expo", "web"] : ["react", "swiftui", "expo"],
       });
 
       expect(parseGraph(first)).toEqual(first);
@@ -50,6 +50,25 @@ describe("project starters", () => {
     expect(graph.web?.breakpoints.map((breakpoint) => breakpoint.id)).toEqual(["small", "medium", "large"]);
     expect(graph.screens[0]?.nodes[0]?.web).toEqual(expect.objectContaining({ display: "grid", containerType: "inline-size" }));
     expect(graph.platforms.find((platform) => platform.target === "web")?.enabled).toBe(true);
+  });
+
+  it("creates an Expo Router starter with a deterministic safe slug and universal fallback", () => {
+    const graph = createStarterGraph({
+      name: "Crème & Field Notes",
+      audience: "Field researchers",
+      purpose: "Capture observations on mobile devices",
+      projectType: "application",
+      targets: ["expo"],
+    });
+    expect(graph.expo).toEqual({
+      strategy: "expo-router",
+      sdkVersion: "57.0.0",
+      slug: "creme-field-notes",
+      scheme: "creme-field-notes",
+      defaultRenderStrategy: "universal-react-native",
+      developmentBuild: false,
+    });
+    expect(graph.platforms.filter((platform) => platform.enabled)).toEqual([expect.objectContaining({ target: "expo", enabled: true })]);
   });
 
   it("enables only explicitly selected compiler targets", () => {

@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { compileExpo } from "@intentform/compiler-expo";
 import { compileReact } from "@intentform/compiler-react";
 import { compileSwiftUI } from "@intentform/compiler-swiftui";
 import { compileWeb } from "@intentform/compiler-web";
@@ -34,6 +35,16 @@ import {
 import { verifyGraph, type VerificationFinding } from "@intentform/verifier";
 import { verifyResponsiveWeb } from "@intentform/web-verifier";
 import {
+  PREVIEW_TARGETS,
+  PreviewBindingCache,
+  PreviewSupervisor,
+  readPreviewEvidence,
+  recoverOrphanedPreviewEvidence,
+  resolvePreviewEvidence,
+  runLocalPreview,
+  type PreviewTarget,
+} from "@intentform/preview-daemon";
+import {
   graphFingerprint,
   listRevisions,
   loadProject,
@@ -51,6 +62,70 @@ const scenarios: Record<ScenarioId, { width: number; height: number }> = {
   regular: CANONICAL_DEVICE_VIEWPORTS.regularPhone,
 };
 
+const previewSupervisor = new PreviewSupervisor(2, 180_000);
+const previewBindingCache = new PreviewBindingCache();
+
+function previewTargetStatus(
+  dir: string,
+  graph: SemanticInterfaceGraph,
+  fingerprint: string,
+  target: PreviewTarget,
+  profileId?: string,
+) {
+  try {
+    const binding = previewBindingCache.resolve(graph, fingerprint, target, profileId);
+    const current = previewSupervisor.current(dir, target);
+    const manifest = current ?? recoverOrphanedPreviewEvidence(dir, target);
+    return resolvePreviewEvidence(dir, binding, manifest);
+  } catch (error) {
+    return {
+      target,
+      unavailable: true as const,
+      message: error instanceof Error ? error.message.slice(0, 500) : "This preview target is unavailable.",
+    };
+  }
+}
+
+export function projectPreviewStatus(dir: string, profileId?: string) {
+  const { graph, fingerprint } = loadProject(dir);
+  return {
+    fingerprint,
+    targets: PREVIEW_TARGETS.map((target) => previewTargetStatus(dir, graph, fingerprint, target, profileId)),
+  };
+}
+
+export function runProjectPreview(
+  dir: string,
+  target: PreviewTarget,
+  expectedFingerprint: string,
+  restart: boolean,
+  profileId?: string,
+) {
+  const { graph, fingerprint } = loadProject(dir);
+  if (fingerprint !== expectedFingerprint) throw new Error(`Project fingerprint conflict: expected ${expectedFingerprint}, current ${fingerprint}.`);
+  const binding = previewBindingCache.resolve(graph, fingerprint, target, profileId);
+  const manifest = restart
+    ? previewSupervisor.restart({ projectDir: dir, graph, binding, runner: runLocalPreview })
+    : previewSupervisor.start({ projectDir: dir, graph, binding, runner: runLocalPreview });
+  return { fingerprint, target: resolvePreviewEvidence(dir, binding, manifest) };
+}
+
+export function cancelProjectPreview(
+  dir: string,
+  target: PreviewTarget,
+  expectedFingerprint: string,
+  profileId?: string,
+) {
+  const { graph, fingerprint } = loadProject(dir);
+  if (fingerprint !== expectedFingerprint) throw new Error(`Project fingerprint conflict: expected ${expectedFingerprint}, current ${fingerprint}.`);
+  const binding = previewBindingCache.resolve(graph, fingerprint, target, profileId);
+  const manifest = previewSupervisor.cancel(dir, target);
+  return {
+    fingerprint,
+    target: resolvePreviewEvidence(dir, binding, manifest ?? readPreviewEvidence(dir, target)),
+  };
+}
+
 function verificationSummary(graph: SemanticInterfaceGraph, scenario: ScenarioId) {
   const result = verifyGraph(graph, { target: "swiftui", viewport: scenarios[scenario], buildStatus: "not-run" });
   return {
@@ -62,11 +137,12 @@ function verificationSummary(graph: SemanticInterfaceGraph, scenario: ScenarioId
   };
 }
 
-type CompilerTarget = "react" | "swiftui" | "web";
+type CompilerTarget = "react" | "swiftui" | "expo" | "web";
 
 const compileTarget = (graph: SemanticInterfaceGraph, target: CompilerTarget) => {
   if (target === "react") return compileReact(graph);
   if (target === "swiftui") return compileSwiftUI(graph);
+  if (target === "expo") return compileExpo(graph);
   return compileWeb(graph);
 };
 
@@ -124,6 +200,7 @@ export function describeProject(dir: string) {
       placement: node.layout.placement,
     },
     web: node.web ?? null,
+    expo: node.expo ?? null,
     states: node.states.map((state) => state.name),
     events: node.interactions.map((interaction) => interaction.event),
     children: node.children.map((child) => describeNode(child, node.id, depth + 1)),
@@ -167,6 +244,7 @@ export function describeProject(dir: string) {
       ...graph.web,
       verification: verifyResponsiveWeb(graph),
     } : null,
+    expo: graph.expo ?? null,
     components: graph.components.map((definition) => ({
       id: definition.id,
       name: definition.name,
@@ -211,6 +289,7 @@ export function describeProject(dir: string) {
     outputs: {
       react: outputSummary(graph, "react"),
       swiftui: outputSummary(graph, "swiftui"),
+      expo: outputSummary(graph, "expo"),
       web: outputSummary(graph, "web"),
     },
   };

@@ -65,6 +65,11 @@ describe("content-addressed project assets", () => {
     expect(exported.diagnostics).toEqual([]);
     expect(exported.copied).toEqual([join(output, "public", asset.storageKey)]);
     expect(readFileSync(exported.copied[0]!, "utf8")).toBe('<svg viewBox="0 0 24 12"><path d="M0 0h24v12H0z"/></svg>\n');
+
+    const expoOutput = join(dir, "output", "expo");
+    const expoExported = exportProjectAssets(dir, [asset], expoOutput, "expo");
+    expect(expoExported.copied).toEqual([join(expoOutput, asset.storageKey)]);
+    expect(readFileSync(expoExported.copied[0]!, "utf8")).toBe('<svg viewBox="0 0 24 12"><path d="M0 0h24v12H0z"/></svg>\n');
   });
 
   it("rejects executable SVG, external references, traversal, symlinks, and spoofed bytes", () => {

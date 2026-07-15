@@ -33,7 +33,7 @@ function evaluateRules(graph: SemanticInterfaceGraph, verification: Verification
   const { findings } = verification;
   const rules: EvaluatedRule[] = [{
     id: "build.evidence",
-    name: "Current SwiftUI output has build evidence",
+    name: `Current ${verification.scenario.target} output has build evidence`,
     target: verification.scenario.buildStatus === "not-run" ? "Not run" : verification.scenario.buildStatus,
     status: verification.scenario.buildStatus === "passed"
       ? "passed"
@@ -108,7 +108,7 @@ export function VerifyStage({
     <div className="mx-auto grid max-w-[1200px] gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div>
         <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--line)] pb-5">
-          <div><span className="font-mono text-[10px] text-[var(--accent)]">NATIVE VERIFICATION</span><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">Evidence before claims.</h2></div>
+          <div><span className="font-mono text-[10px] text-[var(--accent)]">BUILD VERIFICATION</span><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">Evidence before claims.</h2></div>
           <span className={`rounded-full px-3 py-1.5 text-[10px] font-semibold ${verdictTone}`}>{verdictLabel}</span>
         </div>
 
@@ -173,7 +173,7 @@ export function VerifyStage({
         </div>
         <dl className="mt-6 grid grid-cols-2 gap-y-5">
           <div><dt className="text-[11px] text-[var(--muted)]">Viewport</dt><dd className="mt-1 font-mono text-[12px] text-[var(--t-strong)]">{scenario.viewport.width} × {scenario.viewport.height}</dd></div>
-          <div><dt className="text-[11px] text-[var(--muted)]">Target</dt><dd className="mt-1 font-mono text-[12px] text-[var(--t-strong)]">SwiftUI</dd></div>
+          <div><dt className="text-[11px] text-[var(--muted)]">Target</dt><dd className="mt-1 font-mono text-[12px] capitalize text-[var(--t-strong)]">{verification.scenario.target}</dd></div>
           <div>
             <dt className="text-[11px] text-[var(--muted)]">Build</dt>
             <dd className={`mt-1 text-[12px] ${verification.scenario.buildStatus === "passed" ? "text-[var(--accent)]" : verification.scenario.buildStatus === "failed" ? "text-[var(--danger)]" : "text-[var(--warn)]"}`}>

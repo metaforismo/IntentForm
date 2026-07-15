@@ -14,7 +14,7 @@ export interface StarterProjectInput {
   audience: string;
   purpose: string;
   projectType: ProjectType;
-  targets: Array<Extract<PlatformTarget, "react" | "swiftui" | "web">>;
+  targets: Array<Extract<PlatformTarget, "react" | "swiftui" | "expo" | "web">>;
 }
 
 const starterCopy: Record<ProjectType, { title: string; nodeLabel: string; principle: string }> = {
@@ -46,9 +46,14 @@ export function createStarterGraph(input: StarterProjectInput): SemanticInterfac
   const audience = input.audience.trim();
   const purpose = input.purpose.trim();
   const copy = starterCopy[input.projectType];
+  const expoSlug = name.normalize("NFKD").toLowerCase()
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "intentform-project";
 
   return parseGraph({
-    schemaVersion: "0.6.0",
+    schemaVersion: "0.7.0",
     product: {
       name,
       audience: [audience],
@@ -78,6 +83,16 @@ export function createStarterGraph(input: StarterProjectInput): SemanticInterfac
     },
     assets: [],
     devices: defaultDeviceConfiguration(),
+    ...(input.targets.includes("expo") ? {
+      expo: {
+        strategy: "expo-router",
+        sdkVersion: "57.0.0",
+        slug: expoSlug,
+        scheme: expoSlug,
+        defaultRenderStrategy: "universal-react-native",
+        developmentBuild: false,
+      },
+    } : {}),
     ...(input.projectType === "responsive-web" ? {
       web: {
         strategy: "responsive-web",
@@ -100,6 +115,7 @@ export function createStarterGraph(input: StarterProjectInput): SemanticInterfac
     platforms: [
       { target: "react", enabled: input.targets.includes("react"), capabilities: ["responsive-layout", "aria", "sticky-actions"] },
       { target: "swiftui", enabled: input.targets.includes("swiftui"), capabilities: ["safe-area", "dynamic-type", "native-controls"] },
+      ...(input.targets.includes("expo") ? [{ target: "expo" as const, enabled: true, capabilities: ["expo-router", "safe-area", "adaptive-layout", "platform-files"] }] : []),
       ...(input.projectType === "responsive-web" ? [{ target: "web" as const, enabled: input.targets.includes("web"), capabilities: ["semantic-html", "responsive-layout", "intrinsic-grid", "container-queries"] }] : []),
     ],
     components: [],
@@ -170,7 +186,7 @@ export const projectExamples: ProjectExample[] = [
       audience: "Independent shop operators",
       purpose: "Review stock changes and flag items that need attention",
       projectType: "application",
-      targets: ["react", "swiftui"],
+      targets: ["react", "swiftui", "expo"],
     }),
   },
   {
@@ -183,7 +199,7 @@ export const projectExamples: ProjectExample[] = [
       audience: "Product designers and mobile engineers",
       purpose: "Document reusable interface intent across web and native products",
       projectType: "component-library",
-      targets: ["react", "swiftui"],
+      targets: ["react", "swiftui", "expo"],
     }),
   },
 ];

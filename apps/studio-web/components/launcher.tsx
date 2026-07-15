@@ -82,6 +82,7 @@ export function Launcher() {
   const [purpose, setPurpose] = useState("");
   const [reactTarget, setReactTarget] = useState(true);
   const [swiftTarget, setSwiftTarget] = useState(true);
+  const [expoTarget, setExpoTarget] = useState(true);
   const [webTarget, setWebTarget] = useState(true);
 
   useEffect(() => {
@@ -191,8 +192,8 @@ export function Launcher() {
   const createProject = (event: FormEvent) => {
     event.preventDefault();
     try {
-      const targets = [reactTarget ? "react" : null, swiftTarget ? "swiftui" : null, projectType === "responsive-web" && webTarget ? "web" : null]
-        .filter((target): target is "react" | "swiftui" | "web" => target !== null);
+      const targets = [reactTarget ? "react" : null, swiftTarget ? "swiftui" : null, expoTarget ? "expo" : null, projectType === "responsive-web" && webTarget ? "web" : null]
+        .filter((target): target is "react" | "swiftui" | "expo" | "web" => target !== null);
       const graph = createStarterGraph({ name, audience, purpose, projectType, targets });
       persistAndOpen(graph, { projectType, source: "created" }, "create");
     } catch (cause) {
@@ -242,7 +243,7 @@ export function Launcher() {
             </div>
           </div>
           <div className="hidden items-center gap-4 text-[10px] text-[var(--muted)] sm:flex" aria-label="Workspace capabilities">
-            <span className="inline-flex items-center gap-1.5"><Code size={13} /> React + SwiftUI generators</span>
+            <span className="inline-flex items-center gap-1.5"><Code size={13} /> React + SwiftUI + Expo</span>
             <span className="inline-flex items-center gap-1.5"><ShieldCheck size={13} /> Validated graph</span>
             <span className="inline-flex items-center gap-1.5">
               <span className={`size-1.5 rounded-full ${bridge === "available" ? "bg-emerald-500" : bridge === "checking" ? "animate-pulse bg-amber-500" : "bg-[var(--faint)]"}`} />
@@ -295,6 +296,7 @@ export function Launcher() {
                 <div className="mt-2 flex flex-wrap gap-2">
                   <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--field)] px-3 text-xs"><input type="checkbox" checked={reactTarget} onChange={(event) => setReactTarget(event.target.checked)} className="accent-[var(--accent)]" /> React</label>
                   <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--field)] px-3 text-xs"><input type="checkbox" checked={swiftTarget} onChange={(event) => setSwiftTarget(event.target.checked)} className="accent-[var(--accent)]" /> SwiftUI</label>
+                  <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--field)] px-3 text-xs"><input type="checkbox" checked={expoTarget} onChange={(event) => setExpoTarget(event.target.checked)} className="accent-[var(--accent)]" /> Expo Adaptive</label>
                   {projectType === "responsive-web" ? <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-3 text-xs"><input type="checkbox" checked={webTarget} onChange={(event) => setWebTarget(event.target.checked)} className="accent-[var(--accent)]" /> Responsive web</label> : null}
                 </div>
               </fieldset>

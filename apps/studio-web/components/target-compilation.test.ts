@@ -50,4 +50,11 @@ describe("Studio target compilation", () => {
     expect(result.output?.target).toBe("web");
     expect(result.output?.files.some((file) => file.path === "src/styles.css")).toBe(true);
   });
+
+  it("generates the dedicated Expo Adaptive target", () => {
+    const result = compileStudioTarget(demoGraph, "expo");
+    expect(result.status).toBe("generated");
+    expect(result.output?.target).toBe("expo");
+    expect(result.output?.files.some((file) => file.path === "intentform.expo.json")).toBe(true);
+  });
 });

@@ -118,12 +118,12 @@ try {
             status: 409,
             contentType: "application/json",
             body: JSON.stringify({
-              error: "Project schema 0.0.1 must be migrated to 0.6.0 before it can be opened.",
+              error: "Project schema 0.0.1 must be migrated to 0.7.0 before it can be opened.",
               migration: {
                 status: "migration-required",
                 sourceFingerprint: "a".repeat(64),
                 fromVersion: "0.0.1",
-                toVersion: "0.6.0",
+                toVersion: "0.7.0",
                 diagnostics: [{
                   severity: "info",
                   code: "schema.migrated.0.0.1.to.0.1.0",
@@ -154,6 +154,11 @@ try {
                   code: "schema.migrated.0.5.0.to.0.6.0",
                   path: "schemaVersion",
                   message: "Converted schema 0.5.0 to 0.6.0.",
+                }, {
+                  severity: "info",
+                  code: "schema.migrated.0.6.0.to.0.7.0",
+                  path: "schemaVersion",
+                  message: "Converted schema 0.6.0 to 0.7.0.",
                 }],
               },
             }),
@@ -279,6 +284,66 @@ try {
       await overlay.waitFor({ state: "detached" });
       await mkdir(join(root, "output/playwright"), { recursive: true });
       await page.screenshot({ path: join(root, "output/playwright/local-bezel-neutral-fallback.png"), fullPage: true });
+
+      await page.getByRole("button", { name: "Native outputs" }).click();
+      const evidencePanel = page.getByRole("region", { name: "Continuous local evidence" });
+      await evidencePanel.getByText("saved graph", { exact: true }).waitFor();
+      const browserPreview = evidencePanel.locator('[data-preview-target="browser"]');
+      await browserPreview.getByRole("button", { name: "Start" }).click();
+      await browserPreview.getByText("fresh · ready", { exact: true }).waitFor({ timeout: 30_000 });
+      await page.screenshot({ path: join(root, "output/playwright/continuous-preview-evidence.png"), fullPage: true });
+      await page.getByRole("button", { name: "Verification" }).click();
+      await page.getByText("Passed", { exact: true }).first().waitFor();
+    },
+  });
+
+  await runSmokeScenario(browser, {
+    name: "Expo Adaptive project compiler",
+    run: async (page) => {
+      await gotoStudio(page, origin, "/");
+      await page.getByRole("button", { name: "New project" }).click();
+      await page.getByLabel("Project name").fill("Trail Ledger");
+      await page.getByLabel("Primary audience").fill("Field operations teams");
+      await page.getByLabel("First outcome").fill("Record a verified field observation");
+      const expoTarget = page.getByRole("checkbox", { name: "Expo Adaptive" });
+      if (!await expoTarget.isChecked()) throw new Error("Expo Adaptive was not enabled for a new native project");
+      await page.getByRole("button", { name: "Create blank canvas" }).click();
+      await page.waitForURL(`${origin}/studio`);
+      await page.getByTestId("canvas-node-home.start").waitFor();
+      const renderStrategy = page.getByLabel("Render strategy");
+      if (await renderStrategy.inputValue() !== "universal-react-native") {
+        throw new Error("New Expo nodes did not inherit the universal React Native strategy");
+      }
+      await renderStrategy.selectOption("platform-native");
+      const adapterId = page.getByLabel("Adapter ID");
+      await adapterId.waitFor();
+      if (await adapterId.inputValue() !== "intent.status-message") {
+        throw new Error("Platform-native strategy did not create a deterministic adapter ID");
+      }
+
+      await page.getByRole("button", { name: "Native outputs" }).click();
+      const outputTargets = page.getByRole("group", { name: "Output target" });
+      await outputTargets.getByRole("button", { name: "expo" }).click();
+      await page.getByText("Expo Adaptive semantic preview", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "intentform.expo.json" }).click();
+      const manifest = await page.locator("code").textContent();
+      if (!manifest?.includes('"sdkVersion": "57.0.0"')
+        || !manifest.includes('"strategy": "platform-native"')
+        || !manifest.includes('"intent.status-message"')) {
+        throw new Error("Expo manifest omitted SDK, node strategy, or adapter ownership");
+      }
+      await page.getByRole("button", { name: "intent-dot-status-dash-message.ios.tsx" }).click();
+      const adapter = await page.locator("code").textContent();
+      if (!adapter?.includes("borderRadius: 16") || !adapter.includes("return fallback")) {
+        throw new Error("Generated iOS adapter omitted its platform specialization or universal fallback");
+      }
+      await page.getByRole("button", { name: "index.tsx" }).click();
+      const route = await page.locator("code").textContent();
+      if (!route?.includes('<Stack.Screen options={{ title: "Home" }} />')) {
+        throw new Error("Expo Router output did not use the semantic screen title");
+      }
+      await mkdir(join(root, "output/playwright"), { recursive: true });
+      await page.screenshot({ path: join(root, "output/playwright/expo-adaptive-output.png"), fullPage: true });
     },
   });
 

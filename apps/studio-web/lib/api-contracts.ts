@@ -73,6 +73,19 @@ export const projectMigrationRequestSchema = z.object({
   expectedSourceFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
 }).strict();
 
+const previewTargetSchema = z.enum(["browser", "expo-ios", "expo-android", "swiftui"]);
+const previewMutationFields = {
+  target: previewTargetSchema,
+  expectedGraphFingerprint: z.string().regex(/^[a-f0-9]{8}$/),
+  profileId: z.string().min(1).max(160).regex(/^(?:device|web):[a-z][a-z0-9.-]*$/).optional(),
+} as const;
+
+export const previewMutationRequestSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("start"), ...previewMutationFields }).strict(),
+  z.object({ action: z.literal("restart"), ...previewMutationFields }).strict(),
+  z.object({ action: z.literal("cancel"), ...previewMutationFields }).strict(),
+]);
+
 export class ApiInputError extends Error {
   constructor(
     readonly status: 400 | 413 | 422,
@@ -135,13 +148,22 @@ export function isLocalProjectRequestAllowed(request: Request): boolean {
   if (process.env.VERCEL === "1" || process.env.VERCEL_ENV) return false;
   if (process.env.NODE_ENV === "production" && process.env.INTENTFORM_ENABLE_LOCAL_PROJECT_API !== "1") return false;
 
-  const origin = request.headers.get("origin");
-  if (origin) {
-    try {
-      if (new URL(origin).origin !== new URL(request.url).origin) return false;
-    } catch {
+  try {
+    const requestUrl = new URL(request.url);
+    const host = request.headers.get("host");
+    const authorityUrl = host ? new URL(`${requestUrl.protocol}//${host}`) : requestUrl;
+    const hostname = authorityUrl.hostname.toLowerCase().replace(/\.$/, "");
+    if (hostname !== "localhost" && hostname !== "127.0.0.1" && hostname !== "[::1]" && hostname !== "::1") {
       return false;
     }
+
+    const origin = request.headers.get("origin");
+    if (origin) {
+      const allowedOrigins = new Set([requestUrl.origin, authorityUrl.origin]);
+      if (!allowedOrigins.has(new URL(origin).origin)) return false;
+    }
+  } catch {
+    return false;
   }
   const fetchSite = request.headers.get("sec-fetch-site");
   return !fetchSite || fetchSite === "same-origin" || fetchSite === "none";

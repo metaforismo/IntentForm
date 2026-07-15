@@ -1,0 +1,22 @@
+{
+  "name": "@intentform/preview-daemon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" },
+  "dependencies": {
+    "@intentform/compiler-expo": "workspace:*",
+    "@intentform/compiler-react": "workspace:*",
+    "@intentform/compiler-swiftui": "workspace:*",
+    "@intentform/compiler-web": "workspace:*",
+    "@intentform/device-registry": "workspace:*",
+    "@intentform/semantic-schema": "workspace:*",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@intentform/proof-report": "workspace:*",
+    "@types/node": "^25.0.0",
+    "typescript": "^5.9.3"
+  }
+}

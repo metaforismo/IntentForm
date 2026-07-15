@@ -9,11 +9,17 @@ import { verifyGraph } from "../packages/verifier/src/index";
 import { bezelManifestChecksum, deviceBezelPackManifestSchema } from "../packages/device-bezels/src/index";
 import { POST as interpret } from "../apps/studio-web/app/api/interpret/route";
 import { GET as getProject, POST as migrateProjectRoute, PUT as putProject } from "../apps/studio-web/app/api/project/route";
+import { GET as getPreviews, POST as mutatePreview } from "../apps/studio-web/app/api/project/previews/route";
 import { GET as getProjectAsset } from "../apps/studio-web/app/api/project/assets/[digest]/route";
 import { GET as listBezelPacks } from "../apps/studio-web/app/api/project/bezel-packs/route";
 import { GET as getBezelAsset } from "../apps/studio-web/app/api/project/bezel-packs/[packId]/[digest]/route";
 import { POST as repair } from "../apps/studio-web/app/api/repair/route";
 import { loadProject, saveProject } from "../packages/mcp-server/src/store";
+import {
+  createPreviewBinding,
+  createQueuedManifest,
+  writePreviewEvidence,
+} from "../packages/preview-daemon/src/index";
 import {
   API_BODY_LIMIT_BYTES,
   ApiInputError,
@@ -214,6 +220,119 @@ describe("repair verification boundary", () => {
 });
 
 describe("local project trust boundary", () => {
+  it("probes local preview availability without seeding or reading a project", async () => {
+    delete process.env.VERCEL;
+    delete process.env.VERCEL_ENV;
+    const projectDir = mkdtempSync(join(tmpdir(), "intentform-preview-probe-"));
+    process.env.INTENTFORM_PROJECT_DIR = projectDir;
+    try {
+      const response = await getPreviews(new Request("http://localhost/api/project/previews?capability=1"));
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({ available: true });
+      expect(readdirSync(projectDir)).toEqual([]);
+
+      process.env.VERCEL = "1";
+      const hosted = await getPreviews(new Request("https://intentform.example/api/project/previews"));
+      expect(hosted.status).toBe(403);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects DNS-rebinding authorities even when Origin and Host agree", async () => {
+    delete process.env.VERCEL;
+    delete process.env.VERCEL_ENV;
+    const response = await getPreviews(new Request("http://localhost/api/project/previews?capability=1", {
+      headers: {
+        host: "attacker.example",
+        origin: "http://attacker.example",
+        "sec-fetch-site": "same-origin",
+      },
+    }));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ available: false });
+  });
+
+  it("returns fresh fingerprint-bound preview evidence and marks it stale after an edit", async () => {
+    delete process.env.VERCEL;
+    delete process.env.VERCEL_ENV;
+    const projectDir = mkdtempSync(join(tmpdir(), "intentform-preview-evidence-"));
+    process.env.INTENTFORM_PROJECT_DIR = projectDir;
+    try {
+      const opened = loadProject(projectDir);
+      const binding = createPreviewBinding(opened.graph, opened.fingerprint, "browser");
+      const queued = createQueuedManifest(binding);
+      const now = new Date().toISOString();
+      writePreviewEvidence(projectDir, {
+        ...queued,
+        phase: "ready",
+        evidence: "built",
+        updatedAt: now,
+        completedAt: now,
+        lastVerifiedRevision: opened.fingerprint,
+      });
+      const currentResponse = await getPreviews(new Request("http://localhost/api/project/previews"));
+      const current = await currentResponse.json() as { fingerprint: string; targets: Array<Record<string, unknown>> };
+      expect(currentResponse.status).toBe(200);
+      expect(current.fingerprint).toBe(opened.fingerprint);
+      expect(current.targets.find((entry) => entry.target === "browser")).toMatchObject({
+        freshness: "fresh",
+        buildStatus: "passed",
+      });
+      expect(JSON.stringify(current)).not.toContain("\"screens\"");
+
+      const edited = structuredClone(opened.graph);
+      edited.product.name = "Edited evidence project";
+      const saved = saveProject(projectDir, edited, "invalidate evidence", opened.fingerprint);
+      const staleResponse = await getPreviews(new Request("http://localhost/api/project/previews"));
+      const stale = await staleResponse.json() as { fingerprint: string; targets: Array<Record<string, unknown>> };
+      expect(stale.fingerprint).toBe(saved.fingerprint);
+      expect(stale.targets.find((entry) => entry.target === "browser")).toMatchObject({
+        freshness: "stale",
+        buildStatus: "not-run",
+      });
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it("validates preview mutations and refuses a stale graph fingerprint before starting work", async () => {
+    delete process.env.VERCEL;
+    delete process.env.VERCEL_ENV;
+    const projectDir = mkdtempSync(join(tmpdir(), "intentform-preview-mutation-"));
+    process.env.INTENTFORM_PROJECT_DIR = projectDir;
+    try {
+      const project = loadProject(projectDir);
+      const invalid = await mutatePreview(jsonRequest(
+        "http://localhost/api/project/previews",
+        { action: "start", target: "shell", expectedGraphFingerprint: project.fingerprint },
+        "POST",
+        { origin: "http://localhost", "sec-fetch-site": "same-origin" },
+      ));
+      expect(invalid.status).toBe(422);
+
+      const stale = await mutatePreview(jsonRequest(
+        "http://localhost/api/project/previews",
+        { action: "start", target: "browser", expectedGraphFingerprint: "00000000" },
+        "POST",
+        { origin: "http://localhost", "sec-fetch-site": "same-origin" },
+      ));
+      expect(stale.status).toBe(409);
+      await expect(stale.json()).resolves.toMatchObject({ currentFingerprint: project.fingerprint });
+
+      const cancelled = await mutatePreview(jsonRequest(
+        "http://localhost/api/project/previews",
+        { action: "cancel", target: "browser", expectedGraphFingerprint: project.fingerprint },
+        "POST",
+        { origin: "http://localhost", "sec-fetch-site": "same-origin" },
+      ));
+      expect(cancelled.status).toBe(200);
+      await expect(cancelled.json()).resolves.toMatchObject({ target: { phase: "idle", buildStatus: "not-run" } });
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
   it("probes local bridge availability without seeding or reading a project", async () => {
     delete process.env.VERCEL;
     delete process.env.VERCEL_ENV;
@@ -366,6 +485,16 @@ describe("local project trust boundary", () => {
     }));
     expect(crossOrigin.status).toBe(403);
 
+    const normalizedSameOrigin = await getProject(new Request("http://localhost:4319/api/project?capability=1", {
+      headers: {
+        host: "127.0.0.1:4319",
+        origin: "http://127.0.0.1:4319",
+        "sec-fetch-site": "same-origin",
+      },
+    }));
+    expect(normalizedSameOrigin.status).toBe(200);
+    await expect(normalizedSameOrigin.json()).resolves.toEqual({ available: true });
+
     const invalid = await putProject(jsonRequest(
       "http://localhost/api/project",
       { graph: demoGraph, reason: "test", unexpected: true },
@@ -421,7 +550,7 @@ describe("local project trust boundary", () => {
         migration: { sourceFingerprint: string; fromVersion: string; toVersion: string };
       };
       expect(open.status).toBe(409);
-      expect(blocked.migration).toMatchObject({ fromVersion: "0.0.1", toVersion: "0.6.0" });
+      expect(blocked.migration).toMatchObject({ fromVersion: "0.0.1", toVersion: "0.7.0" });
       expect(readdirSync(projectDir)).toEqual(["graph.json"]);
 
       const stale = await migrateProjectRoute(jsonRequest(

@@ -13,13 +13,15 @@ import {
   type ActivePreviewStatus,
 } from "../runtime-preview-protocol";
 import { PhonePreview } from "./phone-preview";
+import { LocalPreviewPanel } from "../local-preview-panel";
+import type { LocalPreviewsController } from "../use-local-previews";
 
 type FileRow =
   | { kind: "header"; key: string; label: string }
   | { kind: "file"; key: string; file: StudioGeneratedFileSet["files"][number]; label: string };
 
 function buildFileRows(files: StudioGeneratedFileSet["files"], target: OutputTarget): FileRow[] {
-  const prefix = target === "react" ? "src/generated/" : target === "swiftui" ? "Generated/" : "src/";
+  const prefix = target === "react" ? "src/generated/" : target === "swiftui" ? "Generated/" : target === "expo" ? "" : "src/";
   let lastDirectory: string | null = null;
   const rows: FileRow[] = [];
   for (const file of files) {
@@ -49,6 +51,7 @@ interface OutputsStageProps {
   copied: boolean;
   graph: SemanticInterfaceGraph;
   selectedScreen: string;
+  localPreviews: LocalPreviewsController;
 }
 
 export function OutputsStage({
@@ -64,6 +67,7 @@ export function OutputsStage({
   copied,
   graph,
   selectedScreen,
+  localPreviews,
 }: OutputsStageProps) {
   const previewFrame = useRef<HTMLIFrameElement>(null);
   const [previewStatus, setPreviewStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -138,8 +142,16 @@ export function OutputsStage({
             />
             {previewError ? <p role="alert" className="mt-3 px-1 text-[11px] text-[var(--danger)]">{previewError}</p> : null}
           </div>
-        ) : outputTarget === "swiftui" && output ? (
+        ) : (outputTarget === "swiftui" || outputTarget === "expo") && output ? (
+          <div>
+            {outputTarget === "expo" ? (
+              <div className="mb-3 rounded-2xl border border-[var(--line)] bg-[var(--surface-strong)] px-4 py-3 text-[11px] leading-relaxed text-[var(--muted)]">
+                <strong className="block text-[var(--accent-dark)]">Expo Adaptive semantic preview</strong>
+                Native iOS and Android builds use the generated Expo Router project. The live device build boundary is reported separately from this instant canvas projection.
+              </div>
+            ) : null}
           <PhonePreview graph={graph} selectedScreen={selectedScreen} />
+          </div>
         ) : outputTarget === "web" && output && graph.web && webScreen ? (
           <div data-testid="responsive-web-preview" className="overflow-hidden rounded-[24px] border border-[var(--line)] bg-white shadow-[0_24px_60px_-42px_var(--shadow-strong)]">
             <div className="flex h-10 items-center gap-2 border-b border-zinc-200 bg-zinc-100 px-4" aria-label="Browser preview chrome">
@@ -161,11 +173,12 @@ export function OutputsStage({
             <span className="mt-2 block text-[var(--muted)]">{outputMessage}</span>
           </div>
         )}
+        <LocalPreviewPanel previews={localPreviews} />
       </div>
       <div className="min-w-0 overflow-hidden rounded-[24px] border border-[#303a35] bg-[#1c211f] text-[#dce5df] shadow-[0_24px_50px_-34px_rgba(18,28,23,.8)]">
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
           <div className="flex gap-1 rounded-lg bg-white/5 p-1" role="group" aria-label="Output target">
-            {(["react", "swiftui", "web"] as const).map((target) => <button key={target} type="button" aria-pressed={outputTarget === target} onClick={() => { setOutputTarget(target); setOutputFilePath(null); }} className={`rounded-md px-3 py-1.5 text-[10px] font-semibold capitalize ${outputTarget === target ? "bg-white/12 text-white" : "text-white/45 hover:text-white/70"}`}>{target}</button>)}
+            {(["react", "swiftui", "expo", "web"] as const).map((target) => <button key={target} type="button" aria-pressed={outputTarget === target} onClick={() => { setOutputTarget(target); setOutputFilePath(null); }} className={`rounded-md px-3 py-1.5 text-[10px] font-semibold capitalize ${outputTarget === target ? "bg-white/12 text-white" : "text-white/45 hover:text-white/70"}`}>{target}</button>)}
           </div>
           <div className="flex items-center gap-3">
             <button type="button" onClick={copyGeneratedFile} disabled={!selectedCode} className="inline-flex items-center gap-1.5 rounded-md bg-white/8 px-2.5 py-1.5 text-[10px] font-medium text-white/70 hover:bg-white/12 hover:text-white disabled:cursor-not-allowed disabled:opacity-40">

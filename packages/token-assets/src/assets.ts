@@ -281,7 +281,7 @@ export function exportProjectAssets(
   projectDir: string,
   assets: readonly AssetDefinition[],
   outputRoot: string,
-  target: "react" | "swiftui" | "web" = "react",
+  target: "react" | "swiftui" | "expo" | "web" = "react",
 ): AssetExportResult {
   const diagnostics = inspectProjectAssets(projectDir, assets);
   const blocking = new Set(diagnostics.filter((item) => item.severity === "error").map((item) => `${item.assetId}.${item.variantId ?? ""}`));
@@ -293,7 +293,9 @@ export function exportProjectAssets(
       const variantId = "id" in file && file !== asset ? file.id : "";
       if (blocking.has(`${asset.id}.${variantId}`)) continue;
       const source = join(projectDir, file.storageKey);
-      const destination = join(outputRoot, target === "swiftui" ? "Resources" : "public", file.storageKey);
+      const destination = target === "expo"
+        ? join(outputRoot, file.storageKey)
+        : join(outputRoot, target === "swiftui" ? "Resources" : "public", file.storageKey);
       if (!inside(outputRoot, destination)) throw new Error("Asset output escaped the generated output root");
       const destinationParent = dirname(destination);
       mkdirSync(outputRoot, { recursive: true });

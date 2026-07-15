@@ -577,6 +577,42 @@ export function Inspector({
             ) : null}
           </Section>
 
+          {graph.expo ? (
+            <Section title="Expo Adaptive">
+              <p className="text-[10px] leading-relaxed text-[var(--faint)]">Choose a universal React Native renderer, an IntentForm-owned platform file adapter, or a project-owned component boundary.</p>
+              <label className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">
+                Render strategy
+                <select
+                  disabled={Boolean(componentContext)}
+                  value={selectedNode.expo?.strategy ?? graph.expo.defaultRenderStrategy}
+                  onChange={(event) => updateNode((node) => {
+                    const strategy = event.target.value;
+                    node.expo = strategy === "platform-native"
+                      ? { strategy, adapter: `intent.${node.kind}` }
+                      : strategy === "project-component"
+                        ? { strategy, componentId: `project.${node.kind}` }
+                        : { strategy: "universal-react-native" };
+                  }, `Changed Expo rendering to ${event.target.value}.`)}
+                  className="select-control text-[11px] font-normal disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <option value="universal-react-native">Universal React Native</option>
+                  <option value="platform-native">Platform-native adapter</option>
+                  <option value="project-component">Project component</option>
+                </select>
+              </label>
+              {selectedNode.expo?.strategy === "platform-native" ? (
+                <TextField label="Adapter ID" value={selectedNode.expo.adapter} onCommit={(value) => {
+                  if (value) updateNode((node) => { node.expo = { strategy: "platform-native", adapter: value }; }, `Bound Expo adapter ${value}.`);
+                }} />
+              ) : null}
+              {selectedNode.expo?.strategy === "project-component" ? (
+                <TextField label="Project component ID" value={selectedNode.expo.componentId} onCommit={(value) => {
+                  if (value) updateNode((node) => { node.expo = { strategy: "project-component", componentId: value }; }, `Bound project component ${value}.`);
+                }} />
+              ) : null}
+            </Section>
+          ) : null}
+
           {graph.web ? (
             <Section title="Responsive web">
               <p className="text-[10px] leading-relaxed text-[var(--faint)]">Typed CSS behavior compiles into owned route and stylesheet files. Breakpoints come from the project profile.</p>

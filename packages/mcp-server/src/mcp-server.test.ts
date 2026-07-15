@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { demoGraph } from "@intentform/proof-report/demo";
 import { findGraphNodeLocation } from "@intentform/semantic-schema";
+import { compileExpo } from "@intentform/compiler-expo";
 import { compileReact } from "@intentform/compiler-react";
 import { compileWeb } from "@intentform/compiler-web";
 import { resourceDefinitions, toolDefinitions } from "./index.ts";
@@ -11,6 +12,7 @@ import {
   applyMigration,
   applyPatch,
   collectProjectAssets,
+  cancelProjectPreview,
   compileProject,
   componentSchema,
   describeProject,
@@ -23,9 +25,11 @@ import {
   instantiateProjectComponent,
   listTokenModes,
   projectRevisions,
+  projectPreviewStatus,
   previewMigration,
   previewPatch,
   replaceGraph,
+  runProjectPreview,
   revertProject,
   searchComponents,
   searchProjectAssets,
@@ -103,7 +107,7 @@ describe("IntentForm agent project store", () => {
       required: ["definitionId", "instanceId", "screenId"],
       additionalProperties: false,
     });
-    expect([...byName.keys()].filter((name) => name.startsWith("intentform_"))).toHaveLength(22);
+    expect([...byName.keys()].filter((name) => name.startsWith("intentform_"))).toHaveLength(25);
     for (const name of [
       "intentform_list_token_modes",
       "intentform_import_dtcg",
@@ -112,9 +116,36 @@ describe("IntentForm agent project store", () => {
       "intentform_import_asset",
       "intentform_asset_gc",
       "intentform_verify_web",
+      "intentform_preview_status",
+      "intentform_run_preview",
+      "intentform_cancel_preview",
     ]) {
       expect(byName.get(name)?.inputSchema).toMatchObject({ additionalProperties: false });
     }
+  });
+
+  it("publishes conflict-safe preview status, run and cancellation contracts", () => {
+    const byName = new Map(toolDefinitions.map((tool) => [tool.name, tool]));
+    expect(byName.get("intentform_run_preview")?.inputSchema).toMatchObject({
+      required: ["target", "expectedFingerprint"],
+      additionalProperties: false,
+    });
+    expect(byName.get("intentform_cancel_preview")?.inputSchema).toMatchObject({
+      required: ["target", "expectedFingerprint"],
+      additionalProperties: false,
+    });
+    const project = loadProject(dir);
+    const status = projectPreviewStatus(dir);
+    expect(status.fingerprint).toBe(project.fingerprint);
+    expect(status.targets.find((entry) => entry.target === "browser")).toMatchObject({
+      phase: "idle",
+      buildStatus: "not-run",
+    });
+    expect(() => runProjectPreview(dir, "browser", "00000000", false)).toThrow(/fingerprint conflict/i);
+    expect(cancelProjectPreview(dir, "browser", project.fingerprint).target).toMatchObject({
+      phase: "idle",
+      buildStatus: "not-run",
+    });
   });
 
   it("seeds a missing project from the verified sample and validates on load", () => {
@@ -135,7 +166,7 @@ describe("IntentForm agent project store", () => {
     expect(preview).toMatchObject({
       status: "migration-required",
       fromVersion: "0.0.1",
-      toVersion: "0.6.0",
+      toVersion: "0.7.0",
       sourceFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
     expect(readdirSync(dir)).toEqual(["graph.json"]);
@@ -146,7 +177,7 @@ describe("IntentForm agent project store", () => {
     expect(applied).toMatchObject({
       status: "current",
       fromVersion: "0.0.1",
-      toVersion: "0.6.0",
+      toVersion: "0.7.0",
       fingerprint: expect.stringMatching(/^[a-f0-9]{8}$/),
     });
     expect(applied.checkpoint).toMatch(/migration-checkpoints/);
@@ -155,6 +186,7 @@ describe("IntentForm agent project store", () => {
     expect(loadProject(dir).graph).toEqual(migratedLegacyDemoGraph());
     expect(compileProject(dir, "react", false).fileCount).toBeGreaterThan(0);
     expect(compileProject(dir, "swiftui", false).fileCount).toBeGreaterThan(0);
+    expect(compileProject(dir, "expo", false).fileCount).toBeGreaterThan(0);
   });
 
   it("leaves the old graph untouched when its checkpoint cannot be written", () => {
@@ -215,7 +247,7 @@ describe("IntentForm agent project store", () => {
 
     expect(applied).toMatchObject({ status: "current", checkpoint: expect.any(String) });
     expect(applied).not.toHaveProperty("graph");
-    expect(previewMigration(dir)).toMatchObject({ status: "current", fromVersion: "0.6.0" });
+    expect(previewMigration(dir)).toMatchObject({ status: "current", fromVersion: "0.7.0" });
   });
 
   it("writes atomically and rejects a stale writer without losing the winning graph", () => {
@@ -333,7 +365,7 @@ describe("IntentForm agent project store", () => {
     });
     expect(componentSchema(dir, "intent.balance-summary")).toMatchObject({
       abiVersion: "1.0.0",
-      schemaVersion: "0.6.0",
+      schemaVersion: "0.7.0",
       definitions: [{ id: "intent.balance-summary", version: "1.0.0" }],
     });
 
@@ -595,6 +627,10 @@ describe("IntentForm agent project store", () => {
     expect(dry.fingerprint).toBe(compileReact(demoGraph).fingerprint);
     const written = compileProject(dir, "react", true);
     expect(written.written?.length).toBe(written.fileCount);
+    const expo = compileProject(dir, "expo", true);
+    expect(expo.fingerprint).toBe(compileExpo(demoGraph).fingerprint);
+    expect(expo.files).toContain("intentform.expo.json");
+    expect(expo.written?.length).toBe(expo.fileCount);
   });
 
   it("describes, verifies, and compiles a responsive-web project through MCP tooling", () => {
