@@ -46,7 +46,7 @@ describe("responsive web compiler", () => {
     expect(first.target).toBe("web");
     expect(first.files.map((file) => file.path)).toEqual(expect.arrayContaining([
       "package.json", "index.html", "src/main.tsx", "src/app.tsx", "src/styles.css", "intentform.web.json",
-      "src/routes/home.tsx", "src/contracts/home.ts",
+      "src/routes/home.tsx", "src/contracts/home.ts", "html/home.html", "html/styles.css",
     ]));
     const css = first.files.find((file) => file.path === "src/styles.css")!.content;
     expect(css).toContain("grid-template-columns: repeat(auto-fit, minmax(");
@@ -63,6 +63,11 @@ describe("responsive web compiler", () => {
     expect(app).toContain("window.history.pushState");
     expect(app).toContain("visualState");
     expect(app).toContain('"status":"failed"');
+    expect(app).not.toContain("if-site-nav");
+    const route = first.files.find((file) => file.path === "src/routes/home.tsx")!.content;
+    expect(route).not.toContain("if-page-header");
+    expect(route).not.toContain("if-eyebrow");
+    expect(first.files.find((file) => file.path === "html/home.html")!.content).toContain('data-screen-id="home"');
     expect(first.files.find((file) => file.path === "src/routes/payment-request.tsx")!.content).toContain("Payment could not be sent");
     expect(css).toContain('.if-page[data-token-mode="evening"]');
     const generatedPackage = JSON.parse(first.files.find((file) => file.path === "package.json")!.content) as {
@@ -138,5 +143,32 @@ describe("responsive web compiler", () => {
     expect(css).toContain("grid-row: 1 / span 2");
     expect(css).toContain("align-self: baseline");
     expect(css).toContain("padding: 8px 12px 16px 20px");
+  });
+
+  it("compiles typed visual Web properties without restoring a universal design template", () => {
+    const graph = structuredClone(responsiveGraph());
+    graph.screens[0]!.nodes[0]!.web!.visual = {
+      color: "rgb(12, 24, 36)",
+      backgroundColor: "oklch(70% 0.15 240)",
+      borderColor: "#abc",
+      borderWidth: 2,
+      borderStyle: "solid",
+      borderRadius: 6,
+      opacity: 0.9,
+      fontFamily: '"Geist", sans-serif',
+      fontSize: 18,
+      fontWeight: 620,
+      lineHeight: 26,
+      letterSpacing: -0.2,
+      textAlign: "center",
+    };
+    const output = compileWeb(parseGraph(graph));
+    const css = output.files.find((file) => file.path === "src/styles.css")!.content;
+    expect(css).toContain("background-color: oklch(70% 0.15 240)");
+    expect(css).toContain('font-family: "Geist", sans-serif');
+    expect(css).toContain("border-radius: 6px");
+    expect(css).not.toContain("if-page-header");
+    expect(css).not.toContain("if-site-nav");
+    expect(css).not.toContain("font-size: clamp(2.5rem");
   });
 });

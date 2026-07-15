@@ -430,6 +430,31 @@ const webNodeStyleFields = {
   gridMaxColumns: z.number().int().min(1).max(12),
 } as const;
 
+const computedCssColorSchema = z.string().min(1).max(96).regex(
+  /^(?:#[0-9a-f]{3,8}|(?:rgb|rgba|hsl|hsla|oklch)\([^{};<>]+\)|transparent|currentColor)$/i,
+  "Web colors must be a bounded computed CSS color",
+);
+
+export const webVisualStyleSchema = z.strictObject({
+  color: computedCssColorSchema.optional(),
+  backgroundColor: computedCssColorSchema.optional(),
+  borderColor: computedCssColorSchema.optional(),
+  borderWidth: z.number().finite().min(0).max(256).optional(),
+  borderStyle: z.enum(["none", "solid", "dashed", "dotted", "double"]).optional(),
+  borderRadius: z.number().finite().min(0).max(10_000).optional(),
+  paddingTop: z.number().finite().min(0).max(512).optional(),
+  paddingRight: z.number().finite().min(0).max(512).optional(),
+  paddingBottom: z.number().finite().min(0).max(512).optional(),
+  paddingLeft: z.number().finite().min(0).max(512).optional(),
+  opacity: z.number().finite().min(0).max(1).optional(),
+  fontFamily: z.string().min(1).max(200).regex(/^[a-z0-9 ,"'_-]+$/i).optional(),
+  fontSize: z.number().finite().min(1).max(1_000).optional(),
+  fontWeight: z.number().finite().min(1).max(1_000).optional(),
+  lineHeight: z.number().finite().min(1).max(2_000).optional(),
+  letterSpacing: z.number().finite().min(-100).max(1_000).optional(),
+  textAlign: z.enum(["start", "end", "left", "right", "center", "justify"]).optional(),
+});
+
 export const webNodeStyleOverrideSchema = z.strictObject(Object.fromEntries(
   Object.entries(webNodeStyleFields).map(([key, schema]) => [key, schema.optional()]),
 ) as { [Key in keyof typeof webNodeStyleFields]: z.ZodOptional<(typeof webNodeStyleFields)[Key]> }).superRefine((override, context) => {
@@ -455,6 +480,7 @@ export const webNodeLayoutSchema = z.strictObject({
   containerType: webNodeStyleFields.containerType.default("normal"),
   gridMinColumnWidth: webNodeStyleFields.gridMinColumnWidth.default(240),
   gridMaxColumns: webNodeStyleFields.gridMaxColumns.default(4),
+  visual: webVisualStyleSchema.optional(),
   breakpointOverrides: z.record(idSchema, webNodeStyleOverrideSchema).refine(
     (record) => Object.keys(record).length <= GRAPH_LIMITS.maxWebBreakpointOverrides,
     `Web layout must contain at most ${GRAPH_LIMITS.maxWebBreakpointOverrides} breakpoint overrides`,

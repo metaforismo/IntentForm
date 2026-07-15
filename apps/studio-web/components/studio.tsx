@@ -24,6 +24,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { demoBrief, demoGraph } from "@intentform/proof-report/demo";
+import type { DomImportProjection } from "@intentform/compiler-web/dom-import";
 import { applyRepair, type RepairProposal } from "@intentform/repair-planner";
 import {
   flattenSemanticNodes,
@@ -245,6 +246,13 @@ export function Studio() {
       { at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }), text },
       ...entries,
     ].slice(0, 24));
+  };
+
+  const applyWebImport = (projection: DomImportProjection) => {
+    const importedScreen = projection.graph.screens.find((screen) => screen.id === selectedScreen);
+    setGraph(projection.graph);
+    setSelectedNodeId(importedScreen?.nodes[0]?.id ?? null);
+    setNotice(`Applied reviewed HTML/CSS import: ${projection.importedNodes} nodes, ${projection.changes.length} semantic changes, ${projection.diagnostics.length} explicit diagnostics.`);
   };
 
   useEffect(() => {
@@ -1093,6 +1101,7 @@ export function Studio() {
                   localPreviews={localPreviews}
                   scenarioLabel={scenario.label}
                   onLocalProjectChanged={openLocalProject}
+                  onApplyWebImport={applyWebImport}
                 />
               ) : null}
 
