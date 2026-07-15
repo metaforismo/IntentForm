@@ -135,4 +135,17 @@ describe("Expo Adaptive compiler", () => {
     delete missing.expo;
     expect(() => parseGraph(missing)).toThrow(/requires an Expo Router profile/i);
   });
+
+  it("preserves native flex semantics and reports explicit grid fallback", () => {
+    const graph = structuredClone(demoGraph);
+    const target = graph.screens[0]!.nodes[0]!;
+    Object.assign(target.layout, { flexGrow: 2, flexShrink: 1, flexBasis: 144, gridRow: { start: 2, span: 1 } });
+    const output = compileExpo(parseGraph(graph));
+    const screen = output.files.find((file) => file.path === "src/screens/home.tsx")!.content;
+    const runtime = output.files.find((file) => file.path === "src/runtime/layout.ts")!.content;
+    expect(screen).toContain('"flexGrow":2');
+    expect(runtime).toContain("flexGrow: layout.flexGrow");
+    expect(runtime).toContain('baseline: "baseline"');
+    expect(output.diagnostics).toContainEqual(expect.objectContaining({ message: expect.stringContaining("CSS-grid track placement") }));
+  });
 });

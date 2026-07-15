@@ -86,6 +86,11 @@ export function semanticNodeBoxStyle(node: SemanticNode, graph?: SemanticInterfa
     minHeight: node.layout.minHeight,
     maxHeight: node.layout.maxHeight,
     alignSelf: node.layout.align === "start" ? "flex-start" : node.layout.align === "end" ? "flex-end" : node.layout.align,
+    flexGrow: node.layout.flexGrow,
+    flexShrink: node.layout.flexShrink,
+    flexBasis: node.layout.flexBasis,
+    gridColumn: node.layout.gridColumn ? `${node.layout.gridColumn.start} / span ${node.layout.gridColumn.span}` : undefined,
+    gridRow: node.layout.gridRow ? `${node.layout.gridRow.start} / span ${node.layout.gridRow.span}` : undefined,
     overflow: node.layout.overflow === "clip" ? "hidden" : node.layout.overflow === "scroll" ? "auto" : "visible",
     ...previewWebStyle(node, graph, viewport),
   };
@@ -159,16 +164,26 @@ export function NodePreview({
     const spacing = resolveTokenMode(graph.tokens).spacing;
     const gap = spacing[node.layout.gapToken] ?? 0;
     const padding = spacing[node.layout.paddingToken] ?? 0;
+    const paddingBySide = node.layout.paddingTokens ? {
+      paddingTop: spacing[node.layout.paddingTokens.top] ?? 0,
+      paddingRight: spacing[node.layout.paddingTokens.right] ?? 0,
+      paddingBottom: spacing[node.layout.paddingTokens.bottom] ?? 0,
+      paddingLeft: spacing[node.layout.paddingTokens.left] ?? 0,
+    } : { padding };
     const horizontal = node.layout.axis === "horizontal";
     const style: CSSProperties = {
       ...semanticNodeBoxStyle(node, graph, viewport),
       display: mode === "grid" || mode === "overlay" || mode === "freeform" ? "grid" : "flex",
       flexDirection: horizontal ? "row" : "column",
       flexWrap: mode === "wrap" ? "wrap" : "nowrap",
-      gridTemplateColumns: mode === "grid" ? `repeat(${node.layout.columns}, minmax(0, 1fr))` : undefined,
+      gridTemplateColumns: mode === "grid" ? (node.layout.gridTracks?.map((track) => `${track}fr`).join(" ") ?? `repeat(${node.layout.columns}, minmax(0, 1fr))`) : undefined,
+      gridTemplateRows: mode === "grid" && node.layout.gridRows ? node.layout.gridRows.map((track) => `${track}fr`).join(" ") : undefined,
       position: mode === "freeform" ? "relative" : undefined,
       gap,
-      padding: mode === "safe-area" ? `${padding + 16}px ${padding}px ${padding + 24}px` : padding,
+      ...(mode === "safe-area" && !node.layout.paddingTokens
+        ? { padding: `${padding + 16}px ${padding}px ${padding + 24}px` }
+        : paddingBySide),
+      alignItems: node.layout.align === "start" ? "flex-start" : node.layout.align === "end" ? "flex-end" : node.layout.align,
       justifyContent: node.layout.justify === "space-between" ? "space-between" : node.layout.justify,
       overflow: mode === "scroll" ? "auto" : semanticNodeBoxStyle(node).overflow,
       borderRadius: 14,

@@ -61,7 +61,7 @@ actionTemplate.style.emphasis = "strong";
 const cardTemplate = node("card.root", "stack", "Surface card");
 
 const demoGraph = parseGraph({
-  schemaVersion: "0.8.0",
+  schemaVersion: "0.9.0",
   dependencies: [],
   product: {
     name: "Component tests",

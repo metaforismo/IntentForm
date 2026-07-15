@@ -1,4 +1,5 @@
 import { compileWeb } from "@intentform/compiler-web";
+import { compareLayoutEvidence, computeNeutralLayout, type LayoutBoundsEvidence } from "@intentform/layout-engine";
 import { flattenSemanticNodes, type SemanticInterfaceGraph } from "@intentform/semantic-schema";
 
 export interface WebVerificationFinding {
@@ -20,6 +21,42 @@ export interface WebVerificationResult {
   fingerprint: string | null;
   scenarios: WebVerificationScenario[];
   findings: WebVerificationFinding[];
+}
+
+export interface BrowserLayoutVerificationResult {
+  passed: boolean;
+  screenId: string;
+  scenarioId: string;
+  tolerance: number;
+  findings: WebVerificationFinding[];
+}
+
+export function verifyBrowserLayoutEvidence(
+  graph: SemanticInterfaceGraph,
+  screenId: string,
+  scenarioId: string,
+  evidence: readonly LayoutBoundsEvidence[],
+  tolerance = 2,
+): BrowserLayoutVerificationResult {
+  const screen = graph.screens.find((candidate) => candidate.id === screenId);
+  const frame = graph.web?.frames.find((candidate) => candidate.id === scenarioId);
+  if (!screen || !frame) {
+    const missing = !screen ? `screen ${screenId}` : `browser frame ${scenarioId}`;
+    return { passed: false, screenId, scenarioId, tolerance, findings: [{ severity: "error", code: "web.layout.scenario-missing", path: missing, message: `Cannot compare browser layout because ${missing} does not exist.` }] };
+  }
+  const width = frame.width ?? frame.maxWidth ?? frame.minWidth ?? graph.web?.contentMaxWidth ?? 1;
+  const expected = computeNeutralLayout(screen, graph, { width, height: frame.height });
+  const findings = compareLayoutEvidence(expected, evidence, tolerance).map((divergence): WebVerificationFinding => ({
+    severity: "error",
+    code: divergence.code.replace("layout.browser", "web.layout"),
+    path: `screens.${screenId}.nodes.${divergence.id}`,
+    message: divergence.code === "layout.browser.diverged"
+      ? `Browser bounds diverge from the neutral layout by ${divergence.maximumDelta.toFixed(2)}px (tolerance ${tolerance}px).`
+      : divergence.code === "layout.browser.missing"
+        ? "Expected semantic node is missing from browser layout evidence."
+        : "Browser layout evidence contains an unexpected semantic node.",
+  }));
+  return { passed: findings.length === 0, screenId, scenarioId, tolerance, findings };
 }
 
 export function verifyResponsiveWeb(graph: SemanticInterfaceGraph): WebVerificationResult {

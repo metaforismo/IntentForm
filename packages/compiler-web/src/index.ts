@@ -266,14 +266,18 @@ function resolvedWebStyle(node: PlatformIRNode, override: WebStyleOverride = {})
 }
 
 function declarations(style: Omit<WebStyle, "breakpointOverrides">, node: PlatformIRNode): string[] {
+  const align = node.layout.align === "start" ? "flex-start" : node.layout.align === "end" ? "flex-end" : node.layout.align;
+  const justify = node.layout.justify === "start" ? "flex-start" : node.layout.justify === "end" ? "flex-end" : node.layout.justify;
   const result = [
     `display: ${style.display}`,
     ...(style.display === "flex" ? [`flex-direction: ${style.direction}`, `flex-wrap: ${style.wrap}`] : []),
     ...(style.display === "grid" ? [
       `--if-grid-min: ${style.gridMinColumnWidth}px`,
       `--if-grid-max: ${style.gridMaxColumns}`,
-      "grid-template-columns: repeat(auto-fit, minmax(min(100%, max(var(--if-grid-min), calc((100% - (var(--if-grid-max) - 1) * var(--if-node-gap)) / var(--if-grid-max)))), 1fr))",
+      `grid-template-columns: ${node.layout.gridTracks?.map((track) => `${track}fr`).join(" ") ?? "repeat(auto-fit, minmax(min(100%, max(var(--if-grid-min), calc((100% - (var(--if-grid-max) - 1) * var(--if-node-gap)) / var(--if-grid-max)))), 1fr))"}`,
+      ...(node.layout.gridRows ? [`grid-template-rows: ${node.layout.gridRows.map((track) => `${track}fr`).join(" ")}`] : []),
     ] : []),
+    ...(node.children.length > 0 ? [`align-items: ${align}`, `justify-content: ${justify}`] : [`align-self: ${align}`]),
     `position: ${style.position}`,
     ...(style.insetBlockStart !== undefined ? [`inset-block-start: ${style.insetBlockStart}px`] : []),
     `overflow-x: ${style.overflowX}`,
@@ -282,6 +286,12 @@ function declarations(style: Omit<WebStyle, "breakpointOverrides">, node: Platfo
     `container-type: ${style.containerType}`,
     `--if-node-gap: ${node.layout.gap}px`,
     `--if-node-padding: ${node.layout.padding}px`,
+    `padding: ${node.layout.paddingBySide.top}px ${node.layout.paddingBySide.right}px ${node.layout.paddingBySide.bottom}px ${node.layout.paddingBySide.left}px`,
+    ...(node.layout.flexGrow !== undefined ? [`flex-grow: ${node.layout.flexGrow}`] : []),
+    ...(node.layout.flexShrink !== undefined ? [`flex-shrink: ${node.layout.flexShrink}`] : []),
+    ...(node.layout.flexBasis !== undefined ? [`flex-basis: ${node.layout.flexBasis}px`] : []),
+    ...(node.layout.gridColumn ? [`grid-column: ${node.layout.gridColumn.start} / span ${node.layout.gridColumn.span}`] : []),
+    ...(node.layout.gridRow ? [`grid-row: ${node.layout.gridRow.start} / span ${node.layout.gridRow.span}`] : []),
     ...(node.layout.width === "fixed" && node.layout.fixedWidth ? [`width: ${node.layout.fixedWidth}px`] : []),
     ...(node.layout.minWidth !== undefined ? [`min-width: ${node.layout.minWidth}px`] : []),
     ...(node.layout.maxWidth !== undefined ? [`max-width: ${node.layout.maxWidth}px`] : []),

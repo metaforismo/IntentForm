@@ -156,6 +156,14 @@ const componentForNode = (node: PlatformIRNode): string => {
     node.layout.maxWidth !== undefined ? `maxWidth: ${node.layout.maxWidth}` : null,
     node.layout.minHeight !== undefined ? `minHeight: ${node.layout.minHeight}` : null,
     node.layout.maxHeight !== undefined ? `maxHeight: ${node.layout.maxHeight}` : null,
+    node.layout.flexGrow !== undefined ? `flexGrow: ${node.layout.flexGrow}` : null,
+    node.layout.flexShrink !== undefined ? `flexShrink: ${node.layout.flexShrink}` : null,
+    node.layout.flexBasis !== undefined ? `flexBasis: ${node.layout.flexBasis}` : null,
+    node.layout.gridColumn ? `gridColumn: "${node.layout.gridColumn.start} / span ${node.layout.gridColumn.span}"` : null,
+    node.layout.gridRow ? `gridRow: "${node.layout.gridRow.start} / span ${node.layout.gridRow.span}"` : null,
+    `padding: "${node.layout.paddingBySide.top}px ${node.layout.paddingBySide.right}px ${node.layout.paddingBySide.bottom}px ${node.layout.paddingBySide.left}px"`,
+    node.layout.gridTracks ? `"--if-grid-columns": "${node.layout.gridTracks.map((track) => `${track}fr`).join(" ")}"` : null,
+    node.layout.gridRows ? `"--if-grid-rows": "${node.layout.gridRows.map((track) => `${track}fr`).join(" ")}"` : null,
     node.layout.position ? `"--if-x": "${node.layout.position.x}px"` : null,
     node.layout.position ? `"--if-y": "${node.layout.position.y}px"` : null,
     node.layout.position ? `"--if-z": ${node.layout.position.z}` : null,
@@ -366,13 +374,14 @@ h1 { margin: 8px 0 28px; font-size: 32px; letter-spacing: -.04em; }
 .if-align-center { align-self: center; }
 .if-align-end { align-self: flex-end; }
 .if-align-stretch { align-self: stretch; }
+.if-align-baseline { align-self: baseline; }
 .if-justify-center { justify-content: center; }
 .if-justify-end { justify-content: flex-end; }
 .if-justify-space-between { justify-content: space-between; }
 .if-overflow-clip { overflow: clip; }
 .if-overflow-scroll { overflow: auto; }
 .if-container { display: flex; min-width: 0; flex-direction: column; }
-.if-mode-compact-grid { display: grid; grid-template-columns: repeat(var(--if-columns), minmax(0, 1fr)); }
+.if-mode-compact-grid { display: grid; grid-template-columns: var(--if-grid-columns, repeat(var(--if-columns), minmax(0, 1fr))); grid-template-rows: var(--if-grid-rows, none); }
 .if-mode-compact-overlay, .if-mode-compact-freeform { display: grid; position: relative; }
 .if-mode-compact-overlay > .if-node { grid-area: 1 / 1; }
 .if-mode-compact-freeform > .if-node { position: absolute; left: var(--if-x, 0); top: var(--if-y, 0); z-index: var(--if-z, 0); }
@@ -412,7 +421,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 @media (min-width: ${DEVICE_CLASS_LIMITS.compactMaxWidth + 1}px) and (min-height: ${DEVICE_CLASS_LIMITS.compactMaxHeight + 1}px) {
   .if-container { display: flex; flex-direction: column; flex-wrap: nowrap; grid-template-columns: none; overflow: visible; position: static; padding-top: 0; padding-bottom: 0; }
   .if-container > .if-node { position: relative; inset: auto; grid-area: auto; flex: initial; }
-  .if-mode-regular-grid { display: grid; grid-template-columns: repeat(var(--if-columns), minmax(0, 1fr)); }
+  .if-mode-regular-grid { display: grid; grid-template-columns: var(--if-grid-columns, repeat(var(--if-columns), minmax(0, 1fr))); grid-template-rows: var(--if-grid-rows, none); }
   .if-mode-regular-overlay, .if-mode-regular-freeform { display: grid; position: relative; }
   .if-mode-regular-overlay > .if-node { grid-area: 1 / 1; }
   .if-mode-regular-freeform > .if-node { position: absolute; left: var(--if-x, 0); top: var(--if-y, 0); z-index: var(--if-z, 0); }

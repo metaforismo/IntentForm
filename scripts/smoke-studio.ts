@@ -163,12 +163,12 @@ try {
             status: 409,
             contentType: "application/json",
             body: JSON.stringify({
-              error: "Project schema 0.0.1 must be migrated to 0.8.0 before it can be opened.",
+              error: "Project schema 0.0.1 must be migrated to 0.9.0 before it can be opened.",
               migration: {
                 status: "migration-required",
                 sourceFingerprint: "a".repeat(64),
                 fromVersion: "0.0.1",
-                toVersion: "0.8.0",
+                toVersion: "0.9.0",
                 diagnostics: [{
                   severity: "info",
                   code: "schema.migrated.0.0.1.to.0.1.0",
@@ -209,6 +209,11 @@ try {
                   code: "schema.migrated.0.7.0.to.0.8.0",
                   path: "schemaVersion",
                   message: "Converted schema 0.7.0 to 0.8.0.",
+                }, {
+                  severity: "info",
+                  code: "schema.migrated.0.8.0.to.0.9.0",
+                  path: "schemaVersion",
+                  message: "Converted schema 0.8.0 to 0.9.0.",
                 }],
               },
             }),
@@ -610,6 +615,19 @@ try {
         || await selectionOverlay.getAttribute("data-selection-ids") !== "layout-lab.grid-a") {
         throw new Error("Nested selection did not create a single deterministic selection overlay");
       }
+      const layoutInspector = page.getByTestId("semantic-inspector");
+      await layoutInspector.getByTestId("padding-side-controls").waitFor();
+      await layoutInspector.getByTestId("grid-placement-controls").waitFor();
+      const growField = layoutInspector.getByLabel("Grow");
+      await growField.fill("2");
+      await growField.press("Enter");
+      await page.waitForFunction(() => getComputedStyle(document.querySelector<HTMLElement>('[data-testid="canvas-node-layout-lab.grid-a"]')!).flexGrow === "2");
+      await page.getByRole("button", { name: "Undo" }).click();
+      const gridRowField = layoutInspector.getByLabel("Grid row");
+      await gridRowField.fill("2");
+      await gridRowField.press("Enter");
+      await page.waitForFunction(() => getComputedStyle(document.querySelector<HTMLElement>('[data-testid="canvas-node-layout-lab.grid-a"]')!).gridRowStart === "2");
+      await page.getByRole("button", { name: "Undo" }).click();
       const resizeHandles = selectionOverlay.locator('button[aria-label^="Resize selected layer "]');
       const resizeHandleCount = await resizeHandles.count();
       if (resizeHandleCount !== 8) {

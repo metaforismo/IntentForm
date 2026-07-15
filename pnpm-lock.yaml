@@ -578,6 +578,9 @@ importers:
       '@intentform/compiler-web':
         specifier: workspace:*
         version: link:../compiler-web
+      '@intentform/layout-engine':
+        specifier: workspace:*
+        version: link:../layout-engine
       '@intentform/semantic-schema':
         specifier: workspace:*
         version: link:../semantic-schema

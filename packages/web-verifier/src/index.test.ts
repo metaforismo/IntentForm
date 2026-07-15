@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { demoGraph } from "@intentform/proof-report/demo";
 import { parseGraph } from "@intentform/semantic-schema";
-import { verifyResponsiveWeb } from "./index";
+import { computeNeutralLayout } from "@intentform/layout-engine";
+import { verifyBrowserLayoutEvidence, verifyResponsiveWeb } from "./index";
 
 function webGraph() {
   const graph = structuredClone(demoGraph);
@@ -66,5 +67,18 @@ describe("responsive web verification", () => {
     fixture.data.activitySummary = "A".repeat(170);
     const findings = verifyResponsiveWeb(parseGraph(graph)).findings;
     expect(findings.map((finding) => finding.code)).toEqual(expect.arrayContaining(["web.content.long", "web.content.unbroken"]));
+  });
+
+  it("compares captured browser bounds against the neutral layout oracle", () => {
+    const graph = webGraph();
+    const screen = graph.screens[0]!;
+    const frame = graph.web!.frames[0]!;
+    const expected = computeNeutralLayout(screen, graph, { width: frame.width!, height: frame.height });
+    const evidence = [...expected.byId.values()].map((item) => ({ id: item.id, frame: { ...item.frame } }));
+    expect(verifyBrowserLayoutEvidence(graph, screen.id, frame.id, evidence)).toMatchObject({ passed: true, findings: [] });
+    evidence[0]!.frame.width += 12;
+    expect(verifyBrowserLayoutEvidence(graph, screen.id, frame.id, evidence).findings).toEqual([
+      expect.objectContaining({ severity: "error", code: "web.layout.diverged" }),
+    ]);
   });
 });

@@ -119,4 +119,24 @@ describe("responsive web compiler", () => {
     delete missing.web;
     expect(() => parseGraph(missing)).toThrow(/requires a responsive-web profile/);
   });
+
+  it("emits flex, explicit grid placement, baseline, and asymmetric padding declarations", () => {
+    const graph = structuredClone(responsiveGraph());
+    const target = graph.screens[0]!.nodes[0]!;
+    Object.assign(target.layout, {
+      flexGrow: 2, flexShrink: 3, flexBasis: 180, align: "baseline",
+      gridTracks: [1, 2], gridRows: [2, 1], gridColumn: { start: 2, span: 1 }, gridRow: { start: 1, span: 2 },
+      paddingTokens: { top: "space.8", right: "space.12", bottom: "space.16", left: "space.20" },
+    });
+    const css = compileWeb(parseGraph(graph)).files.find((file) => file.path === "src/styles.css")!.content;
+    expect(css).toContain("flex-grow: 2");
+    expect(css).toContain("flex-shrink: 3");
+    expect(css).toContain("flex-basis: 180px");
+    expect(css).toContain("grid-template-columns: 1fr 2fr");
+    expect(css).toContain("grid-template-rows: 2fr 1fr");
+    expect(css).toContain("grid-column: 2 / span 1");
+    expect(css).toContain("grid-row: 1 / span 2");
+    expect(css).toContain("align-self: baseline");
+    expect(css).toContain("padding: 8px 12px 16px 20px");
+  });
 });

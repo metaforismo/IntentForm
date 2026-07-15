@@ -78,7 +78,7 @@ export const demoBrief =
   "Create a calm payment flow for independent professionals. Keep the amount, recipient and next action unmistakable. Never expose blockchain terminology. Every failure must provide a recovery path.";
 
 export const demoGraph: SemanticInterfaceGraph = parseGraph({
-  schemaVersion: "0.8.0",
+  schemaVersion: "0.9.0",
   dependencies: [],
   product: {
     name: "Verdant Pay",
