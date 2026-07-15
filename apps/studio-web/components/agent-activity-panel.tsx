@@ -1,7 +1,15 @@
 "use client";
 
-import { LockKey, ShieldCheck } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
+import {
+  ArrowSquareOut,
+  Check,
+  Clock,
+  LockKey,
+  ShieldCheck,
+  Warning,
+  X,
+} from "@phosphor-icons/react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 interface AgentActivityEntry {
   id: string;
@@ -13,6 +21,30 @@ interface AgentActivityEntry {
   durationMs: number;
 }
 
+export interface AgentReviewChange {
+  path: string;
+  before: unknown;
+  after: unknown;
+}
+
+interface AgentTransactionReview {
+  transactionId: string;
+  transport: "stdio" | "http";
+  rationale: string;
+  createdAt: string;
+  expiresAt: string;
+  resolvedAt: string | null;
+  baseFingerprint: string;
+  previewFingerprint: string;
+  status: "previewed" | "committed" | "rejected" | "expired" | "stale";
+  changes: AgentReviewChange[];
+  verification: {
+    passed: boolean;
+    buildStatus: "passed" | "failed" | "not-run";
+    findings: Array<{ id: string; severity: "info" | "warning" | "error"; violatedIntent: string }>;
+  };
+}
+
 interface AgentActivityResponse {
   policy: {
     scope: "current-local-project";
@@ -20,26 +52,60 @@ interface AgentActivityResponse {
     arbitraryShell: false;
     arbitraryFilesystem: false;
     outboundNetwork: false;
-    stdio: { available: true; boundary: "local-process" };
     http: { configured: boolean; binding: "127.0.0.1"; bearerAuthentication: "required" };
-    excludedFields: readonly string[];
   };
   entries: AgentActivityEntry[];
+  reviews: AgentTransactionReview[];
+}
+
+interface AgentActivityPanelProps {
+  enabled: boolean;
+  projectName: string;
+  screenLabel: string;
+  selectionLabel: string | null;
+  onPreviewChanges: (changes: AgentReviewChange[]) => void;
+  onProjectChanged: () => void;
 }
 
 function displayTool(tool: string): string {
   return tool.replace(/^intentform_/, "").replaceAll("_", " ");
 }
 
-function outcomeTone(outcome: AgentActivityEntry["outcome"]): string {
-  if (outcome === "succeeded") return "text-emerald-300";
-  if (outcome === "cancelled") return "text-amber-200";
-  return "text-red-300";
+function displayValue(value: unknown): string {
+  if (value === undefined) return "not set";
+  if (value === null) return "none";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  const serialized = JSON.stringify(value);
+  return serialized.length > 180 ? `${serialized.slice(0, 177)}…` : serialized;
 }
 
-export function AgentActivityPanel({ enabled }: { enabled: boolean }) {
+function outcomeTone(outcome: AgentActivityEntry["outcome"]): string {
+  if (outcome === "succeeded") return "text-[var(--success)]";
+  if (outcome === "cancelled") return "text-[var(--warn)]";
+  return "text-[var(--danger)]";
+}
+
+export function AgentActivityPanel({
+  enabled,
+  projectName,
+  screenLabel,
+  selectionLabel,
+  onPreviewChanges,
+  onProjectChanged,
+}: AgentActivityPanelProps) {
   const [response, setResponse] = useState<AgentActivityResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState<"commit" | "reject" | null>(null);
+
+  const refresh = useCallback(async () => {
+    const result = await fetch("/api/project/agent-activity", { cache: "no-store" });
+    const payload = await result.json() as AgentActivityResponse | { error?: string };
+    if (!result.ok || !("policy" in payload) || !Array.isArray(payload.entries) || !Array.isArray(payload.reviews)) {
+      throw new Error("error" in payload && payload.error ? payload.error : "Agent activity is unavailable.");
+    }
+    setResponse(payload);
+    setError(null);
+  }, []);
 
   useEffect(() => {
     if (!enabled) {
@@ -48,101 +114,99 @@ export function AgentActivityPanel({ enabled }: { enabled: boolean }) {
       return;
     }
     let active = true;
-    let controller: AbortController | null = null;
-    const refresh = async () => {
-      controller?.abort();
-      controller = new AbortController();
+    void refresh().catch((refreshError) => {
+      if (active) setError(refreshError instanceof Error ? refreshError.message : "Agent activity is unavailable.");
+    });
+    const stream = new EventSource("/api/project/agent-activity?stream=1");
+    stream.onmessage = (event) => {
+      if (!active) return;
       try {
-        const result = await fetch("/api/project/agent-activity", { cache: "no-store", signal: controller.signal });
-        const payload = await result.json() as AgentActivityResponse | { error?: string };
-        if (!result.ok || !("policy" in payload) || !Array.isArray(payload.entries)) {
-          throw new Error("error" in payload && payload.error ? payload.error : "Agent activity is unavailable.");
-        }
-        if (active) {
+        const payload = JSON.parse(event.data) as AgentActivityResponse;
+        if (payload.policy && Array.isArray(payload.entries) && Array.isArray(payload.reviews)) {
           setResponse(payload);
           setError(null);
         }
-      } catch (refreshError) {
-        if (active && !(refreshError instanceof DOMException && refreshError.name === "AbortError")) {
-          setError(refreshError instanceof Error ? refreshError.message : "Agent activity is unavailable.");
-        }
+      } catch {
+        setError("Agent activity stream returned an invalid event.");
       }
     };
-    void refresh();
-    const interval = window.setInterval(() => void refresh(), 2_000);
+    stream.onerror = () => {
+      if (active) setError("Live agent updates are reconnecting…");
+    };
     return () => {
       active = false;
-      controller?.abort();
-      window.clearInterval(interval);
+      stream.close();
     };
-  }, [enabled]);
+  }, [enabled, refresh]);
 
+  const current = response?.reviews.find((review) => review.status === "previewed" || review.status === "expired") ?? null;
   const entries = response?.entries.slice(0, 8) ?? [];
+  const errorFindings = current?.verification.findings.filter((finding) => finding.severity === "error").length ?? 0;
+  const warningFindings = current?.verification.findings.filter((finding) => finding.severity === "warning").length ?? 0;
+  const affectedPaths = useMemo(() => [...new Set(current?.changes.map((change) => change.path) ?? [])], [current]);
+
+  const decide = async (action: "commit" | "reject") => {
+    if (!current || current.status !== "previewed") return;
+    setPending(action);
+    setError(null);
+    try {
+      const result = await fetch("/api/project/agent-activity", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action,
+          transactionId: current.transactionId,
+          expectedPreviewFingerprint: current.previewFingerprint,
+        }),
+      });
+      const payload = await result.json() as { error?: string };
+      if (!result.ok) throw new Error(payload.error ?? `The transaction could not be ${action === "commit" ? "committed" : "rejected"}.`);
+      await refresh();
+      if (action === "commit") onProjectChanged();
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "The transaction decision failed.");
+    } finally {
+      setPending(null);
+    }
+  };
+
+  if (!enabled) {
+    return <p className="p-4 text-[11px] leading-relaxed text-[var(--muted)]">Open a local .intentform project to review MCP access and proposed transactions.</p>;
+  }
+
   return (
-    <section className="mt-4 overflow-hidden rounded-[24px] border border-[#303a35] bg-[#1c211f] text-[#dce5df]" aria-labelledby="agent-access-heading">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/10 px-4 py-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <ShieldCheck size={14} weight="fill" className="text-emerald-300" />
-            <h3 id="agent-access-heading" className="text-[11px] font-semibold text-white">Agent access</h3>
+    <div className="flex min-h-0 flex-1 flex-col text-[var(--ink)]">
+      <section className="border-b border-[var(--line)] p-3" aria-labelledby="agent-connection-heading">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2"><span className={`size-2 rounded-full ${response ? "bg-[var(--success)]" : "bg-[var(--faint)]"}`} /><h3 id="agent-connection-heading" className="text-[11px] font-semibold">Local MCP agent</h3></div>
+            <p className="mt-1 truncate font-mono text-[9px] text-[var(--faint)]">{current?.transport ?? entries[0]?.transport ?? "stdio"} · {response?.policy.http.configured ? "HTTP authenticated" : "local process"}</p>
           </div>
-          <p className="mt-1 text-[10px] leading-relaxed text-white/45">
-            Local project only. Semantic writes are validated, fingerprint-checked and revisioned.
-          </p>
+          <span className="inline-flex items-center gap-1 rounded border border-[var(--line)] px-2 py-1 text-[9px] font-semibold text-[var(--muted)]"><LockKey size={10} /> reviewed write</span>
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/20 px-2 py-1 font-mono text-[9px] text-emerald-300">
-          <LockKey size={10} weight="fill" /> least authority
-        </span>
+        <dl className="mt-3 grid grid-cols-[76px_minmax(0,1fr)] gap-x-2 gap-y-1 text-[9px]"><dt className="text-[var(--faint)]">Project</dt><dd className="truncate">{projectName}</dd><dt className="text-[var(--faint)]">Page</dt><dd className="truncate">{screenLabel}</dd><dt className="text-[var(--faint)]">Selection</dt><dd className="truncate">{selectionLabel ?? "No selection"}</dd><dt className="text-[var(--faint)]">Authority</dt><dd>No shell · no filesystem escape · no network</dd></dl>
+      </section>
+
+      <div className="min-h-0 flex-1 overflow-auto">
+        <section className="border-b border-[var(--line)] p-3" aria-labelledby="agent-transaction-heading">
+          <div className="flex items-center justify-between gap-2"><h3 id="agent-transaction-heading" className="text-[10px] font-semibold uppercase tracking-[.1em] text-[var(--faint)]">Current transaction</h3>{current ? <span className={`rounded px-1.5 py-0.5 font-mono text-[8px] ${current.status === "previewed" ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "bg-[var(--warn-soft)] text-[var(--warn)]"}`}>{current.status}</span> : null}</div>
+          {current ? <>
+            <h4 className="mt-3 text-[13px] font-semibold leading-snug">{current.rationale}</h4>
+            <p className="mt-1 font-mono text-[8px] text-[var(--faint)]">{current.baseFingerprint} → {current.previewFingerprint} · expires {new Date(current.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+            <div className="mt-3 flex flex-wrap gap-1.5 text-[9px]"><span className="rounded bg-[var(--field)] px-2 py-1">{current.changes.length} changes</span><span className="rounded bg-[var(--field)] px-2 py-1">{affectedPaths.length} affected paths</span><span className={`rounded px-2 py-1 ${errorFindings ? "bg-[var(--danger-soft)] text-[var(--danger)]" : "bg-[var(--success-soft)] text-[var(--success)]"}`}>{errorFindings} errors · {warningFindings} warnings</span></div>
+            <div className="mt-3 divide-y divide-[var(--line)] border-y border-[var(--line)]" aria-label="Semantic transaction diff">{current.changes.map((change, index) => <div key={`${change.path}:${index}`} className="py-2"><strong className="block break-all font-mono text-[9px] font-medium">{change.path}</strong><div className="mt-1 grid grid-cols-[14px_minmax(0,1fr)] gap-1 font-mono text-[8px]"><span className="text-[var(--danger)]">−</span><span className="break-all text-[var(--muted)]">{displayValue(change.before)}</span><span className="text-[var(--success)]">+</span><span className="break-all text-[var(--ink)]">{displayValue(change.after)}</span></div></div>)}</div>
+            {current.verification.findings.length ? <div className="mt-3"><strong className="text-[9px] text-[var(--faint)]">Diagnostics</strong>{current.verification.findings.slice(0, 4).map((finding) => <p key={finding.id} className="mt-1 flex gap-1.5 text-[9px] leading-relaxed text-[var(--muted)]">{finding.severity === "error" ? <Warning size={11} className="mt-0.5 shrink-0 text-[var(--danger)]" /> : <ShieldCheck size={11} className="mt-0.5 shrink-0 text-[var(--warn)]" />}{finding.violatedIntent}</p>)}</div> : <p className="mt-3 flex items-center gap-1.5 text-[9px] text-[var(--success)]"><Check size={11} /> Semantic verification has no open findings.</p>}
+          </> : <p className="mt-3 text-[10px] leading-relaxed text-[var(--muted)]">No transaction is waiting for review. Use a connected MCP client to begin and preview a semantic transaction.</p>}
+        </section>
+
+        <section className="p-3" aria-labelledby="recent-agent-activity-heading"><h3 id="recent-agent-activity-heading" className="text-[10px] font-semibold uppercase tracking-[.1em] text-[var(--faint)]">Recent activity</h3>{entries.length ? <div className="mt-2 divide-y divide-[var(--line)]">{entries.map((entry) => <div key={entry.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 py-2 text-[9px]"><div className="min-w-0"><strong className="block truncate font-medium">{displayTool(entry.tool)}</strong><span className="font-mono text-[8px] text-[var(--faint)]">{entry.transport} · {entry.access} · {entry.durationMs} ms</span></div><div className="text-right"><span className={outcomeTone(entry.outcome)}>{entry.outcome}</span><time dateTime={entry.at} className="block font-mono text-[8px] text-[var(--faint)]">{new Date(entry.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></div></div>)}</div> : <p className="mt-2 text-[9px] text-[var(--muted)]">No MCP calls recorded for this project.</p>}</section>
       </div>
 
-      {!enabled ? (
-        <p className="px-4 py-4 text-[11px] leading-relaxed text-white/50">Open a local .intentform project to inspect MCP access and activity.</p>
-      ) : response ? (
-        <>
-          <div className="grid gap-px bg-white/10 sm:grid-cols-3" aria-label="Agent access policy">
-            <div className="bg-[#1c211f] px-4 py-3">
-              <span className="block text-[9px] uppercase tracking-[.12em] text-white/35">Semantic project</span>
-              <strong className="mt-1 block text-[10px] font-medium text-white/75">Reviewed transactions</strong>
-            </div>
-            <div className="bg-[#1c211f] px-4 py-3">
-              <span className="block text-[9px] uppercase tracking-[.12em] text-white/35">System access</span>
-              <strong className="mt-1 block text-[10px] font-medium text-white/75">No shell · no network</strong>
-            </div>
-            <div className="bg-[#1c211f] px-4 py-3">
-              <span className="block text-[9px] uppercase tracking-[.12em] text-white/35">HTTP transport</span>
-              <strong className="mt-1 block text-[10px] font-medium text-white/75">127.0.0.1 · token required</strong>
-              <span className="mt-0.5 block font-mono text-[8px] text-white/35">{response.policy.http.configured ? "token configured" : "not configured"}</span>
-            </div>
-          </div>
-          <div className="px-4 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-[9px] font-semibold uppercase tracking-[.12em] text-white/35">Recent MCP calls</span>
-              <span className="text-[9px] text-white/30">No arguments, tokens, paths, content or outputs logged</span>
-            </div>
-            {entries.length > 0 ? (
-              <div className="mt-2 divide-y divide-white/8">
-                {entries.map((entry) => (
-                  <div key={entry.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-2 text-[10px]">
-                    <div className="min-w-0">
-                      <strong className="block truncate font-medium text-white/75">{displayTool(entry.tool)}</strong>
-                      <span className="mt-0.5 block font-mono text-[8px] text-white/35">{entry.transport} · {entry.access} · {entry.durationMs} ms</span>
-                    </div>
-                    <div className="text-right">
-                      <span className={`block font-mono text-[8px] ${outcomeTone(entry.outcome)}`}>{entry.outcome}</span>
-                      <time dateTime={entry.at} className="mt-0.5 block font-mono text-[8px] text-white/30">{new Date(entry.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="mt-3 text-[10px] leading-relaxed text-white/40">No MCP tool calls have been recorded for this local project.</p>
-            )}
-          </div>
-        </>
-      ) : (
-        <p className="px-4 py-4 text-[11px] leading-relaxed text-white/50">Loading local agent policy and activity…</p>
-      )}
-      {error ? <p role="alert" className="border-t border-red-300/15 px-4 py-3 text-[10px] text-red-200/75">{error}</p> : null}
-    </section>
+      <footer className="border-t border-[var(--line)] p-3">
+        <div className="mb-2 flex items-center justify-between text-[9px] text-[var(--faint)]"><span>Scope · current project / page / selection</span><span className="inline-flex items-center gap-1"><Clock size={10} /> live</span></div>
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-2"><button type="button" disabled={!current || current.status !== "previewed" || pending !== null} onClick={() => void decide("reject")} className="inline-flex min-h-9 items-center gap-1 rounded border border-[var(--line)] px-3 text-[10px] font-semibold text-[var(--danger)] disabled:opacity-35"><X size={11} /> Reject</button><button type="button" disabled={!current} onClick={() => current && onPreviewChanges(current.changes)} className="inline-flex min-h-9 items-center justify-center gap-1 rounded border border-[var(--line)] px-3 text-[10px] font-semibold disabled:opacity-35"><ArrowSquareOut size={11} /> Preview on canvas</button><button type="button" disabled={!current || current.status !== "previewed" || pending !== null} onClick={() => void decide("commit")} className="inline-flex min-h-9 items-center gap-1 rounded bg-[var(--accent-deep)] px-3 text-[10px] font-semibold text-white disabled:opacity-35"><Check size={11} /> Commit</button></div>
+        {error ? <p role="alert" className="mt-2 text-[9px] leading-relaxed text-[var(--danger)]">{error}</p> : null}
+      </footer>
+    </div>
   );
 }

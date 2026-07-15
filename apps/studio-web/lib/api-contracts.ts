@@ -97,6 +97,19 @@ export const historyMutationRequestSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("recover-history") }).strict(),
 ]);
 
+export const transactionReviewMutationSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("commit"),
+    transactionId: z.string().uuid(),
+    expectedPreviewFingerprint: graphFingerprintSchema,
+  }).strict(),
+  z.object({
+    action: z.literal("reject"),
+    transactionId: z.string().uuid(),
+    expectedPreviewFingerprint: graphFingerprintSchema,
+  }).strict(),
+]);
+
 const previewTargetSchema = z.enum(["browser", "expo-ios", "expo-android", "swiftui"]);
 const previewMutationFields = {
   target: previewTargetSchema,

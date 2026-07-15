@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium, type Browser, type Page } from "playwright";
 import AxeBuilder from "@axe-core/playwright";
+import { applyGraphPatch, type GraphPatch } from "../packages/semantic-schema/src/index.ts";
 import { demoGraph } from "../packages/proof-report/src/demo.ts";
 import { recordAgentActivity } from "../packages/mcp-server/src/activity.ts";
 import { applyHistoryBranchPatch, createHistoryBranch, graphFingerprint } from "../packages/mcp-server/src/history.ts";
@@ -66,6 +67,29 @@ if (localTestProjectDir) {
     outcome: "succeeded",
     durationMs: 4,
   });
+  const reviewPatch: GraphPatch = {
+    id: "smoke-agent-review",
+    rationale: "Review the primary action copy",
+    operations: [{ op: "set-label", target: "payment-request.confirm", label: "Confirm after review" }],
+  };
+  const reviewPreviewFingerprint = graphFingerprint(applyGraphPatch(demoGraph, reviewPatch));
+  writeFileSync(join(localTestProjectDir, "transaction-reviews.json"), JSON.stringify({
+    version: 1,
+    entries: [{
+      transactionId: "d9dd6eb6-16f0-47a9-95bc-9a3dd56eb26b",
+      transport: "stdio",
+      rationale: reviewPatch.rationale,
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      resolvedAt: null,
+      baseFingerprint: localProjectFingerprint,
+      previewFingerprint: reviewPreviewFingerprint,
+      status: "previewed",
+      patch: reviewPatch,
+      changes: [{ path: "payment-request.confirm.intent.label", before: "Confirm request", after: "Confirm after review" }],
+      verification: { passed: true, buildStatus: "not-run", findings: [] },
+    }],
+  }), { mode: 0o600 });
   writeFileSync(join(packRoot, "frame.png"), bytes);
   writeFileSync(join(packRoot, "manifest.json"), JSON.stringify({
     format: "intentform-device-bezel-pack",
@@ -331,6 +355,8 @@ try {
 
   if (!remoteOrigin) await runSmokeScenario(browser, {
     name: "local bezel pack acknowledgement and neutral fallback",
+    allowRequestFailure: (request) => request.url().includes("/api/project/agent-activity?stream=1")
+      && request.failure()?.errorText === "net::ERR_ABORTED",
     run: async (page) => {
       await gotoStudio(page, origin, "/");
       const openLocal = page.locator("header").getByRole("button", { name: "Open project" });
@@ -370,13 +396,22 @@ try {
       await mkdir(join(root, "output/playwright"), { recursive: true });
       await page.screenshot({ path: join(root, "output/playwright/local-bezel-neutral-fallback.png"), fullPage: true });
 
-      await page.getByRole("button", { name: "Native outputs" }).click();
-      await page.getByRole("button", { name: "More", exact: true }).click();
-      const agentPanel = page.getByRole("region", { name: "Agent access" });
-      await agentPanel.getByText("least authority", { exact: true }).waitFor();
-      await agentPanel.getByText("No shell · no network", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Ask agent" }).click();
+      const agentPanel = page.getByRole("dialog", { name: "Agent review" });
+      await agentPanel.getByText("Local MCP agent", { exact: true }).waitFor();
+      await agentPanel.getByText("No shell · no filesystem escape · no network", { exact: true }).waitFor();
+      await agentPanel.getByText("Review the primary action copy", { exact: true }).waitFor();
+      await agentPanel.getByText("payment-request.confirm.intent.label", { exact: true }).waitFor();
       await agentPanel.getByText("get graph", { exact: true }).waitFor();
       await agentPanel.getByText("succeeded", { exact: true }).waitFor();
+      await agentPanel.getByRole("button", { name: "Preview on canvas" }).click();
+      await page.getByTestId("canvas-node-payment-request.confirm").waitFor();
+      await page.getByRole("button", { name: "Ask agent" }).click();
+      await page.getByRole("dialog", { name: "Agent review" }).getByRole("button", { name: "Reject" }).click();
+      await page.getByText("No transaction is waiting for review.", { exact: false }).waitFor();
+      await page.getByRole("button", { name: "Close agent review" }).click();
+      await page.getByRole("button", { name: "Native outputs" }).click();
+      await page.getByRole("button", { name: "History", exact: true }).click();
       const historyPanel = page.getByRole("region", { name: "History & branches" });
       await historyPanel.getByText("history valid", { exact: true }).waitFor();
       await historyPanel.getByTestId("history-branch-agent-copy").waitFor();
@@ -386,7 +421,7 @@ try {
       await historyPanel.getByText("merge branch agent-copy", { exact: true }).waitFor();
       await historyPanel.getByTestId("history-branch-conflict-copy").getByRole("button", { name: "Preview", exact: true }).click();
       await historyPanel.getByTestId("history-merge-conflicts").getByText(/both-modified.*intent\.label/).waitFor();
-      await page.getByRole("button", { name: "Close activity drawer" }).click();
+      await page.getByRole("button", { name: "Close history drawer" }).click();
       await page.locator("#studio-workspace").getByRole("button", { name: "Build", exact: true }).click();
       await page.getByText("fresh", { exact: true }).waitFor({ timeout: 30_000 });
       await page.getByRole("button", { name: /Evidence and diagnostics/ }).click();
@@ -1396,9 +1431,7 @@ try {
         const button = [...document.querySelectorAll("button")].find((candidate) => candidate.textContent?.includes("Apply typed edit"));
         return button instanceof HTMLButtonElement && button.disabled;
       });
-      if (!await editPage.getByRole("button", { name: "Ask agent" }).isDisabled()) {
-        throw new Error("A second interpretation submit remained enabled while the first request was pending");
-      }
+      if (await editPage.getByRole("button", { name: "Ask agent" }).isDisabled()) throw new Error("Agent review was coupled to the brief interpretation request");
       await editPage.getByTestId("canvas-node-payment-request.confirm").getByText("Pay securely", { exact: true }).waitFor();
       if (interpretationRequests !== 1) throw new Error(`Expected one interpretation request, received ${interpretationRequests}`);
       await editPage.unroute("**/api/interpret");
@@ -1519,7 +1552,7 @@ try {
     },
   });
 } finally {
-  await browser?.close();
   if (server) await stopServer(server);
+  await browser?.close();
   if (localTestProjectDir) await rm(localTestProjectDir, { recursive: true, force: true });
 }

@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { graphPatchSchema, type GraphPatch } from "@intentform/semantic-schema";
-import { applyPatch, previewPatch } from "./tools.ts";
+import { previewPatch } from "./tools.ts";
 import { loadProject } from "./store.ts";
+import {
+  commitTransactionReview,
+  recordTransactionReview,
+  rejectTransactionReview,
+} from "./transaction-reviews.ts";
 
 const DEFAULT_TRANSACTION_TTL_MS = 5 * 60_000;
 const MAX_TRANSACTIONS = 32;
@@ -17,6 +22,7 @@ interface TransactionRecord {
   expiresAt: string;
   patch: GraphPatch | null;
   previewFingerprint: string | null;
+  transport: "stdio" | "http";
 }
 
 function publicRecord(record: TransactionRecord) {
@@ -33,14 +39,16 @@ function publicRecord(record: TransactionRecord) {
 
 export class SemanticTransactionService {
   readonly #transactions = new Map<string, TransactionRecord>();
+  readonly ttlMs: number;
 
-  constructor(readonly ttlMs = DEFAULT_TRANSACTION_TTL_MS) {
+  constructor(ttlMs = DEFAULT_TRANSACTION_TTL_MS) {
     if (!Number.isSafeInteger(ttlMs) || ttlMs < 10_000 || ttlMs > 30 * 60_000) {
       throw new RangeError("Semantic transaction TTL must be between ten seconds and thirty minutes.");
     }
+    this.ttlMs = ttlMs;
   }
 
-  begin(projectDir: string, ownerId: string, expectedFingerprint: string, rationale: string) {
+  begin(projectDir: string, ownerId: string, expectedFingerprint: string, rationale: string, transport: "stdio" | "http" = "stdio") {
     this.#prune();
     const { fingerprint } = loadProject(projectDir);
     if (fingerprint !== expectedFingerprint) {
@@ -63,6 +71,7 @@ export class SemanticTransactionService {
       expiresAt: new Date(createdAt.getTime() + this.ttlMs).toISOString(),
       patch: null,
       previewFingerprint: null,
+      transport,
     };
     this.#transactions.set(record.id, record);
     return publicRecord(record);
@@ -74,6 +83,18 @@ export class SemanticTransactionService {
     const preview = previewPatch(projectDir, patch, record.baseFingerprint);
     record.patch = patch;
     record.previewFingerprint = preview.previewFingerprint;
+    recordTransactionReview(projectDir, {
+      transactionId: record.id,
+      transport: record.transport,
+      rationale: record.rationale,
+      createdAt: record.createdAt,
+      expiresAt: record.expiresAt,
+      baseFingerprint: record.baseFingerprint,
+      previewFingerprint: preview.previewFingerprint,
+      patch,
+      changes: preview.changes,
+      verification: preview.verification,
+    });
     return { ...publicRecord(record), preview };
   }
 
@@ -83,7 +104,7 @@ export class SemanticTransactionService {
       throw new Error("Preview this semantic transaction before committing it.");
     }
     try {
-      const committed = applyPatch(projectDir, record.patch, record.baseFingerprint);
+      const { committed } = commitTransactionReview(projectDir, record.id, record.previewFingerprint);
       if (committed.fingerprint !== record.previewFingerprint) {
         throw new Error("Committed output did not match the reviewed transaction preview.");
       }
@@ -101,6 +122,7 @@ export class SemanticTransactionService {
 
   rollback(projectDir: string, ownerId: string, transactionId: string) {
     const record = this.#owned(projectDir, ownerId, transactionId);
+    rejectTransactionReview(projectDir, record.id, record.previewFingerprint ?? undefined, true);
     this.#transactions.delete(record.id);
     return {
       transactionId: record.id,
@@ -112,7 +134,14 @@ export class SemanticTransactionService {
 
   clearOwner(ownerId: string): void {
     for (const [id, record] of this.#transactions) {
-      if (record.ownerId === ownerId) this.#transactions.delete(id);
+      if (record.ownerId === ownerId) {
+        try {
+          rejectTransactionReview(record.projectDir, record.id, record.previewFingerprint ?? undefined, true);
+        } catch {
+          // A human may already have committed or rejected the persisted review.
+        }
+        this.#transactions.delete(id);
+      }
     }
   }
 

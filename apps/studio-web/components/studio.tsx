@@ -56,6 +56,7 @@ import { useLocalPreviews, type LocalPreviewTarget } from "./use-local-previews"
 import { useBackgroundVerification } from "./use-background-verification";
 import { DesktopControl } from "./desktop-control";
 import { EcosystemControl } from "./ecosystem-control";
+import { AgentActivityPanel, type AgentReviewChange } from "./agent-activity-panel";
 
 type Stage = "canvas" | WorkflowStage;
 export type OutputTarget = "react" | "swiftui" | "expo" | "web";
@@ -143,6 +144,7 @@ export function Studio() {
   const [noticeOpen, setNoticeOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [agentDrawerOpen, setAgentDrawerOpen] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
   const [theme, setThemeState] = useState<"light" | "dark">("light");
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
@@ -168,10 +170,30 @@ export function Studio() {
   const resetDialog = useRef<HTMLElement>(null);
   const resetReturnFocus = useRef<HTMLElement | null>(null);
   const resetShouldRestoreFocus = useRef(false);
+  const agentTrigger = useRef<HTMLButtonElement>(null);
+  const agentCloseButton = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (document.documentElement.dataset.theme === "dark") setThemeState("dark");
   }, []);
+
+  useEffect(() => {
+    if (!agentDrawerOpen) return;
+    agentCloseButton.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setAgentDrawerOpen(false);
+      queueMicrotask(() => agentTrigger.current?.focus());
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [agentDrawerOpen]);
+
+  const closeAgentDrawer = () => {
+    setAgentDrawerOpen(false);
+    queueMicrotask(() => agentTrigger.current?.focus());
+  };
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -792,6 +814,23 @@ export function Studio() {
     setNotice(`Showing ${finding.id} on ${screen.title}. Return to Verify to keep the evidence context.`);
   };
 
+  const previewAgentChanges = (reviewChanges: AgentReviewChange[]) => {
+    for (const screen of graph.screens) {
+      const nodes = flattenSemanticNodes(screen.nodes).sort((left, right) => right.id.length - left.id.length);
+      const affected = nodes.find((node) => reviewChanges.some((change) => change.path === node.id || change.path.startsWith(`${node.id}.`)));
+      if (!affected) continue;
+      setSelectedScreen(screen.id);
+      setSelectedNodeId(affected.id);
+      setStage("canvas");
+      setAgentDrawerOpen(false);
+      setNotice(`Previewing ${reviewChanges.length} proposed agent changes. The canonical graph is unchanged until you commit.`);
+      return;
+    }
+    setStage("graph");
+    setAgentDrawerOpen(false);
+    setNotice(`Previewing ${reviewChanges.length} proposed project-level agent changes. The canonical graph is unchanged until you commit.`);
+  };
+
   const errorCount = verification.findings.filter((finding) => finding.severity === "error" && finding.status !== "suppressed").length;
   const noticeIsError = /failed|could not|invalid|quota|unavailable|rejected/i.test(notice);
 
@@ -909,6 +948,7 @@ export function Studio() {
 
           <div className="flex items-center justify-end gap-1">
             <button
+              ref={agentTrigger}
               type="button"
               aria-label="Toggle color theme"
               aria-pressed={theme === "dark"}
@@ -948,11 +988,11 @@ export function Studio() {
             </button>
             <button
               type="button"
-              onClick={() => compileBrief("create")}
-              disabled={isPending}
+              aria-expanded={agentDrawerOpen}
+              onClick={() => setAgentDrawerOpen(true)}
               className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--if-blue-action)] px-3 text-[11px] font-semibold text-white hover:bg-[var(--if-blue-action-hover)] disabled:cursor-wait disabled:opacity-70"
             >
-              {isPending ? <CircleNotch className="animate-spin" size={14} /> : <Lightning size={14} weight="fill" />}
+              <Lightning size={14} weight="fill" />
               <span className="hidden sm:inline">Ask agent</span>
             </button>
           </div>
@@ -1091,6 +1131,22 @@ export function Studio() {
           </AnimatePresence>
         </section>
       </div>
+      {agentDrawerOpen ? (
+        <div className="fixed inset-0 z-40 flex justify-end">
+          <button type="button" aria-label="Close agent drawer" onClick={closeAgentDrawer} className="absolute inset-0 bg-[var(--backdrop)]/45" />
+          <aside role="dialog" aria-modal="true" aria-labelledby="agent-drawer-title" className="relative flex h-full w-[min(380px,94vw)] flex-col border-l border-[var(--line)] bg-[var(--panel)] shadow-[-24px_0_60px_-36px_var(--shadow-strong)]">
+            <header className="flex h-11 shrink-0 items-center justify-between border-b border-[var(--line)] px-3"><div><h2 id="agent-drawer-title" className="text-[12px] font-semibold">Agent review</h2><p className="font-mono text-[8px] text-[var(--faint)]">live transaction stream</p></div><button ref={agentCloseButton} type="button" aria-label="Close agent review" onClick={closeAgentDrawer} className="grid size-7 place-items-center rounded hover:bg-[var(--hover)]"><X size={13} /></button></header>
+            <AgentActivityPanel
+              enabled={localProjectFingerprint !== null}
+              projectName={graph.product.name}
+              screenLabel={graph.screens.find((screen) => screen.id === selectedScreen)?.title ?? selectedScreen}
+              selectionLabel={selectedNodeId}
+              onPreviewChanges={previewAgentChanges}
+              onProjectChanged={openLocalProject}
+            />
+          </aside>
+        </div>
+      ) : null}
       {resetConfirmOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/35 p-4 backdrop-blur-[2px]" onPointerDown={(event) => { if (event.target === event.currentTarget) cancelProjectReset(); }}>
           <section ref={resetDialog} role="alertdialog" aria-modal="true" aria-labelledby="reset-project-title" aria-describedby="reset-project-description" className="menu-pop w-full max-w-md p-5 shadow-2xl">
