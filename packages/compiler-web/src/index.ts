@@ -21,6 +21,7 @@ const codeIdentifier = (value: string) => [...value].map((character) =>
 ).join("");
 const nodeClass = (nodeId: string) => `if-web-${styleIdentifier(nodeId)}`;
 const cssVarName = (key: string) => `--if-${styleIdentifier(key)}`;
+const codeComponentName = (definitionId: string) => `IntentForm_${codeIdentifier(definitionId)}`;
 
 function componentName(screenId: string): string {
   const encoded = codeIdentifier(screenId);
@@ -64,7 +65,14 @@ function nodeSource(node: PlatformIRNode): string {
   const detail = fieldValue(node, "detail");
   const children = node.children.map(nodeSource).join("\n");
   let content: string;
-  switch (node.kind) {
+  if (node.codeComponent) {
+    const properties = Object.entries(node.codeComponent.props)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([name, propertyValue]) => ` ${name}={${JSON.stringify(propertyValue)}}`)
+      .join("");
+    const name = codeComponentName(node.codeComponent.definitionId);
+    content = `<${name}${properties}${attributes}>${children}</${name}>`;
+  } else switch (node.kind) {
     case "text":
       content = `<p${attributes}>${label}</p>`;
       break;
@@ -220,7 +228,12 @@ function contractSource(ir: PlatformIR, index: number): string {
 function routeSource(ir: PlatformIR, index: number): string {
   const screen = ir.screens[index]!;
   const name = componentName(screen.id);
-  return `import type { ${name}Data, ${name}Events } from "../contracts/${screen.id}";
+  const codeComponents = flattenNodes(screen.nodes).flatMap((node) => node.codeComponent ? [node.codeComponent] : []);
+  const codeImports = [...new Map(codeComponents.map((component) => [component.definitionId, component])).values()]
+    .sort((left, right) => left.definitionId.localeCompare(right.definitionId))
+    .map((component) => `import { ${component.exportName} as ${codeComponentName(component.definitionId)} } from ${JSON.stringify(component.module)};`)
+    .join("\n");
+  return `${codeImports}${codeImports ? "\n" : ""}import type { ${name}Data, ${name}Events } from "../contracts/${screen.id}";
 
 export interface ${name}Props {
   data: ${name}Data;
@@ -387,6 +400,18 @@ function stylesSource(ir: PlatformIR): string {
     ...Object.entries(mode.colors).map(([key, value]) => `  ${cssVarName(key)}: ${value};`),
     ...Object.entries(mode.spacing).map(([key, value]) => `  ${cssVarName(key)}: ${value}px;`),
     ...Object.entries(mode.radii).map(([key, value]) => `  ${cssVarName(key)}: ${value}px;`),
+    ...Object.entries(mode.fontFamilies).map(([key, value]) => `  ${cssVarName(key)}: ${value};`),
+    ...Object.entries(mode.fontWeights).map(([key, value]) => `  ${cssVarName(key)}: ${value};`),
+    ...Object.entries(mode.fontSizes).map(([key, value]) => `  ${cssVarName(key)}: ${value}px;`),
+    ...Object.entries(mode.lineHeights).map(([key, value]) => `  ${cssVarName(key)}: ${value}px;`),
+    ...Object.entries(mode.letterSpacing).map(([key, value]) => `  ${cssVarName(key)}: ${value}px;`),
+    ...Object.entries(mode.shadows).map(([key, value]) => `  ${cssVarName(key)}: ${value};`),
+    ...Object.entries(mode.opacity).map(([key, value]) => `  ${cssVarName(key)}: ${value};`),
+    ...Object.entries(mode.durations).map(([key, value]) => `  ${cssVarName(key)}: ${value}ms;`),
+    ...Object.entries(mode.easings).map(([key, value]) => `  ${cssVarName(key)}: ${value};`),
+    ...Object.entries(mode.containers).map(([key, value]) => `  ${cssVarName(key)}: ${value}px;`),
+    ...Object.entries(mode.breakpoints).map(([key, value]) => `  ${cssVarName(key)}: ${value}px;`),
+    ...Object.entries(mode.zIndices).map(([key, value]) => `  ${cssVarName(key)}: ${value};`),
   ].sort().join("\n");
   const modeDeclarations = Object.entries(ir.tokenModes)
     .filter(([modeId]) => modeId !== ir.tokenCollection.defaultMode)
@@ -457,9 +482,9 @@ ${breakpointRules}
 `;
 }
 
-function generatedPackageFiles(): GeneratedFile[] {
+function generatedPackageFiles(ir: PlatformIR): GeneratedFile[] {
   return [
-    { path: "package.json", content: `${JSON.stringify({ name: "intentform-responsive-web", private: true, version: "0.0.0", type: "module", scripts: { build: "vite build", dev: "vite", typecheck: "tsc --noEmit" }, dependencies: { react: "19.2.4", "react-dom": "19.2.4" }, devDependencies: { "@types/react": "19.2.14", "@types/react-dom": "19.2.3", typescript: "5.9.3", vite: "8.1.4" } }, null, 2)}\n` },
+    { path: "package.json", content: `${JSON.stringify({ name: "intentform-responsive-web", private: true, version: "0.0.0", type: "module", scripts: { build: "vite build", dev: "vite", typecheck: "tsc --noEmit" }, dependencies: { react: "19.2.4", "react-dom": "19.2.4", ...ir.dependencies }, devDependencies: { "@types/react": "19.2.14", "@types/react-dom": "19.2.3", typescript: "5.9.3", vite: "8.1.4" } }, null, 2)}\n` },
     { path: "index.html", content: "<!doctype html>\n<html lang=\"en\" dir=\"auto\"><head><meta charset=\"UTF-8\" /><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\" /><link rel=\"icon\" href=\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23397461'/%3E%3C/svg%3E\" /><title>IntentForm responsive web</title></head><body><div id=\"root\"></div><script type=\"module\" src=\"/src/main.tsx\"></script></body></html>\n" },
     { path: "tsconfig.json", content: `${JSON.stringify({ compilerOptions: { target: "ES2022", useDefineForClassFields: true, lib: ["ES2022", "DOM", "DOM.Iterable"], allowJs: false, skipLibCheck: true, esModuleInterop: true, allowSyntheticDefaultImports: true, strict: true, forceConsistentCasingInFileNames: true, module: "ESNext", moduleResolution: "Bundler", resolveJsonModule: true, isolatedModules: true, noEmit: true, jsx: "react-jsx" }, include: ["src"] }, null, 2)}\n` },
     { path: "vite.config.ts", content: "import { defineConfig } from \"vite\";\nexport default defineConfig({ esbuild: { jsx: \"automatic\" }, build: { outDir: \"dist\", emptyOutDir: true } });\n" },
@@ -483,7 +508,7 @@ export class WebCompiler implements CompilerBackend {
     if (!ir.web) throw new Error("The web target requires a responsive-web profile");
     const css = stylesSource(ir);
     const files: GeneratedFile[] = [
-      ...generatedPackageFiles(),
+      ...generatedPackageFiles(ir),
       ...ir.screens.map((_, index) => ({ path: `src/routes/${ir.screens[index]!.id}.tsx`, content: routeSource(ir, index) })),
       ...ir.screens.map((_, index) => ({ path: `src/contracts/${ir.screens[index]!.id}.ts`, content: contractSource(ir, index) })),
       ...ir.screens.map((_, index) => ({ path: `html/${ir.screens[index]!.id}.html`, content: staticDocumentSource(ir, index) })),

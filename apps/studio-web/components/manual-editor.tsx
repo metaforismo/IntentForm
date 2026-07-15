@@ -46,6 +46,7 @@ import {
   type SemanticNode,
 } from "@intentform/semantic-schema";
 import {
+  createComponentFromNode,
   detachComponentInstance,
   instantiateComponent,
   resetComponentInstance,
@@ -53,6 +54,7 @@ import {
   setComponentProperty,
   setComponentState,
   setComponentVariant,
+  updateComponentDefinition,
 } from "@intentform/semantic-schema/component-library";
 import { createGraphIndex, type GraphIndex } from "@intentform/graph-runtime";
 import type { VerificationFinding } from "@intentform/verifier";
@@ -1010,6 +1012,30 @@ export function ManualEditor({
     }
   }, [commitDraft, graph, onNotice, onSelectNode, screen]);
 
+  const createLibraryComponent = useCallback((nodeId: string, name: string) => {
+    const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "component";
+    let index = 1;
+    let definitionId = `local.${base}`;
+    while (graph.components.some((definition) => definition.id === definitionId)) {
+      index += 1;
+      definitionId = `local.${base}-${index}`;
+    }
+    try {
+      const next = createComponentFromNode(graph, { nodeId, definitionId, name });
+      if (commitDraft(next, `Created ${name} as ${definitionId}.`)) onSelectNode(nodeId);
+    } catch (error) {
+      onNotice(editorTransactionError(error));
+    }
+  }, [commitDraft, graph, onNotice, onSelectNode]);
+
+  const updateLibraryComponent = useCallback((definition: SemanticInterfaceGraph["components"][number]) => {
+    try {
+      commitDraft(updateComponentDefinition(graph, definition), `Updated ${definition.name} component registration.`);
+    } catch (error) {
+      onNotice(editorTransactionError(error));
+    }
+  }, [commitDraft, graph, onNotice]);
+
   const mutateComponent = useCallback((
     mutate: (source: SemanticInterfaceGraph, instanceId: string) => SemanticInterfaceGraph,
     notice: string,
@@ -1516,6 +1542,8 @@ export function ManualEditor({
         onMoveNode={reparentNode}
         onNodeCommand={handleNodeCommand}
         onInstantiateComponent={insertLibraryComponent}
+        onCreateComponent={createLibraryComponent}
+        onUpdateComponent={updateLibraryComponent}
         onUpdateTokens={updateTokens}
         localProjectFingerprint={localProjectFingerprint}
         localProjectSaved={localProjectSaved}

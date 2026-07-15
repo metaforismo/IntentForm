@@ -31,6 +31,7 @@ import {
   parseGraph,
   resolveTokenMode,
   type SemanticInterfaceGraph,
+  type ComponentDefinition,
   type SemanticNode,
 } from "@intentform/semantic-schema";
 import { buildNodeIndex } from "@intentform/layout-engine";
@@ -64,6 +65,8 @@ interface LayersPanelProps {
   onMoveNode(nodeId: string, targetParentId: string | null, targetIndex: number): void;
   onNodeCommand(command: NodeCommand, nodeId: string): void;
   onInstantiateComponent(definitionId: string): void;
+  onCreateComponent(nodeId: string, name: string): void;
+  onUpdateComponent(definition: ComponentDefinition): void;
   onUpdateTokens(mutate: (tokens: SemanticInterfaceGraph["tokens"]) => void, notice: string): void;
   localProjectFingerprint: string | null;
   localProjectSaved: boolean;
@@ -198,6 +201,19 @@ function TokenHexField({ label, value, onCommit }: { label: string; value: strin
   />;
 }
 
+function TextDraft({ value, ariaLabel, onCommit }: { value: string; ariaLabel: string; onCommit(next: string): void }) {
+  const [draft, setDraft] = useState(value);
+  const focused = useRef(false);
+  const composing = useRef(false);
+  useEffect(() => { if (!focused.current && !composing.current) setDraft(value); }, [value]);
+  const commit = (source = draft) => {
+    const next = source.trim();
+    if (next !== value) onCommit(next);
+    else setDraft(value);
+  };
+  return <input aria-label={ariaLabel} value={draft} onFocus={() => { focused.current = true; }} onChange={(event) => setDraft(event.target.value)} onCompositionStart={() => { composing.current = true; }} onCompositionEnd={(event) => { composing.current = false; if (!focused.current) commit(event.currentTarget.value); }} onBlur={() => { focused.current = false; if (!composing.current) commit(); }} onKeyDown={(event) => { if (event.key === "Enter" && !composing.current) event.currentTarget.blur(); else if (event.key === "Escape") { setDraft(value); event.currentTarget.blur(); } }} className="min-h-7 min-w-0 rounded-md border border-[var(--line)] bg-[var(--canvas)] px-2 font-mono text-[10px] text-[var(--ink)] outline-none focus:border-[var(--accent)]" />;
+}
+
 export function LayersPanel({
   graph,
   screen,
@@ -220,6 +236,8 @@ export function LayersPanel({
   onMoveNode,
   onNodeCommand,
   onInstantiateComponent,
+  onCreateComponent,
+  onUpdateComponent,
   onUpdateTokens,
   localProjectFingerprint,
   localProjectSaved,
@@ -243,6 +261,9 @@ export function LayersPanel({
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set());
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ nodeId: string; mode: "before" | "inside" } | null>(null);
+  const [tokenQuery, setTokenQuery] = useState("");
+  const [newTokenKey, setNewTokenKey] = useState("");
+  const [newTokenValue, setNewTokenValue] = useState("");
 
   useEffect(() => {
     setOrder(screen.nodes.map((node) => node.id));
@@ -257,6 +278,8 @@ export function LayersPanel({
   const nodeIndex = useMemo(() => buildNodeIndex(screen.nodes), [screen.nodes]);
   const query = layerQuery.trim().toLowerCase();
   const resolvedTokens = useMemo(() => resolveTokenMode(graph.tokens), [graph.tokens]);
+  const tokenEntries = useMemo(() => Object.entries(resolvedTokens).flatMap(([group, values]) =>
+    (Object.entries(values) as Array<[string, string | number]>).map(([key, value]) => ({ group: group as keyof typeof resolvedTokens, key, value }))), [resolvedTokens]);
   const filteredNodes = query
     ? allNodes.filter((node) => `${node.intent.label ?? ""} ${nodeNames[node.kind]} ${node.id}`.toLowerCase().includes(query))
     : null;
@@ -661,8 +684,12 @@ export function LayersPanel({
       ) : railTab === "components" ? (
         <div id="editor-components-tabpanel" role="tabpanel" aria-labelledby="editor-components-tab" className="min-h-0 overflow-y-auto overflow-x-hidden" data-testid="component-library-panel">
           <section className="border-b border-[var(--line)] px-3 pb-3 pt-2">
-            <PanelHeading label="Local components" />
+            <PanelHeading label="Local components" action={<button type="button" disabled={selectedNodeIds.length !== 1} onClick={() => {
+              const selected = selectedNodeIds[0] ? findGraphNodeLocation(graph, selectedNodeIds[0])?.node : undefined;
+              if (selected) onCreateComponent(selected.id, selected.intent.label ?? selected.intent.purpose);
+            }} className="inline-flex min-h-7 items-center gap-1 rounded-lg border border-[var(--line)] px-2 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-40"><Plus size={11} /> Create</button>} />
             <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--faint)]">Versioned semantic definitions expand deterministically into every enabled compiler.</p>
+            <p className="mt-1 text-[10px] leading-relaxed text-[var(--muted)]">Select one layer, then create a reusable definition with a typed label property and content slot.</p>
           </section>
           <div className="grid gap-2 p-2">
             {graph.components.map((definition) => (
@@ -688,6 +715,40 @@ export function LayersPanel({
                   <span>{definition.slots.length} slots</span><span>·</span>
                   <span>{definition.variants.length} variants</span>
                 </div>
+                {(() => {
+                  const sources = graph.dependencies.flatMap((dependency) => dependency.exports
+                    .filter((exportPath) => /^[a-z][a-z0-9/-]*$/.test(exportPath))
+                    .map((exportPath) => ({ dependency, exportPath })));
+                  const binding = definition.codeBindings[0];
+                  return (
+                    <details className="mt-2 rounded-md border border-[var(--line)] px-2 py-1.5 text-[9px] text-[var(--muted)]">
+                      <summary className="cursor-pointer font-semibold">Web code binding {binding ? "· active" : ""}</summary>
+                      {sources.length > 0 ? <div className="mt-2 grid gap-2">
+                        <label className="grid gap-1">Signed package export
+                          <select value={binding ? `${binding.dependencyId}|${binding.exportPath}` : ""} onChange={(event) => {
+                            const [dependencyId, exportPath] = event.target.value.split("|");
+                            const next = structuredClone(definition);
+                            next.codeBindings = dependencyId && exportPath ? [{ target: "web", dependencyId, exportPath, exportName: "Component", propertyMap: {} }] : [];
+                            onUpdateComponent(next);
+                          }} className="select-control min-h-7 text-[10px]"><option value="">Semantic output</option>{sources.map(({ dependency, exportPath }) => <option key={`${dependency.id}/${exportPath}`} value={`${dependency.id}|${exportPath}`}>{dependency.id}/{exportPath}</option>)}</select>
+                        </label>
+                        {binding ? <TextDraft value={binding.exportName} ariaLabel={`Code export name for ${definition.name}`} onCommit={(value) => {
+                          if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value)) return;
+                          const next = structuredClone(definition);
+                          next.codeBindings[0]!.exportName = value;
+                          onUpdateComponent(next);
+                        }} /> : null}
+                        {binding && definition.properties.length > 0 ? <div className="grid gap-1">{definition.properties.map((property) => <label key={property.name} className="grid grid-cols-[1fr_1fr] items-center gap-2"><span className="font-mono">{property.name}</span><TextDraft value={Object.entries(binding.propertyMap).find(([, componentProperty]) => componentProperty === property.name)?.[0] ?? ""} ariaLabel={`Code property for ${property.name}`} onCommit={(value) => {
+                          const next = structuredClone(definition);
+                          const map = next.codeBindings[0]!.propertyMap;
+                          for (const [key, componentProperty] of Object.entries(map)) if (componentProperty === property.name) delete map[key];
+                          if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value)) map[value] = property.name;
+                          onUpdateComponent(next);
+                        }} /></label>)}</div> : null}
+                      </div> : <p className="mt-2 leading-relaxed text-[var(--faint)]">Install a signed package with a module export before registering a code component.</p>}
+                    </details>
+                  );
+                })()}
                 {definition.deprecated ? <p className="mt-2 rounded-md bg-[var(--warn-soft)] px-2 py-1.5 text-[10px] leading-relaxed text-[var(--warn)]">Deprecated · {definition.deprecated.message}</p> : null}
               </article>
             ))}
@@ -760,7 +821,10 @@ export function LayersPanel({
                 let index = Object.keys(tokens.modes).length + 1;
                 let id = `mode-${index}`;
                 while (tokens.modes[id]) { index += 1; id = `mode-${index}`; }
-                tokens.modes[id] = { name: `Mode ${index}`, values: { colors: {}, spacing: {}, radii: {} } };
+                tokens.modes[id] = { name: `Mode ${index}`, values: {
+                  colors: {}, spacing: {}, radii: {}, fontFamilies: {}, fontWeights: {}, fontSizes: {}, lineHeights: {},
+                  letterSpacing: {}, shadows: {}, opacity: {}, durations: {}, easings: {}, containers: {}, breakpoints: {}, zIndices: {},
+                } };
                 tokens.activeMode = id;
               }, "Created a token mode.")} className="rounded-lg border border-[var(--line)] px-2 py-1 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)]">Add mode</button>}
             />
@@ -813,6 +877,42 @@ export function LayersPanel({
               {Object.entries(resolvedTokens.spacing).filter(([key]) => !graph.tokens.aliases[key]).map(([key, value]) => (
                 <TokenNumberField key={key} label={key} value={value} min={1} onCommit={(next) => onUpdateTokens((tokens) => { tokens.modes[tokens.activeMode]!.values.spacing[key] = next; }, `Set ${key} to ${next}.`)} />
               ))}
+            </div>
+            <div className="mt-4 border-t border-[var(--line)] pt-3" data-testid="expanded-token-editor">
+              <PanelHeading label="All token families" />
+              <label className="mt-2 flex h-8 items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--field)] px-2.5 text-[var(--muted)] focus-within:border-[var(--accent)]"><MagnifyingGlass size={12} /><input aria-label="Search tokens" value={tokenQuery} onChange={(event) => setTokenQuery(event.target.value)} placeholder="Search typography, motion, depth…" className="min-w-0 flex-1 bg-transparent text-[11px] text-[var(--ink)] outline-none" /></label>
+              <div className="mt-2 grid max-h-72 gap-1 overflow-y-auto pr-1">
+                {tokenEntries.filter(({ key, group }) => `${key} ${group}`.toLowerCase().includes(tokenQuery.trim().toLowerCase())).map(({ group, key, value }) => (
+                  <div key={key} className="grid grid-cols-[1fr_86px_22px] items-center gap-1.5 rounded-md px-1 py-1 hover:bg-[var(--hover)]">
+                    <div className="min-w-0"><span className="block truncate font-mono text-[10px] text-[var(--muted)]">{key}</span><span className="block truncate text-[8px] uppercase tracking-[.08em] text-[var(--faint)]">{group}</span></div>
+                    {typeof value === "number" ? <input aria-label={`Value for ${key}`} type="number" value={value} onChange={(event) => {
+                      const next = Number(event.target.value);
+                      if (!Number.isFinite(next)) return;
+                      onUpdateTokens((tokens) => { const groups = tokens.modes[tokens.activeMode]!.values as Record<string, Record<string, string | number> | undefined>; (groups[group] ??= {})[key] = next; }, `Set ${key} to ${next}.`);
+                    }} className="min-h-7 min-w-0 rounded-md border border-[var(--line)] bg-[var(--canvas)] px-1.5 text-right font-mono text-[9px] text-[var(--ink)] outline-none focus:border-[var(--accent)]" /> : <TextDraft ariaLabel={`Value for ${key}`} value={value} onCommit={(next) => onUpdateTokens((tokens) => { const groups = tokens.modes[tokens.activeMode]!.values as Record<string, Record<string, string | number> | undefined>; (groups[group] ??= {})[key] = next; }, `Set ${key}.`)} />}
+                    <button type="button" aria-label={`Remove ${key}`} onClick={() => onUpdateTokens((tokens) => { const groups = tokens.modes[tokens.activeMode]!.values as Record<string, Record<string, string | number> | undefined>; delete groups[group]?.[key]; }, `Removed ${key}.`)} className="grid size-5 place-items-center rounded text-[var(--faint)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)]"><Trash size={10} /></button>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 grid grid-cols-[1fr_72px_auto] gap-1.5">
+                <input aria-label="New token key" value={newTokenKey} onChange={(event) => setNewTokenKey(event.target.value)} placeholder="font.size.body" className="min-h-8 min-w-0 rounded-md border border-[var(--line)] bg-[var(--field)] px-2 font-mono text-[9px] text-[var(--ink)] outline-none focus:border-[var(--accent)]" />
+                <input aria-label="New token value" value={newTokenValue} onChange={(event) => setNewTokenValue(event.target.value)} placeholder="16" className="min-h-8 min-w-0 rounded-md border border-[var(--line)] bg-[var(--field)] px-2 font-mono text-[9px] text-[var(--ink)] outline-none focus:border-[var(--accent)]" />
+                <button type="button" onClick={() => {
+                  const prefixes: Array<[string, keyof typeof resolvedTokens, "string" | "number"]> = [
+                    ["font.family.", "fontFamilies", "string"], ["font.weight.", "fontWeights", "number"], ["font.size.", "fontSizes", "number"],
+                    ["font.line-height.", "lineHeights", "number"], ["font.letter-spacing.", "letterSpacing", "number"], ["shadow.", "shadows", "string"],
+                    ["opacity.", "opacity", "number"], ["duration.", "durations", "number"], ["easing.", "easings", "string"],
+                    ["container.", "containers", "number"], ["breakpoint.", "breakpoints", "number"], ["z.", "zIndices", "number"],
+                  ];
+                  const match = prefixes.find(([prefix]) => newTokenKey.startsWith(prefix));
+                  if (!match) { setTokenTransferStatus({ kind: "error", message: "Use a supported typography, shadow, opacity, duration, easing, container, breakpoint, or z-index prefix." }); return; }
+                  const [, group, type] = match;
+                  const value = type === "number" ? Number(newTokenValue) : newTokenValue.trim();
+                  if ((type === "number" && !Number.isFinite(value)) || value === "") { setTokenTransferStatus({ kind: "error", message: "Enter a valid token value." }); return; }
+                  onUpdateTokens((tokens) => { const groups = tokens.modes[tokens.activeMode]!.values as Record<string, Record<string, string | number> | undefined>; (groups[group] ??= {})[newTokenKey] = value; }, `Added ${newTokenKey}.`);
+                  setNewTokenKey(""); setNewTokenValue(""); setTokenTransferStatus(null);
+                }} className="min-h-8 rounded-md bg-[var(--accent-soft)] px-2 text-[9px] font-semibold text-[var(--accent-text)] hover:bg-[var(--accent)] hover:text-white">Add</button>
+              </div>
             </div>
             {Object.keys(graph.tokens.aliases).length > 0 ? <div className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--field)] p-2.5"><strong className="text-[9px] uppercase tracking-[.12em] text-[var(--faint)]">Aliases</strong>{Object.entries(graph.tokens.aliases).map(([key, target]) => <p key={key} className="mt-1 truncate font-mono text-[9px] text-[var(--muted)]">{key} → {target}{graph.tokens.deprecated[key] ? " · deprecated" : ""}</p>)}</div> : null}
             <div className="mt-4 rounded-lg bg-[var(--accent-soft)] p-3 text-[11px] leading-relaxed text-[var(--accent-text)]">

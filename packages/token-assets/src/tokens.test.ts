@@ -59,6 +59,31 @@ const dtcgFixture = {
 };
 
 describe("DTCG 2025.10 adapter", () => {
+  it("round-trips production typography, motion, elevation, responsive, opacity, and depth tokens", () => {
+    const extended = structuredClone(dtcgFixture);
+    Object.assign(extended.$extensions["org.intentform.tokens"].modes.default.values, {
+      fontFamilies: { "font.family.body": "Geist, sans-serif" },
+      fontWeights: { "font.weight.medium": 500 },
+      fontSizes: { "font.size.body": 16 },
+      lineHeights: { "font.line-height.body": 24 },
+      letterSpacing: { "font.letter-spacing.body": -0.1 },
+      shadows: { "shadow.menu": "0 8px 24px #000000" },
+      opacity: { "opacity.disabled": 0.48 },
+      durations: { "duration.fast": 120 },
+      easings: { "easing.standard": "cubic-bezier(0.2, 0, 0, 1)" },
+      containers: { "container.content": 1200 },
+      breakpoints: { "breakpoint.compact": 640 },
+      zIndices: { "z.dialog": 100 },
+    });
+    const tokens = importDtcg(extended).tokens;
+    tokens.aliases["font.family.heading"] = "font.family.body";
+    expect(resolveTokenMode(tokens).fontFamilies["font.family.body"]).toBe("Geist, sans-serif");
+    expect(resolveTokenMode(tokens).fontFamilies["font.family.heading"]).toBe("Geist, sans-serif");
+    expect(resolveTokenMode(tokens).easings["easing.standard"]).toBe("cubic-bezier(0.2, 0, 0, 1)");
+    expect((exportDtcg(tokens).shadow as Record<string, { $type: string }>).menu?.$type).toBe("string");
+    expect(importDtcg(JSON.parse(serializeDtcg(tokens))).tokens).toEqual(tokens);
+  });
+
   it("imports typed values, aliases, modes, deprecation, and vendor metadata", () => {
     const result = importDtcg(dtcgFixture);
     expect(result.tokens).toMatchObject({
@@ -115,7 +140,7 @@ describe("DTCG 2025.10 adapter", () => {
     [{ color: { $type: "color", a: { $value: "{color.b}" }, b: { $value: "{color.a}" } } }, /alias cycle/i],
     [{ group: { $extends: "{other}" } }, /group extension is not supported/i],
     [{ color: { $type: "color", "bad.name": { $value: {} } } }, /invalid DTCG/i],
-    [{ unsupported: { $type: "duration", token: { $value: 120 } } }, /unsupported DTCG token type/i],
+    [{ unsupported: { $type: "gradient", token: { $value: [] } } }, /unsupported DTCG token type/i],
     [{ color: { $type: "color", bad: { $value: { colorSpace: "srgb", components: [1, 1, 1], alpha: "1" } } } }, /uses alpha/i],
     [{ $extensions: { "org.intentform.tokens": { formatVersion: "2099.1" } } }, /unsupported IntentForm DTCG extension version/i],
     [{ $extensions: { "org.intentform.tokens": { formatVersion: "2025.10", modes: [] } } }, /modes must be an object/i],

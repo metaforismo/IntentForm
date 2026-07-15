@@ -103,7 +103,18 @@ const radiusTokenKeySchema = tokenKeySchema.refine(
   (key) => key.startsWith("radius."),
   "Radius token keys must start with radius.",
 );
+const prefixedTokenKeySchema = (prefix: string, label: string) => tokenKeySchema.refine(
+  (key) => key.startsWith(prefix),
+  `${label} token keys must start with ${prefix}`,
+);
 const colorValueSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+const tokenRecord = <T extends z.ZodType>(key: z.ZodType<string>, value: T, label: string) => z.record(key, value).refine(
+  (record) => Object.keys(record).length <= GRAPH_LIMITS.maxTokensPerGroup,
+  `${label} must contain at most ${GRAPH_LIMITS.maxTokensPerGroup} entries`,
+).optional();
+const cssFontFamilySchema = z.string().min(1).max(240).regex(/^[a-zA-Z0-9 ,.'"-]+$/);
+const cssShadowSchema = z.string().min(1).max(240).regex(/^(?:none|[-0-9.#a-zA-Z(),% ]+)$/);
+const cssEasingSchema = z.string().min(1).max(120).regex(/^(?:linear|ease|ease-in|ease-out|ease-in-out|cubic-bezier\([-0-9., ]+\))$/);
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const exactSemverSchema = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
 const packageIdSchema = z.string()
@@ -149,6 +160,18 @@ const tokenModeValuesSchema = z.strictObject({
     (record) => Object.keys(record).length <= GRAPH_LIMITS.maxTokensPerGroup,
     `Radii must contain at most ${GRAPH_LIMITS.maxTokensPerGroup} entries`,
   ),
+  fontFamilies: tokenRecord(prefixedTokenKeySchema("font.family.", "Font family"), cssFontFamilySchema, "Font families"),
+  fontWeights: tokenRecord(prefixedTokenKeySchema("font.weight.", "Font weight"), z.number().int().min(1).max(1000), "Font weights"),
+  fontSizes: tokenRecord(prefixedTokenKeySchema("font.size.", "Font size"), z.number().positive().max(512), "Font sizes"),
+  lineHeights: tokenRecord(prefixedTokenKeySchema("font.line-height.", "Line height"), z.number().positive().max(1_024), "Line heights"),
+  letterSpacing: tokenRecord(prefixedTokenKeySchema("font.letter-spacing.", "Letter spacing"), z.number().min(-64).max(256), "Letter spacing"),
+  shadows: tokenRecord(prefixedTokenKeySchema("shadow.", "Shadow"), cssShadowSchema, "Shadows"),
+  opacity: tokenRecord(prefixedTokenKeySchema("opacity.", "Opacity"), z.number().min(0).max(1), "Opacity"),
+  durations: tokenRecord(prefixedTokenKeySchema("duration.", "Duration"), z.number().nonnegative().max(60_000), "Durations"),
+  easings: tokenRecord(prefixedTokenKeySchema("easing.", "Easing"), cssEasingSchema, "Easings"),
+  containers: tokenRecord(prefixedTokenKeySchema("container.", "Container"), z.number().positive().max(100_000), "Containers"),
+  breakpoints: tokenRecord(prefixedTokenKeySchema("breakpoint.", "Breakpoint"), z.number().nonnegative().max(100_000), "Breakpoints"),
+  zIndices: tokenRecord(prefixedTokenKeySchema("z.", "Z-index"), z.number().int().min(-100_000).max(100_000), "Z-indices"),
 });
 
 export const tokenCollectionSchema = z.strictObject({
@@ -174,12 +197,47 @@ export const tokenCollectionSchema = z.strictObject({
 });
 
 export type TokenCollection = z.infer<typeof tokenCollectionSchema>;
-export type ResolvedTokenMode = z.infer<typeof tokenModeValuesSchema>;
+export interface ResolvedTokenMode {
+  colors: Record<string, string>;
+  spacing: Record<string, number>;
+  radii: Record<string, number>;
+  fontFamilies: Record<string, string>;
+  fontWeights: Record<string, number>;
+  fontSizes: Record<string, number>;
+  lineHeights: Record<string, number>;
+  letterSpacing: Record<string, number>;
+  shadows: Record<string, string>;
+  opacity: Record<string, number>;
+  durations: Record<string, number>;
+  easings: Record<string, string>;
+  containers: Record<string, number>;
+  breakpoints: Record<string, number>;
+  zIndices: Record<string, number>;
+}
+
+export function emptyTokenModeValues(): ResolvedTokenMode {
+  return {
+    colors: {}, spacing: {}, radii: {}, fontFamilies: {}, fontWeights: {}, fontSizes: {}, lineHeights: {},
+    letterSpacing: {}, shadows: {}, opacity: {}, durations: {}, easings: {}, containers: {}, breakpoints: {}, zIndices: {},
+  };
+}
 
 const tokenGroupForKey = (key: string): keyof ResolvedTokenMode => {
   if (key.startsWith("color.")) return "colors";
   if (key.startsWith("space.")) return "spacing";
   if (key.startsWith("radius.")) return "radii";
+  if (key.startsWith("font.family.")) return "fontFamilies";
+  if (key.startsWith("font.weight.")) return "fontWeights";
+  if (key.startsWith("font.size.")) return "fontSizes";
+  if (key.startsWith("font.line-height.")) return "lineHeights";
+  if (key.startsWith("font.letter-spacing.")) return "letterSpacing";
+  if (key.startsWith("shadow.")) return "shadows";
+  if (key.startsWith("opacity.")) return "opacity";
+  if (key.startsWith("duration.")) return "durations";
+  if (key.startsWith("easing.")) return "easings";
+  if (key.startsWith("container.")) return "containers";
+  if (key.startsWith("breakpoint.")) return "breakpoints";
+  if (key.startsWith("z.")) return "zIndices";
   throw new Error(`Unsupported token group: ${key}`);
 };
 
@@ -192,6 +250,18 @@ export function resolveTokenMode(tokens: TokenCollection, requestedMode = tokens
     colors: { ...fallback.values.colors, ...selected.values.colors },
     spacing: { ...fallback.values.spacing, ...selected.values.spacing },
     radii: { ...fallback.values.radii, ...selected.values.radii },
+    fontFamilies: { ...(fallback.values.fontFamilies ?? {}), ...(selected.values.fontFamilies ?? {}) },
+    fontWeights: { ...(fallback.values.fontWeights ?? {}), ...(selected.values.fontWeights ?? {}) },
+    fontSizes: { ...(fallback.values.fontSizes ?? {}), ...(selected.values.fontSizes ?? {}) },
+    lineHeights: { ...(fallback.values.lineHeights ?? {}), ...(selected.values.lineHeights ?? {}) },
+    letterSpacing: { ...(fallback.values.letterSpacing ?? {}), ...(selected.values.letterSpacing ?? {}) },
+    shadows: { ...(fallback.values.shadows ?? {}), ...(selected.values.shadows ?? {}) },
+    opacity: { ...(fallback.values.opacity ?? {}), ...(selected.values.opacity ?? {}) },
+    durations: { ...(fallback.values.durations ?? {}), ...(selected.values.durations ?? {}) },
+    easings: { ...(fallback.values.easings ?? {}), ...(selected.values.easings ?? {}) },
+    containers: { ...(fallback.values.containers ?? {}), ...(selected.values.containers ?? {}) },
+    breakpoints: { ...(fallback.values.breakpoints ?? {}), ...(selected.values.breakpoints ?? {}) },
+    zIndices: { ...(fallback.values.zIndices ?? {}), ...(selected.values.zIndices ?? {}) },
   };
   const resolving = new Set<string>();
   const resolvedAliases = new Map<string, string | number>();
@@ -221,6 +291,18 @@ export function resolveTokenMode(tokens: TokenCollection, requestedMode = tokens
     colors: Object.fromEntries(Object.entries(concrete.colors).sort(([left], [right]) => left.localeCompare(right))),
     spacing: Object.fromEntries(Object.entries(concrete.spacing).sort(([left], [right]) => left.localeCompare(right))),
     radii: Object.fromEntries(Object.entries(concrete.radii).sort(([left], [right]) => left.localeCompare(right))),
+    fontFamilies: Object.fromEntries(Object.entries(concrete.fontFamilies).sort(([left], [right]) => left.localeCompare(right))),
+    fontWeights: Object.fromEntries(Object.entries(concrete.fontWeights).sort(([left], [right]) => left.localeCompare(right))),
+    fontSizes: Object.fromEntries(Object.entries(concrete.fontSizes).sort(([left], [right]) => left.localeCompare(right))),
+    lineHeights: Object.fromEntries(Object.entries(concrete.lineHeights).sort(([left], [right]) => left.localeCompare(right))),
+    letterSpacing: Object.fromEntries(Object.entries(concrete.letterSpacing).sort(([left], [right]) => left.localeCompare(right))),
+    shadows: Object.fromEntries(Object.entries(concrete.shadows).sort(([left], [right]) => left.localeCompare(right))),
+    opacity: Object.fromEntries(Object.entries(concrete.opacity).sort(([left], [right]) => left.localeCompare(right))),
+    durations: Object.fromEntries(Object.entries(concrete.durations).sort(([left], [right]) => left.localeCompare(right))),
+    easings: Object.fromEntries(Object.entries(concrete.easings).sort(([left], [right]) => left.localeCompare(right))),
+    containers: Object.fromEntries(Object.entries(concrete.containers).sort(([left], [right]) => left.localeCompare(right))),
+    breakpoints: Object.fromEntries(Object.entries(concrete.breakpoints).sort(([left], [right]) => left.localeCompare(right))),
+    zIndices: Object.fromEntries(Object.entries(concrete.zIndices).sort(([left], [right]) => left.localeCompare(right))),
   };
 }
 
@@ -750,6 +832,17 @@ const componentModeSchema = z.strictObject({
   overrides: z.array(componentOverrideSchema).max(GRAPH_LIMITS.maxPatchOperations).default([]),
 });
 
+const codeComponentBindingSchema = z.strictObject({
+  target: z.literal("web"),
+  dependencyId: packageIdSchema,
+  exportPath: z.string().min(1).max(200).regex(/^[a-z][a-z0-9/-]*$/),
+  exportName: identifierSchema,
+  propertyMap: z.record(identifierSchema, identifierSchema).refine(
+    (record) => Object.keys(record).length <= GRAPH_LIMITS.maxComponentProperties,
+    `Code component property maps must contain at most ${GRAPH_LIMITS.maxComponentProperties} entries`,
+  ).default({}),
+});
+
 export const componentDefinitionSchema = z.strictObject({
   id: idSchema,
   name: safeTextSchema(120),
@@ -762,6 +855,7 @@ export const componentDefinitionSchema = z.strictObject({
   defaultVariant: identifierSchema.optional(),
   states: z.array(componentModeSchema).max(GRAPH_LIMITS.maxComponentStates).default([]),
   defaultState: identifierSchema.optional(),
+  codeBindings: z.array(codeComponentBindingSchema).max(1).default([]),
   deprecated: z.strictObject({
     message: safeTextSchema(500),
     replacementId: idSchema.optional(),
@@ -1024,6 +1118,21 @@ export const semanticInterfaceGraphSchema = z
     checkUnique(graph.fixtures.map((fixture) => fixture.id), "fixture id", ["fixtures"]);
     checkUnique(graph.assets.map((asset) => asset.id), "asset id", ["assets"]);
     checkUnique(graph.dependencies.map((dependency) => dependency.id), "dependency id", ["dependencies"]);
+    graph.components.forEach((component, componentIndex) => {
+      checkUnique(component.codeBindings.map((binding) => binding.target), "component code binding target", ["components", componentIndex, "codeBindings"]);
+      const propertyNames = new Set(component.properties.map((property) => property.name));
+      component.codeBindings.forEach((binding, bindingIndex) => {
+        const dependency = graph.dependencies.find((candidate) => candidate.id === binding.dependencyId);
+        if (!dependency) {
+          addIssue(`Unknown code component dependency: ${binding.dependencyId}`, ["components", componentIndex, "codeBindings", bindingIndex, "dependencyId"]);
+        } else if (!dependency.exports.includes(binding.exportPath)) {
+          addIssue(`Dependency ${binding.dependencyId} does not export ${binding.exportPath}`, ["components", componentIndex, "codeBindings", bindingIndex, "exportPath"]);
+        }
+        for (const propertyName of Object.values(binding.propertyMap)) {
+          if (!propertyNames.has(propertyName)) addIssue(`Unknown component property in code binding: ${propertyName}`, ["components", componentIndex, "codeBindings", bindingIndex, "propertyMap"]);
+        }
+      });
+    });
     try {
       resolveDeviceConfiguration(graph.devices);
     } catch (error) {
@@ -1044,7 +1153,7 @@ export const semanticInterfaceGraphSchema = z
       });
     }
 
-    let activeTokens: ResolvedTokenMode = { colors: {}, spacing: {}, radii: {} };
+    let activeTokens: ResolvedTokenMode = emptyTokenModeValues();
     if (!graph.tokens.modes[graph.tokens.defaultMode]) {
       addIssue(`Unknown default token mode: ${graph.tokens.defaultMode}`, ["tokens", "defaultMode"]);
     }

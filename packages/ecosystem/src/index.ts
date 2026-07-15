@@ -13,6 +13,7 @@ import {
 import {
   componentDefinitionSchema,
   ecosystemDependencySchema,
+  emptyTokenModeValues,
   parseGraph,
   semanticDiff,
   semanticInterfaceGraphSchema,
@@ -289,7 +290,7 @@ function applyVerifiedPackage(graph: SemanticInterfaceGraph, verified: VerifiedP
   } else if (verified.artifact.kind === "token-library") {
     removeOwnedTokens(draft, previous);
     for (const token of verified.artifact.tokens) {
-      const mode = draft.tokens.modes[token.modeId] ??= { name: token.modeName, values: { colors: {}, spacing: {}, radii: {} } };
+      const mode = draft.tokens.modes[token.modeId] ??= { name: token.modeName, values: emptyTokenModeValues() };
       const allValues = { ...mode.values.colors, ...mode.values.spacing, ...mode.values.radii };
       if (Object.hasOwn(allValues, token.key)) throw new Error(`Package token collides with existing token ${token.modeId}:${token.key}.`);
       if (token.type === "color") mode.values.colors[token.key] = token.value;

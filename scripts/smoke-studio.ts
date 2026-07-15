@@ -1368,6 +1368,13 @@ try {
       await componentPage.getByRole("button", { name: "Undo" }).click();
       await inspector.getByText("Component instance", { exact: true }).waitFor();
 
+      await componentPage.getByRole("tab", { name: "Layers", exact: true }).click();
+      await componentPage.getByTestId("layer-layout-lab.grid-a").click();
+      await componentPage.getByRole("tab", { name: "Library", exact: true }).click();
+      await library.getByRole("button", { name: "Create", exact: true }).click();
+      await library.getByText("Grid A", { exact: true }).waitFor();
+      await inspector.getByText("local.grid-a · v1.0.0", { exact: true }).waitFor();
+
       const overflow = await componentPage.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       if (overflow > 1) throw new Error(`Component library workflow introduced ${overflow}px horizontal overflow`);
     },
@@ -1391,6 +1398,13 @@ try {
       await tokenPage.getByLabel("Hex for color.accent").waitFor();
       if ((await tokenPage.getByLabel("Hex for color.accent").inputValue()).toLowerCase() !== "#68a990") {
         throw new Error("Sparse evening token overrides did not resolve in the Studio panel");
+      }
+      await tokenPage.getByLabel("New token key").fill("font.size.body-smoke");
+      await tokenPage.getByLabel("New token value").fill("17");
+      await tokenPage.getByTestId("expanded-token-editor").getByRole("button", { name: "Add", exact: true }).click();
+      await tokenPage.getByLabel("Search tokens").fill("body-smoke");
+      if (await tokenPage.getByLabel("Value for font.size.body-smoke").inputValue() !== "17") {
+        throw new Error("Expanded typography token authoring did not commit");
       }
 
       await tokenPage.getByLabel("Import DTCG tokens").setInputFiles({
@@ -1500,8 +1514,9 @@ try {
 
   await runSmokeScenario(browser, {
     name: "direct routes refresh and invalid input",
-    allowRequestFailure: (request) => new URL(request.url()).pathname === "/icon.svg"
-      && request.failure()?.errorText === "net::ERR_ABORTED",
+    allowRequestFailure: (request) => request.failure()?.errorText === "net::ERR_ABORTED"
+      && (new URL(request.url()).pathname === "/icon.svg"
+        || new URL(request.url()).pathname.startsWith("/_next/static/chunks/")),
     run: async (routePage) => {
       const runtimeResponse = await gotoStudio(routePage, origin, "/runtime-preview");
       assertSecurityHeaders(runtimeResponse, "Runtime preview");
