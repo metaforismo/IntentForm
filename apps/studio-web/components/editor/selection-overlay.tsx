@@ -1,6 +1,5 @@
 "use client";
 
-import { Copy, Stack, Trash } from "@phosphor-icons/react";
 import {
   findGraphNodeLocation,
   type SemanticInterfaceGraph,
@@ -43,9 +42,6 @@ interface SelectionOverlayProps {
   onMoveFreeform(positions: Readonly<Record<string, Point>>): void;
   onResize(nodeId: string, size: ResizeCandidate): void;
   onAnchor(nodeId: string, placement: "inline" | "persistent-bottom"): void;
-  onGroup(): void;
-  onDuplicate(): void;
-  onDelete(): void;
   onOpenContextMenu(clientPosition?: Point): void;
 }
 
@@ -99,9 +95,6 @@ export function SelectionOverlay({
   onMoveFreeform,
   onResize,
   onAnchor,
-  onGroup,
-  onDuplicate,
-  onDelete,
   onOpenContextMenu,
 }: SelectionOverlayProps) {
   const [box, setBox] = useState<MeasuredBox | null>(null);
@@ -179,8 +172,13 @@ export function SelectionOverlay({
   }, [graph, measure, selectedElements]);
 
   const updateHud = (message: string) => {
-    if (hudRef.current) hudRef.current.textContent = message;
+    if (hudRef.current) {
+      hudRef.current.hidden = false;
+      hudRef.current.textContent = message;
+    }
   };
+
+  const hideHud = () => { if (hudRef.current) hudRef.current.hidden = true; };
 
   const hideGuides = () => {
     if (guideRef.current) guideRef.current.hidden = true;
@@ -347,6 +345,7 @@ export function SelectionOverlay({
     const cancelled = event.type === "pointercancel";
     clearTranslations(session.elements);
     hideGuides();
+    hideHud();
     dragSession.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -389,7 +388,11 @@ export function SelectionOverlay({
     }, session.handle, { preserveAspect: event.shiftKey });
     session.candidate = candidate;
     if (overlayRef.current) {
-      overlayRef.current.style.transformOrigin = "left top";
+      overlayRef.current.style.transformOrigin = session.handle.includes("west")
+        ? session.handle.includes("north") ? "right bottom" : session.handle.includes("south") ? "right top" : "right center"
+        : session.handle.includes("east")
+          ? session.handle.includes("north") ? "left bottom" : session.handle.includes("south") ? "left top" : "left center"
+          : session.handle === "north" ? "center bottom" : "center top";
       overlayRef.current.style.transform = `scale(${candidate.width / session.start.width}, ${candidate.height / session.start.height})`;
     }
     updateHud(`${Math.round(candidate.width)} × ${Math.round(candidate.height)}${event.shiftKey ? " · ratio" : ""}`);
@@ -400,6 +403,7 @@ export function SelectionOverlay({
     if (!session || session.pointerId !== event.pointerId) return;
     const cancelled = event.type === "pointercancel";
     resizeSession.current = null;
+    hideHud();
     if (overlayRef.current) overlayRef.current.style.transform = "";
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -412,6 +416,9 @@ export function SelectionOverlay({
 
   if (!enabled || !box || box.graph !== graph || box.selectionKey !== selectionKey || normalizedIds.length === 0) return null;
   const inverseScale = 1 / getScale();
+  const selectionLabel = normalizedIds.length === 1
+    ? findGraphNodeLocation(graph, normalizedIds[0]!)?.node.intent.label ?? normalizedIds[0]
+    : `${normalizedIds.length} layers`;
   return (
     <>
       <div
@@ -431,7 +438,7 @@ export function SelectionOverlay({
         data-testid="selection-overlay"
         data-selection-count={normalizedIds.length}
         data-selection-ids={normalizedIds.join(" ")}
-        className="pointer-events-none absolute z-[5] rounded-[16px] border border-[var(--select)]"
+        className="pointer-events-none absolute z-[5] border border-[var(--select)]"
         style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
       >
         <button
@@ -452,12 +459,17 @@ export function SelectionOverlay({
               onOpenContextMenu();
             }
           }}
-          className="pointer-events-auto absolute inset-0 cursor-move rounded-[14px] bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-[var(--select)] focus-visible:ring-offset-2"
+          className="pointer-events-auto absolute inset-0 cursor-move bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-[var(--select)] focus-visible:ring-offset-2"
         />
         {normalizedIds.length === 1 ? ([
-          ["east", "right-[-12px] top-1/2 cursor-ew-resize", `translateY(-50%) scale(${inverseScale})`],
-          ["south", "bottom-[-12px] left-1/2 cursor-ns-resize", `translateX(-50%) scale(${inverseScale})`],
-          ["southeast", "bottom-[-12px] right-[-12px] cursor-nwse-resize", `scale(${inverseScale})`],
+          ["northwest", "left-[-10px] top-[-10px] cursor-nwse-resize", `scale(${inverseScale})`],
+          ["north", "left-1/2 top-[-10px] cursor-ns-resize", `translateX(-50%) scale(${inverseScale})`],
+          ["northeast", "right-[-10px] top-[-10px] cursor-nesw-resize", `scale(${inverseScale})`],
+          ["east", "right-[-10px] top-1/2 cursor-ew-resize", `translateY(-50%) scale(${inverseScale})`],
+          ["southeast", "bottom-[-10px] right-[-10px] cursor-nwse-resize", `scale(${inverseScale})`],
+          ["south", "bottom-[-10px] left-1/2 cursor-ns-resize", `translateX(-50%) scale(${inverseScale})`],
+          ["southwest", "bottom-[-10px] left-[-10px] cursor-nesw-resize", `scale(${inverseScale})`],
+          ["west", "left-[-10px] top-1/2 cursor-ew-resize", `translateY(-50%) scale(${inverseScale})`],
         ] as const).map(([handle, position, transform]) => (
           <button
             key={handle}
@@ -469,23 +481,10 @@ export function SelectionOverlay({
             onPointerCancel={finishResize}
             className={`pointer-events-auto absolute grid size-6 place-items-center bg-transparent ${position}`}
             style={{ transform }}
-          ><span aria-hidden="true" className="block size-2 rounded-[1px] border border-[var(--select-deep)] bg-white shadow-sm" /></button>
+          ><span aria-hidden="true" className="block size-[7px] rounded-[1px] border border-[var(--select-deep)] bg-white shadow-sm" /></button>
         )) : null}
-        <div
-          className="pointer-events-auto absolute bottom-[calc(100%+10px)] left-0 flex origin-bottom-left items-center gap-1 rounded-lg border border-[var(--line-strong)] bg-[var(--chrome)] p-1 text-[10px] text-[var(--t-strong)] shadow-[0_10px_28px_-18px_var(--shadow-strong)]"
-          style={{ transform: `scale(${inverseScale})` }}
-        >
-          <span ref={hudRef} className="whitespace-nowrap px-1.5 font-mono">
-            {normalizedIds.length === 1 ? normalizedIds[0] : `${normalizedIds.length} layers`}
-          </span>
-          {normalizedIds.length > 1 ? (
-            <button type="button" onClick={onGroup} className="flex min-h-7 items-center gap-1 rounded-md px-2 hover:bg-[var(--hover)] active:translate-y-px">
-              <Stack size={12} /> Group
-            </button>
-          ) : null}
-          <button type="button" aria-label="Duplicate selection" onClick={onDuplicate} className="grid size-7 place-items-center rounded-md hover:bg-[var(--hover)] active:translate-y-px"><Copy size={12} /></button>
-          <button type="button" aria-label="Delete selection" onClick={onDelete} className="grid size-7 place-items-center rounded-md text-[var(--danger)] hover:bg-[var(--danger-soft)] active:translate-y-px"><Trash size={12} /></button>
-        </div>
+        <span className="pointer-events-none absolute bottom-[calc(100%+5px)] left-0 whitespace-nowrap rounded-[3px] bg-[var(--select-deep)] px-1.5 py-0.5 text-[10px] font-medium text-white" style={{ transform: `scale(${inverseScale})`, transformOrigin: "left bottom" }}>{selectionLabel}</span>
+        <span ref={hudRef} data-testid="selection-dimension-hud" hidden className="pointer-events-none absolute left-1/2 top-[calc(100%+8px)] -translate-x-1/2 whitespace-nowrap rounded-[4px] bg-[var(--if-raised)] px-2 py-1 font-mono text-[10px] text-[var(--if-text)] shadow-[var(--if-shadow-menu)]" style={{ scale: `${inverseScale}`, transformOrigin: "center top" }} />
       </div>
     </>
   );

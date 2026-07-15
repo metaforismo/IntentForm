@@ -610,11 +610,23 @@ try {
         || await selectionOverlay.getAttribute("data-selection-ids") !== "layout-lab.grid-a") {
         throw new Error("Nested selection did not create a single deterministic selection overlay");
       }
+      const resizeHandles = selectionOverlay.locator('button[aria-label^="Resize selected layer "]');
+      const resizeHandleCount = await resizeHandles.count();
+      if (resizeHandleCount !== 8) {
+        throw new Error(`Single selection exposed ${resizeHandleCount} resize handles instead of eight`);
+      }
+      if (await selectionOverlay.getByTestId("selection-dimension-hud").getAttribute("hidden") === null) {
+        throw new Error("Selection dimension HUD is not idle-hidden");
+      }
       const additiveSelectionModifier = process.platform === "darwin" ? "Meta" : "Control";
       await page.getByTestId("layer-layout-lab.grid-b").click({ modifiers: [additiveSelectionModifier] });
       await page.waitForFunction(() => document.querySelector('[data-testid="selection-overlay"]')?.getAttribute("data-selection-count") === "2");
       await page.getByTestId("multi-selection-inspector").getByText("2 layers selected", { exact: true }).waitFor();
-      await selectionOverlay.getByRole("button", { name: "Group", exact: true }).click();
+      if (await selectionOverlay.locator('button[aria-label^="Resize selected layer "]').count() !== 0
+        || await selectionOverlay.getByRole("button", { name: /Group|Duplicate|Delete/ }).count() !== 0) {
+        throw new Error("Multi-selection retained per-node resize handles or the deprecated action capsule");
+      }
+      await page.getByRole("button", { name: "Group selected layers", exact: true }).click();
       await page.getByTestId("layer-layout-lab.group-1").waitFor();
       if (await page.getByTestId("canvas-node-layout-lab.group-1").getAttribute("data-node-selected") !== "true") {
         throw new Error("Grouping did not select the committed semantic container");
@@ -623,6 +635,33 @@ try {
       await page.getByTestId("layer-layout-lab.group-1").waitFor({ state: "detached" });
       await nestedLeafLayer.click();
       await page.waitForFunction(() => document.querySelector('[data-testid="selection-overlay"]')?.getAttribute("data-selection-ids") === "layout-lab.grid-a");
+
+      const gridLayer = page.getByTestId("layer-layout-lab.grid");
+      await gridLayer.getByRole("button", { name: /^Collapse / }).click();
+      await nestedLeafLayer.waitFor({ state: "detached" });
+      await gridLayer.getByRole("button", { name: /^Expand / }).click();
+      await nestedLeafLayer.waitFor();
+      const lockLeaf = nestedLeafLayer.getByRole("button", { name: /^Lock / });
+      await lockLeaf.click();
+      if (await nestedLeafLayer.getAttribute("draggable") !== "false") {
+        throw new Error("Locked nested layer remained draggable");
+      }
+      await nestedLeafLayer.getByRole("button", { name: /^Unlock / }).click();
+      const hideLeaf = nestedLeafLayer.getByRole("button", { name: /^Hide / });
+      await hideLeaf.click();
+      await page.getByTestId("canvas-node-layout-lab.grid-a").waitFor({ state: "detached" });
+      await nestedLeafLayer.getByRole("button", { name: /^Show / }).click();
+      await page.getByTestId("canvas-node-layout-lab.grid-a").waitFor();
+
+      await nestedLeafLayer.dragTo(page.getByTestId("layer-layout-lab.overlay"), {
+        targetPosition: { x: 90, y: 14 },
+      });
+      await page.waitForFunction(() => document.querySelector('[data-container-id="layout-lab.overlay"]')
+        ?.querySelector('[data-testid="canvas-node-layout-lab.grid-a"]'));
+      await page.getByRole("button", { name: "Undo" }).click();
+      await page.waitForFunction(() => document.querySelector('[data-container-id="layout-lab.grid"]')
+        ?.querySelector('[data-testid="canvas-node-layout-lab.grid-a"]'));
+      await nestedLeafLayer.click();
 
       const moveHandle = page.getByRole("button", { name: "Move selected layer", exact: true });
       const moveBox = await moveHandle.boundingBox();
@@ -1281,6 +1320,8 @@ try {
 
   await runSmokeScenario(browser, {
     name: "direct routes refresh and invalid input",
+    allowRequestFailure: (request) => new URL(request.url()).pathname === "/icon.svg"
+      && request.failure()?.errorText === "net::ERR_ABORTED",
     run: async (routePage) => {
       const runtimeResponse = await gotoStudio(routePage, origin, "/runtime-preview");
       assertSecurityHeaders(runtimeResponse, "Runtime preview");

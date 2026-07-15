@@ -82,9 +82,9 @@ describe("direct manipulation candidate engine", () => {
     });
   });
 
-  it("clamps freeform movement at the semantic origin", () => {
+  it("preserves signed freeform coordinates beyond the semantic origin", () => {
     expect(resolveFreeformMove({ a: { x: 4, y: 6 } }, { x: -40, y: -40 }).positions.a)
-      .toEqual({ x: 0, y: 0 });
+      .toEqual({ x: -32, y: -32 });
   });
 
   it("snaps and bounds each resize handle deterministically", () => {
@@ -92,6 +92,12 @@ describe("direct manipulation candidate engine", () => {
       .toEqual({ width: 120, height: 59 });
     expect(resolveResizeCandidate({ width: 101, height: 59 }, { x: 0, y: 19 }, "south"))
       .toEqual({ width: 101, height: 80 });
+    expect(resolveResizeCandidate({ width: 101, height: 59 }, { x: 17, y: 0 }, "west"))
+      .toEqual({ width: 88, height: 59, offsetX: 13 });
+    expect(resolveResizeCandidate({ width: 101, height: 59 }, { x: 0, y: 19 }, "north"))
+      .toEqual({ width: 101, height: 40, offsetY: 19 });
+    expect(resolveResizeCandidate({ width: 120, height: 60 }, { x: 40, y: 20 }, "northwest"))
+      .toEqual({ width: 80, height: 40, offsetX: 40, offsetY: 20 });
     expect(resolveResizeCandidate({ width: 120, height: 60 }, { x: 41, y: 3 }, "southeast", { preserveAspect: true }))
       .toEqual({ width: 160, height: 80 });
     expect(resolveResizeCandidate({ width: 30, height: 30 }, { x: -100, y: 4_000 }, "southeast"))
@@ -106,6 +112,15 @@ describe("direct manipulation candidate engine", () => {
     ]);
     expect(index.at({ x: 30, y: 30 }).map((entry) => entry.id)).toEqual(["a", "b", "root"]);
     expect(index.at({ x: 300, y: 300 })).toEqual([]);
+  });
+
+  it("indexes negative positions and entries spanning spatial buckets", () => {
+    const index = new SpatialIndex([
+      { id: "negative", parentId: null, depth: 1, x: -300, y: -20, width: 80, height: 40 },
+      { id: "boundary", parentId: null, depth: 1, x: 250, y: 250, width: 20, height: 20 },
+    ]);
+    expect(index.at({ x: -256, y: 0 }).map((entry) => entry.id)).toEqual(["negative"]);
+    expect(index.at({ x: 260, y: 260 }).map((entry) => entry.id)).toEqual(["boundary"]);
   });
 
   it("is stable across a seeded matrix of reorder pointers and resize deltas", () => {

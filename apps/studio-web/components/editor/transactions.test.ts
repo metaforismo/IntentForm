@@ -142,6 +142,13 @@ describe("editor transactions", () => {
       "layout-lab.grid-a",
       "layout-lab.freeform",
     )).toThrow(/explicit semantic position/);
+    const lockedTarget = structuredClone(demoGraph);
+    locateEditorNode(lockedTarget, "layout-lab.overlay")!.node.editor = { locked: true, hidden: false };
+    expect(() => moveNodeTransaction(
+      lockedTarget,
+      "layout-lab.grid-a",
+      "layout-lab.overlay",
+    )).toThrow(/locked nodes/i);
     expect(() => reorderChildrenTransaction(
       demoGraph,
       "layout-lab",

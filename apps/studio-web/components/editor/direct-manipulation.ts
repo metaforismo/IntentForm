@@ -10,7 +10,7 @@ export const DIRECT_MANIPULATION_GRID = 8;
 export const DIRECT_MANIPULATION_SNAP_TOLERANCE = 5;
 
 export type SelectionIntent = "replace" | "toggle" | "range";
-export type ResizeHandle = "east" | "south" | "southeast";
+export type ResizeHandle = "northwest" | "north" | "northeast" | "east" | "southeast" | "south" | "southwest" | "west";
 
 export interface AxisItem {
   id: string;
@@ -38,6 +38,8 @@ export interface FreeformMoveCandidate {
 export interface ResizeCandidate {
   width: number;
   height: number;
+  offsetX?: number;
+  offsetY?: number;
 }
 
 export interface SpatialEntry {
@@ -188,8 +190,8 @@ export function resolveFreeformMove(
   const snappedDelta = { x: x.value - anchor.x, y: y.value - anchor.y };
   return {
     positions: Object.fromEntries(Object.entries(initial).map(([id, point]) => [id, {
-      x: Math.max(0, point.x + snappedDelta.x),
-      y: Math.max(0, point.y + snappedDelta.y),
+      x: point.x + snappedDelta.x,
+      y: point.y + snappedDelta.y,
     }])),
     snappedX: x.guide,
     snappedY: y.guide,
@@ -208,30 +210,50 @@ export function resolveResizeCandidate(
 ): ResizeCandidate {
   const minimum = options.minimum ?? 24;
   const maximum = options.maximum ?? 2_048;
-  let width = start.width + (handle === "south" ? 0 : delta.x);
-  let height = start.height + (handle === "east" ? 0 : delta.y);
-  if (options.preserveAspect && handle === "southeast") {
+  const changesWest = handle === "west" || handle === "northwest" || handle === "southwest";
+  const changesEast = handle === "east" || handle === "northeast" || handle === "southeast";
+  const changesNorth = handle === "north" || handle === "northwest" || handle === "northeast";
+  const changesSouth = handle === "south" || handle === "southwest" || handle === "southeast";
+  const changesBothAxes = (changesWest || changesEast) && (changesNorth || changesSouth);
+  let width = start.width + (changesWest ? -delta.x : changesEast ? delta.x : 0);
+  let height = start.height + (changesNorth ? -delta.y : changesSouth ? delta.y : 0);
+  if (options.preserveAspect && changesBothAxes) {
     const ratio = start.width / Math.max(1, start.height);
     if (Math.abs(delta.x) >= Math.abs(delta.y)) height = width / ratio;
     else width = height * ratio;
   }
+  const resolvedWidth = changesWest || changesEast ? snappedDimension(width, minimum, maximum) : start.width;
+  const resolvedHeight = changesNorth || changesSouth ? snappedDimension(height, minimum, maximum) : start.height;
   return {
-    width: handle === "south" ? start.width : snappedDimension(width, minimum, maximum),
-    height: handle === "east" ? start.height : snappedDimension(height, minimum, maximum),
+    width: resolvedWidth,
+    height: resolvedHeight,
+    ...(changesWest ? { offsetX: start.width - resolvedWidth } : {}),
+    ...(changesNorth ? { offsetY: start.height - resolvedHeight } : {}),
   };
 }
 
-/** A deliberately simple O(n) index is the correctness baseline. PR29 can
- * replace its internals with an R-tree without changing hit-test semantics. */
 export class SpatialIndex {
-  readonly #entries: SpatialEntry[];
+  static readonly cellSize = 256;
+  readonly #cells = new Map<string, SpatialEntry[]>();
 
   constructor(entries: readonly SpatialEntry[]) {
-    this.#entries = [...entries];
+    for (const entry of entries) {
+      const startX = Math.floor(entry.x / SpatialIndex.cellSize);
+      const endX = Math.floor((entry.x + entry.width) / SpatialIndex.cellSize);
+      const startY = Math.floor(entry.y / SpatialIndex.cellSize);
+      const endY = Math.floor((entry.y + entry.height) / SpatialIndex.cellSize);
+      for (let x = startX; x <= endX; x += 1) for (let y = startY; y <= endY; y += 1) {
+        const key = `${x}:${y}`;
+        const cell = this.#cells.get(key) ?? [];
+        cell.push(entry);
+        this.#cells.set(key, cell);
+      }
+    }
   }
 
   at(point: Point): SpatialEntry[] {
-    return this.#entries
+    const key = `${Math.floor(point.x / SpatialIndex.cellSize)}:${Math.floor(point.y / SpatialIndex.cellSize)}`;
+    return (this.#cells.get(key) ?? [])
       .filter((entry) => point.x >= entry.x && point.x <= entry.x + entry.width
         && point.y >= entry.y && point.y <= entry.y + entry.height)
       .sort((a, b) => b.depth - a.depth
