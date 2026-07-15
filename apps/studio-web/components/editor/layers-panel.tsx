@@ -21,6 +21,7 @@ import {
   TreeStructure,
   Trash,
   UploadSimple,
+  WarningCircle,
   X,
 } from "@phosphor-icons/react";
 import {
@@ -37,6 +38,7 @@ import { importDtcg, serializeDtcg, TOKEN_ASSET_LIMITS } from "@intentform/token
 import { Reorder } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IconButton } from "../ui/controls";
+import { importLocalAsset } from "./asset-import";
 import { isNodeVisible, nodeNames, type NodeCommand, type RailTab, type VisualState } from "./support";
 import type { SelectionIntent } from "./direct-manipulation";
 
@@ -63,6 +65,11 @@ interface LayersPanelProps {
   onNodeCommand(command: NodeCommand, nodeId: string): void;
   onInstantiateComponent(definitionId: string): void;
   onUpdateTokens(mutate: (tokens: SemanticInterfaceGraph["tokens"]) => void, notice: string): void;
+  localProjectFingerprint: string | null;
+  localProjectSaved: boolean;
+  onUpdateAssets(mutate: (assets: SemanticInterfaceGraph["assets"]) => void, notice: string): void;
+  onExternalAssetCommit(graph: SemanticInterfaceGraph, fingerprint: string, notice: string): void;
+  onPlaceAsset(assetId: string): void;
   onClose(): void;
   onDismissMobile(): void;
 }
@@ -80,6 +87,55 @@ function PanelHeading({ label, action }: { label: string; action?: React.ReactNo
       <span className="text-[11px] font-semibold tracking-[.01em] text-[var(--muted)]">{label}</span>
       {action}
     </div>
+  );
+}
+
+function AssetThumbnail({ asset }: { asset: SemanticInterfaceGraph["assets"][number] }) {
+  const [attempt, setAttempt] = useState(0);
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  if (!["raster", "svg", "icon"].includes(asset.kind)) return null;
+  return (
+    <div className="relative mb-2 grid h-20 place-items-center overflow-hidden rounded-lg border border-[var(--line)] bg-[repeating-conic-gradient(var(--canvas)_0_25%,var(--field)_0_50%)_50%/12px_12px]">
+      {state === "loading" ? <span className="text-[9px] font-medium text-[var(--faint)]">Loading preview…</span> : null}
+      <img
+        key={attempt}
+        loading="lazy"
+        decoding="async"
+        src={`/api/project/assets/${asset.digest}`}
+        alt=""
+        onLoad={() => setState("ready")}
+        onError={() => setState("error")}
+        className={`absolute inset-0 size-full object-contain ${state === "ready" ? "opacity-100" : "opacity-0"}`}
+      />
+      {state === "error" ? <button type="button" onClick={() => { setState("loading"); setAttempt((value) => value + 1); }} className="relative z-[1] rounded-md bg-[var(--danger-soft)] px-2 py-1 text-[9px] font-semibold text-[var(--danger)]">Missing · Retry</button> : null}
+    </div>
+  );
+}
+
+function AssetPolicyEditor({
+  asset,
+  onChange,
+}: {
+  asset: SemanticInterfaceGraph["assets"][number];
+  onChange(mutate: (asset: SemanticInterfaceGraph["assets"][number]) => void, notice: string): void;
+}) {
+  const [licenseName, setLicenseName] = useState(asset.license.name);
+  const focused = useRef(false);
+  useEffect(() => { if (!focused.current) setLicenseName(asset.license.name); }, [asset.license.name]);
+  const commitLicense = () => {
+    const next = licenseName.trim();
+    if (next && next !== asset.license.name) onChange((draft) => { draft.license.name = next; }, `Updated ${asset.name} license.`);
+    else setLicenseName(asset.license.name);
+  };
+  return (
+    <details className="mt-2 rounded-md border border-[var(--line)] px-2 py-1.5 text-[9px] text-[var(--muted)]">
+      <summary className="cursor-pointer font-semibold">License and export</summary>
+      <div className="mt-2 grid gap-2">
+        <label className="grid gap-1">License name<input value={licenseName} onFocus={() => { focused.current = true; }} onChange={(event) => setLicenseName(event.target.value)} onBlur={() => { focused.current = false; commitLicense(); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} className="min-h-7 rounded-md border border-[var(--line)] bg-[var(--canvas)] px-2 text-[10px] text-[var(--ink)] outline-none focus:border-[var(--accent)]" /></label>
+        <label className="grid gap-1">Redistribution<select value={asset.license.redistribution} onChange={(event) => onChange((draft) => { draft.license.redistribution = event.target.value as typeof draft.license.redistribution; if (draft.license.redistribution !== "allowed" && draft.exportPolicy === "copy") draft.exportPolicy = "reference"; }, `Updated ${asset.name} redistribution policy.`)} className="select-control min-h-7 text-[10px]"><option value="allowed">Allowed</option><option value="restricted">Restricted</option><option value="unknown">Unknown</option></select></label>
+        <label className="grid gap-1">Export policy<select value={asset.exportPolicy} onChange={(event) => onChange((draft) => { draft.exportPolicy = event.target.value as typeof draft.exportPolicy; }, `Updated ${asset.name} export policy.`)} className="select-control min-h-7 text-[10px]"><option value="reference">Reference</option><option value="blocked">Blocked</option><option value="copy" disabled={asset.license.redistribution !== "allowed"}>Copy into output</option></select></label>
+      </div>
+    </details>
   );
 }
 
@@ -165,6 +221,11 @@ export function LayersPanel({
   onNodeCommand,
   onInstantiateComponent,
   onUpdateTokens,
+  localProjectFingerprint,
+  localProjectSaved,
+  onUpdateAssets,
+  onExternalAssetCommit,
+  onPlaceAsset,
   onClose,
   onDismissMobile,
 }: LayersPanelProps) {
@@ -173,7 +234,12 @@ export function LayersPanel({
   const pagesListRef = useRef<HTMLDivElement>(null);
   const layersListRef = useRef<HTMLDivElement>(null);
   const tokenFileRef = useRef<HTMLInputElement>(null);
+  const assetFileRef = useRef<HTMLInputElement>(null);
+  const replacingAssetId = useRef<string | null>(null);
+  const retryReplacingAssetId = useRef<string | null>(null);
+  const assetUploadController = useRef<AbortController | null>(null);
   const [tokenTransferStatus, setTokenTransferStatus] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+  const [assetTransferStatus, setAssetTransferStatus] = useState<{ kind: "working" | "success" | "error"; message: string } | null>(null);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set());
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ nodeId: string; mode: "before" | "inside" } | null>(null);
@@ -241,6 +307,106 @@ export function LayersPanel({
     anchor.click();
     URL.revokeObjectURL(url);
     setTokenTransferStatus({ kind: "success", message: "Exported deterministic DTCG 2025.10 JSON." });
+  };
+
+  const chooseAssetFile = (replacingId?: string) => {
+    replacingAssetId.current = replacingId ?? null;
+    assetFileRef.current?.click();
+  };
+
+  const importAssetFile = async (file: File | undefined) => {
+    if (!file) return;
+    if (!localProjectFingerprint || !localProjectSaved) {
+      setAssetTransferStatus({ kind: "error", message: localProjectFingerprint ? "Save canvas changes before importing files." : "Open a local project before importing files." });
+      return;
+    }
+    const replacingId = replacingAssetId.current;
+    retryReplacingAssetId.current = replacingId;
+    const replaced = replacingId ? graph.assets.find((asset) => asset.id === replacingId) : undefined;
+    const controller = new AbortController();
+    assetUploadController.current?.abort();
+    assetUploadController.current = controller;
+    setAssetTransferStatus({ kind: "working", message: `${replaced ? "Replacing" : "Importing"} ${file.name}…` });
+    try {
+      const imported = await importLocalAsset({
+        file,
+        graph,
+        expectedFingerprint: localProjectFingerprint,
+        ...(replacingId ? { replacingId } : {}),
+        signal: controller.signal,
+      });
+      onExternalAssetCommit(imported.graph, imported.fingerprint, `${replaced ? "Replaced" : "Imported"} ${imported.asset.name} atomically.`);
+      retryReplacingAssetId.current = null;
+      setAssetTransferStatus({ kind: "success", message: `${imported.asset.name} is ready on the canvas.` });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        retryReplacingAssetId.current = null;
+        setAssetTransferStatus({ kind: "success", message: "Asset import cancelled." });
+        return;
+      }
+      setAssetTransferStatus({ kind: "error", message: error instanceof Error ? error.message : "Asset import failed." });
+    } finally {
+      replacingAssetId.current = null;
+      if (assetUploadController.current === controller) assetUploadController.current = null;
+      if (assetFileRef.current) assetFileRef.current.value = "";
+    }
+  };
+
+  const removeUnusedAssets = () => {
+    const used = new Set(graph.screens.flatMap((item) => flattenSemanticNodes(item.nodes)).flatMap((node) => node.asset ? [node.asset.assetId] : []));
+    const unused = graph.assets.filter((asset) => !used.has(asset.id));
+    if (unused.length === 0) {
+      setAssetTransferStatus({ kind: "success", message: "Every asset is used by the document." });
+      return;
+    }
+    onUpdateAssets((assets) => {
+      for (let index = assets.length - 1; index >= 0; index -= 1) {
+        if (!used.has(assets[index]!.id)) assets.splice(index, 1);
+      }
+    }, `Removed ${unused.length} unused asset manifest entr${unused.length === 1 ? "y" : "ies"}. Save before garbage collection.`);
+    setAssetTransferStatus({ kind: "success", message: `Removed ${unused.length} unused asset entr${unused.length === 1 ? "y" : "ies"}.` });
+  };
+
+  const cleanAssetStore = async () => {
+    if (!localProjectFingerprint || !localProjectSaved) return;
+    setAssetTransferStatus({ kind: "working", message: "Cleaning unreferenced asset bytes…" });
+    try {
+      const response = await fetch(`/api/project/assets?expectedFingerprint=${encodeURIComponent(localProjectFingerprint)}`, { method: "DELETE" });
+      const result = await response.json() as { error?: string; removed?: string[] };
+      if (!response.ok || !result.removed) throw new Error(result.error ?? "Asset cleanup failed.");
+      setAssetTransferStatus({ kind: "success", message: result.removed.length === 0 ? "The asset store is already clean." : `Removed ${result.removed.length} unreferenced file${result.removed.length === 1 ? "" : "s"}.` });
+    } catch (error) {
+      setAssetTransferStatus({ kind: "error", message: error instanceof Error ? error.message : "Asset cleanup failed." });
+    }
+  };
+
+  const exportAsset = (asset: SemanticInterfaceGraph["assets"][number]) => {
+    const anchor = document.createElement("a");
+    anchor.href = `/api/project/assets/${asset.digest}`;
+    const extension = asset.storageKey.split(".").at(-1) ?? "bin";
+    anchor.download = `${asset.name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "asset"}.${extension}`;
+    anchor.click();
+    setAssetTransferStatus({ kind: "success", message: `Exported ${asset.name} at intrinsic size.` });
+  };
+
+  const recolorSvg = async (asset: SemanticInterfaceGraph["assets"][number], color: string) => {
+    try {
+      setAssetTransferStatus({ kind: "working", message: `Recoloring ${asset.name}…` });
+      const response = await fetch(`/api/project/assets/${asset.digest}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("The SVG source is missing or invalid.");
+      const source = await response.text();
+      let replacements = 0;
+      const recolored = source.replace(/\b(fill|stroke)=(['"])(#[0-9a-fA-F]{3,8})\2/g, (_match, property: string, quote: string) => {
+        replacements += 1;
+        return `${property}=${quote}${color}${quote}`;
+      });
+      if (replacements === 0) throw new Error("This SVG has no literal fill or stroke colors to recolor.");
+      replacingAssetId.current = asset.id;
+      await importAssetFile(new File([recolored], `${asset.id}.svg`, { type: "image/svg+xml" }));
+    } catch (error) {
+      replacingAssetId.current = null;
+      setAssetTransferStatus({ kind: "error", message: error instanceof Error ? error.message : "SVG recolor failed." });
+    }
   };
 
   const movePage = (screenId: string, direction: -1 | 1) => {
@@ -533,13 +699,23 @@ export function LayersPanel({
       ) : railTab === "assets" ? (
         <div id="editor-assets-tabpanel" role="tabpanel" aria-labelledby="editor-assets-tab" className="min-h-0 overflow-y-auto overflow-x-hidden" data-testid="asset-library-panel">
           <section className="border-b border-[var(--line)] px-3 pb-3 pt-2">
-            <PanelHeading label="Project assets" />
-            <p className="mt-1 text-[11px] leading-relaxed text-[var(--faint)]">Content-addressed local files. Source paths are never stored in the graph.</p>
+            <PanelHeading
+              label="Project assets"
+              action={<div className="flex gap-1"><button type="button" title={localProjectSaved ? "Import a local asset" : "Save canvas changes before importing"} disabled={!localProjectFingerprint || !localProjectSaved || assetTransferStatus?.kind === "working"} onClick={() => chooseAssetFile()} className="inline-flex min-h-7 items-center gap-1 rounded-lg border border-[var(--line)] px-2 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-40"><UploadSimple size={11} /> Import</button><button type="button" disabled={graph.assets.length === 0} onClick={removeUnusedAssets} className="inline-flex min-h-7 items-center gap-1 rounded-lg border border-[var(--line)] px-2 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-40"><Trash size={11} /> Unused</button><button type="button" title={localProjectSaved ? "Delete bytes not referenced by the saved manifest" : "Save before cleaning the asset store"} disabled={!localProjectSaved || assetTransferStatus?.kind === "working"} onClick={() => void cleanAssetStore()} className="inline-flex min-h-7 items-center rounded-lg border border-[var(--line)] px-2 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-40">Clean</button></div>}
+            />
+            <input ref={assetFileRef} type="file" aria-label="Import project asset" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml,video/mp4,video/webm,audio/mpeg,audio/ogg,audio/wav,font/woff,font/woff2,font/ttf,font/otf" className="sr-only" onChange={(event) => void importAssetFile(event.target.files?.[0])} />
+            <p className="mt-1 text-[11px] leading-relaxed text-[var(--faint)]">Digest-verified local files with explicit license and export policy. Drag visual assets onto the canvas.</p>
+            {assetTransferStatus ? <p role={assetTransferStatus.kind === "error" ? "alert" : "status"} className={`mt-2 flex items-start gap-1.5 rounded-lg px-2 py-1.5 text-[10px] leading-relaxed ${assetTransferStatus.kind === "error" ? "bg-[var(--danger-soft)] text-[var(--danger)]" : "bg-[var(--accent-soft)] text-[var(--accent-text)]"}`}>{assetTransferStatus.kind === "error" ? <WarningCircle className="mt-0.5 shrink-0" size={11} /> : null}<span className="min-w-0 flex-1">{assetTransferStatus.message}</span>{assetTransferStatus.kind === "working" ? <button type="button" onClick={() => assetUploadController.current?.abort()} className="shrink-0 font-semibold underline">Cancel</button> : assetTransferStatus.kind === "error" && localProjectSaved ? <button type="button" onClick={() => chooseAssetFile(retryReplacingAssetId.current ?? undefined)} className="shrink-0 font-semibold underline">Choose again</button> : null}</p> : null}
           </section>
           <div className="grid gap-2 p-2">
             {graph.assets.map((asset) => (
-              <article key={asset.id} className="rounded-xl border border-[var(--line)] bg-[var(--field)] p-2.5">
-                {["raster", "svg", "icon"].includes(asset.kind) ? <img loading="lazy" decoding="async" src={`/api/project/assets/${asset.digest}`} alt="" className="mb-2 h-20 w-full rounded-lg border border-[var(--line)] bg-[var(--canvas)] object-contain" /> : null}
+              <article
+                key={asset.id}
+                draggable={["raster", "svg", "icon"].includes(asset.kind)}
+                onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("application/x-intentform-asset", asset.id); }}
+                className="rounded-lg border border-[var(--line)] bg-[var(--field)] p-2.5"
+              >
+                <AssetThumbnail asset={asset} />
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <strong className="block truncate text-[12px] font-semibold text-[var(--ink)]">{asset.name}</strong>
@@ -549,11 +725,20 @@ export function LayersPanel({
                 </div>
                 <p className="mt-2 truncate font-mono text-[9px] text-[var(--faint)]">sha256 {asset.digest.slice(0, 12)}…</p>
                 <p className="mt-2 text-[10px] leading-relaxed text-[var(--muted)]">{asset.license.name} · redistribution {asset.license.redistribution}</p>
+                {asset.width && asset.height ? <p className="mt-1 font-mono text-[9px] text-[var(--faint)]">{asset.width} × {asset.height}px</p> : null}
                 {asset.variants.length > 0 ? <p className="mt-1 font-mono text-[9px] text-[var(--faint)]">{asset.variants.length} variant{asset.variants.length === 1 ? "" : "s"}</p> : null}
+                <div className="mt-2 grid grid-cols-4 gap-1">
+                  <button type="button" disabled={!(["raster", "svg", "icon"].includes(asset.kind))} onClick={() => onPlaceAsset(asset.id)} className="min-h-7 rounded-md border border-[var(--line)] px-1 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)] disabled:opacity-35">Place</button>
+                  <button type="button" disabled={!localProjectFingerprint || !localProjectSaved} onClick={() => chooseAssetFile(asset.id)} className="min-h-7 rounded-md border border-[var(--line)] px-1 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)] disabled:opacity-35">Replace</button>
+                  <button type="button" onClick={() => void navigator.clipboard.writeText(asset.id).then(() => setAssetTransferStatus({ kind: "success", message: `Copied ${asset.id}.` })).catch(() => setAssetTransferStatus({ kind: "error", message: "Clipboard access was denied." }))} className="min-h-7 rounded-md border border-[var(--line)] px-1 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)]">Copy ref</button>
+                  <button type="button" disabled={asset.kind === "font" || asset.exportPolicy === "blocked"} onClick={() => exportAsset(asset)} className="min-h-7 rounded-md border border-[var(--line)] px-1 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)] disabled:opacity-35">Export</button>
+                </div>
+                {["svg", "icon"].includes(asset.kind) ? <label className="mt-2 flex min-h-8 items-center justify-between rounded-md border border-[var(--line)] px-2 text-[9px] font-semibold text-[var(--muted)]">Recolor fills and strokes<input type="color" aria-label={`Recolor ${asset.name}`} defaultValue="#4f8ff7" disabled={!localProjectFingerprint || !localProjectSaved || assetTransferStatus?.kind === "working"} onChange={(event) => void recolorSvg(asset, event.target.value)} className="size-5 cursor-pointer rounded border-0 bg-transparent p-0" /></label> : null}
+                <AssetPolicyEditor asset={asset} onChange={(mutate, notice) => onUpdateAssets((assets) => { const draft = assets.find((candidate) => candidate.id === asset.id); if (draft) mutate(draft); }, notice)} />
               </article>
             ))}
             {graph.assets.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-[var(--line-strong)] px-3 py-8 text-center text-[11px] leading-relaxed text-[var(--muted)]">No project assets yet. Place a licensed file in <span className="font-mono">.intentform/imports</span>, then use the local agent import tool.</div>
+              <div className="rounded-lg border border-dashed border-[var(--line-strong)] px-3 py-8 text-center text-[11px] leading-relaxed text-[var(--muted)]">{localProjectFingerprint ? "No project assets yet. Import an image, SVG, media file, or licensed font." : "Open a local project to import content-addressed assets."}</div>
             ) : null}
           </div>
         </div>

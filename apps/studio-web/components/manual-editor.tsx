@@ -59,6 +59,7 @@ import type { VerificationFinding } from "@intentform/verifier";
 import type { DeviceBezelReference } from "@intentform/device-registry";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CanvasStage, type CanvasApi } from "./editor/canvas";
+import { importLocalAsset } from "./editor/asset-import";
 import { Inspector } from "./editor/inspector";
 import { LayersPanel } from "./editor/layers-panel";
 import { CommandMenu, ShortcutsSheet, type EditorCommand } from "./editor/overlays";
@@ -128,10 +129,13 @@ interface ManualEditorProps {
   findings: VerificationFinding[];
   deviceId: DeviceId;
   localProjectEnabled: boolean;
+  localProjectFingerprint: string | null;
+  localProjectSaved: boolean;
   onSelectScreen(screenId: string): void;
   onDeviceId(deviceId: DeviceId): void;
   onSelectNode(nodeId: string | null): void;
   onCommit(graph: SemanticInterfaceGraph, notice: string): void;
+  onExternalAssetCommit(graph: SemanticInterfaceGraph, fingerprint: string, notice: string): void;
   onNotice(notice: string): void;
   onUndo(): void;
   onRedo(): void;
@@ -252,10 +256,13 @@ export function ManualEditor({
   findings,
   deviceId,
   localProjectEnabled,
+  localProjectFingerprint,
+  localProjectSaved,
   onSelectScreen,
   onDeviceId,
   onSelectNode,
   onCommit,
+  onExternalAssetCommit,
   onNotice,
   onUndo,
   onRedo,
@@ -919,6 +926,62 @@ export function ManualEditor({
     }
   };
 
+  const updateAssets = useCallback((
+    mutate: (assets: SemanticInterfaceGraph["assets"]) => void,
+    notice: string,
+  ) => {
+    const draft = structuredClone(graph);
+    mutate(draft.assets);
+    commitDraft(draft, notice);
+  }, [commitDraft, graph]);
+
+  const placeAsset = useCallback((assetId: string, sourceGraph: SemanticInterfaceGraph = graph) => {
+    if (!screen) return;
+    const asset = sourceGraph.assets.find((candidate) => candidate.id === assetId);
+    if (!asset || !["raster", "svg", "icon"].includes(asset.kind)) return;
+    const draft = structuredClone(sourceGraph);
+    const draftScreen = draft.screens.find((item) => item.id === screen.id);
+    if (!draftScreen) return;
+    const existingIds = new Set(flattenGraphNodes(draft).map((node) => node.id));
+    const stem = asset.id.split(".").at(-1)?.replace(/[^a-z0-9-]/gi, "-").toLowerCase() || "asset";
+    let count = 1;
+    let id = `${screen.id}.asset-${stem}-${count}`;
+    while (existingIds.has(id)) { count += 1; id = `${screen.id}.asset-${stem}-${count}`; }
+    const width = Math.max(32, Math.min(asset.width ?? 320, 960));
+    const height = Math.max(32, Math.min(asset.height ?? 240, 720));
+    draftScreen.nodes.push({
+      id,
+      kind: "image",
+      intent: { purpose: `Display ${asset.name}`, label: asset.name, importance: "supporting" },
+      layout: { ...newNodeLayout("image"), width: "fixed", fixedWidth: width, height: "fixed", fixedHeight: height },
+      style: { role: "image", emphasis: "normal" },
+      accessibility: { label: asset.name, live: "off" },
+      asset: { assetId, fit: "contain", focalPoint: { x: 0.5, y: 0.5 }, decorative: false },
+      states: insertionStateBindings(activeVisualState),
+      interactions: [],
+      provenance: { author: "human", revision: 0 },
+      children: [],
+    });
+    if (commitDraft(draft, `Placed ${asset.name} on ${screen.title}.`)) onSelectNode(id);
+  }, [activeVisualState, commitDraft, graph, onSelectNode, screen]);
+
+  const pasteAssetFile = useCallback((file: File) => {
+    if (!localProjectFingerprint || !localProjectSaved) {
+      onNotice(localProjectFingerprint ? "Save canvas changes before pasting image bytes." : "Open a local project before pasting image bytes onto the canvas.");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      onNotice(`Clipboard file type is not supported: ${file.type || "unknown"}.`);
+      return;
+    }
+    void importLocalAsset({ file, graph, expectedFingerprint: localProjectFingerprint })
+      .then((result) => {
+        onExternalAssetCommit(result.graph, result.fingerprint, `Imported ${result.asset.name} from the clipboard atomically.`);
+        placeAsset(result.asset.id, result.graph);
+      })
+      .catch((error) => onNotice(error instanceof Error ? error.message : "Clipboard image import failed."));
+  }, [graph, localProjectFingerprint, localProjectSaved, onExternalAssetCommit, onNotice, placeAsset]);
+
   const insertLibraryComponent = useCallback((definitionId: string) => {
     if (!screen) return;
     const definition = graph.components.find((candidate) => candidate.id === definitionId);
@@ -1144,6 +1207,7 @@ export function ManualEditor({
     copy: (_data?: DataTransfer): boolean => false,
     cut: (_data?: DataTransfer) => {},
     paste: (_data: DataTransfer, _mode: PasteMode) => {},
+    pasteFile: (_file: File) => {},
     pasteInternal: (_mode: PasteMode) => {},
     copyStyles: (_data?: DataTransfer) => {},
     pasteStyles: (_data?: DataTransfer) => {},
@@ -1187,6 +1251,7 @@ export function ManualEditor({
     copy: copySelection,
     cut: (data) => { if (copySelection(data)) deleteSelection(); },
     paste: pasteFromData,
+    pasteFile: pasteAssetFile,
     pasteInternal,
     copyStyles,
     pasteStyles,
@@ -1302,6 +1367,13 @@ export function ManualEditor({
     const onPaste = (event: ClipboardEvent) => {
       if (isFormControl(event.target) || !event.clipboardData) return;
       event.preventDefault();
+      const file = [...event.clipboardData.items]
+        .find((item) => item.kind === "file" && item.type.startsWith("image/"))
+        ?.getAsFile();
+      if (file) {
+        keyActions.current.pasteFile(file);
+        return;
+      }
       const mode = pendingPasteMode.current;
       pendingPasteMode.current = "after";
       keyActions.current.paste(event.clipboardData, mode);
@@ -1389,6 +1461,8 @@ export function ManualEditor({
       className={`editor-shell relative grid h-full min-h-0 grid-cols-1 overflow-hidden bg-[var(--workspace)] text-[var(--t-strong)] ${desktopGrid}`}
       data-preview-mode={previewMode}
       style={{ "--rail-w": `${panelWidths.rail}px`, "--insp-w": `${panelWidths.inspector}px` } as React.CSSProperties}
+      onDragOver={(event) => { if (event.dataTransfer.types.includes("application/x-intentform-asset")) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }}
+      onDrop={(event) => { const assetId = event.dataTransfer.getData("application/x-intentform-asset"); if (assetId) { event.preventDefault(); placeAsset(assetId); } }}
     >
       {mobilePanel ? (
         <button
@@ -1443,6 +1517,11 @@ export function ManualEditor({
         onNodeCommand={handleNodeCommand}
         onInstantiateComponent={insertLibraryComponent}
         onUpdateTokens={updateTokens}
+        localProjectFingerprint={localProjectFingerprint}
+        localProjectSaved={localProjectSaved}
+        onUpdateAssets={updateAssets}
+        onExternalAssetCommit={onExternalAssetCommit}
+        onPlaceAsset={placeAsset}
         onClose={() => closeEditorPanel("structure")}
         onDismissMobile={() => setMobilePanel(null)}
       />

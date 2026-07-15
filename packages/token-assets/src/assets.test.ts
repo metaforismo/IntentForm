@@ -16,7 +16,9 @@ import {
   garbageCollectProjectAssets,
   importProjectAsset,
   inspectProjectAssets,
+  discardProjectAssetImport,
   sanitizeSvg,
+  stageProjectAssetImport,
 } from "./assets.ts";
 
 let dir: string;
@@ -37,6 +39,26 @@ afterEach(() => {
 });
 
 describe("content-addressed project assets", () => {
+  it("stages browser bytes under an opaque name and removes the inbox copy", () => {
+    const bytes = Buffer.from('<svg viewBox="0 0 4 2"><path d="M0 0h4v2H0z"/></svg>');
+    const staged = stageProjectAssetImport(dir, "../../Client Logo.svg", bytes, "fixture-nonce");
+    expect(staged).toBe("studio-fixture-nonce.svg");
+    expect(readFileSync(join(dir, "imports", staged))).toEqual(bytes);
+    expect(() => stageProjectAssetImport(dir, "spoof.exe", bytes, "other")).toThrow(/unsupported/i);
+    discardProjectAssetImport(dir, staged);
+    expect(existsSync(join(dir, "imports", staged))).toBe(false);
+  });
+
+  it("refuses to stage browser bytes through a symlinked inbox", () => {
+    const outside = join(dir, "outside-stage");
+    mkdirSync(outside);
+    rmSync(join(dir, "imports"), { recursive: true });
+    symlinkSync(outside, join(dir, "imports"));
+    expect(() => stageProjectAssetImport(dir, "mark.svg", Buffer.from("<svg/>"), "fixture"))
+      .toThrow(/imports directory.*non-symlink/i);
+    expect(readdirSync(outside)).toEqual([]);
+  });
+
   it("sanitizes, hashes, inspects, and exports a project-owned SVG", () => {
     writeFileSync(join(dir, "imports", "mark.svg"), '<svg viewBox="0 0 24 12"><path d="M0 0h24v12H0z"/></svg>');
     const asset = importProjectAsset(dir, {

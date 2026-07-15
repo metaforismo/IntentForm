@@ -507,6 +507,11 @@ export function Studio() {
     setSelectedNodeId(nextSelection.nodeId);
   };
 
+  const commitExternalAssetGraph = (nextGraph: SemanticInterfaceGraph, fingerprint: string, nextNotice: string) => {
+    commitGraph(nextGraph, nextNotice);
+    setLocalProjectFingerprint(fingerprint);
+  };
+
   const undo = () => {
     const previous = history.at(-1);
     if (!previous) return;
@@ -979,10 +984,13 @@ export function Studio() {
                   findings={verification.findings}
                   deviceId={scenarioId}
                   localProjectEnabled={localProjectFingerprint !== null}
+                  localProjectFingerprint={localProjectFingerprint}
+                  localProjectSaved={localProjectFingerprint !== null && !localChangesAreUnsaved}
                   onSelectScreen={setSelectedScreen}
                   onDeviceId={setScenarioId}
                   onSelectNode={setSelectedNodeId}
                   onCommit={commitGraph}
+                  onExternalAssetCommit={commitExternalAssetGraph}
                   onNotice={setNotice}
                   onUndo={undo}
                   onRedo={redo}

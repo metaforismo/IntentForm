@@ -11,6 +11,7 @@ import { POST as interpret } from "../apps/studio-web/app/api/interpret/route";
 import { GET as getProject, POST as migrateProjectRoute, PUT as putProject } from "../apps/studio-web/app/api/project/route";
 import { GET as getPreviews, POST as mutatePreview } from "../apps/studio-web/app/api/project/previews/route";
 import { GET as getProjectAsset } from "../apps/studio-web/app/api/project/assets/[digest]/route";
+import { DELETE as cleanProjectAssets, POST as importProjectAssetRoute } from "../apps/studio-web/app/api/project/assets/route";
 import { GET as listBezelPacks } from "../apps/studio-web/app/api/project/bezel-packs/route";
 import { GET as getAgentActivity } from "../apps/studio-web/app/api/project/agent-activity/route";
 import { GET as getBezelAsset } from "../apps/studio-web/app/api/project/bezel-packs/[packId]/[digest]/route";
@@ -477,6 +478,72 @@ describe("local project trust boundary", () => {
         new Request(`https://intentform.example/api/project/assets/${digest}`),
         { params: Promise.resolve({ digest }) },
       );
+      expect(hosted.status).toBe(403);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it("imports Studio asset bytes with an atomic fingerprinted manifest update", async () => {
+    delete process.env.VERCEL;
+    delete process.env.VERCEL_ENV;
+    const projectDir = mkdtempSync(join(tmpdir(), "intentform-api-asset-import-"));
+    process.env.INTENTFORM_PROJECT_DIR = projectDir;
+    try {
+      const project = loadProject(projectDir);
+      const svg = '<svg viewBox="0 0 12 6"><path fill="#123456" d="M0 0h12v6H0z"/></svg>';
+      const form = new FormData();
+      form.set("file", new File([svg], "Client Mark.svg", { type: "image/svg+xml" }));
+      form.set("id", "asset.client-mark");
+      form.set("name", "Client Mark");
+      form.set("expectedFingerprint", project.fingerprint);
+      form.set("licenseName", "Project-owned");
+      form.set("spdx", "CC0-1.0");
+      form.set("redistribution", "allowed");
+      form.set("exportPolicy", "copy");
+      const response = await importProjectAssetRoute(new Request("http://localhost/api/project/assets", {
+        method: "POST",
+        headers: { origin: "http://localhost", "sec-fetch-site": "same-origin" },
+        body: form,
+      }));
+      expect(response.status).toBe(201);
+      const payload = await response.json() as { asset: { id: string; width: number; height: number; storageKey: string }; graph: { assets: unknown[] }; fingerprint: string };
+      expect(payload).toMatchObject({
+        asset: { id: "asset.client-mark", width: 12, height: 6 },
+      });
+      expect(payload.fingerprint).not.toBe(project.fingerprint);
+      expect(payload.graph.assets).toHaveLength(1);
+      expect(readFileSync(join(projectDir, payload.asset.storageKey), "utf8")).toBe(`${svg}\n`);
+      expect(readdirSync(join(projectDir, "imports"))).toEqual([]);
+      expect(loadProject(projectDir).graph.assets).toEqual([expect.objectContaining({ id: "asset.client-mark" })]);
+
+      const orphanStorageKey = `assets/${"a".repeat(64)}.svg`;
+      writeFileSync(join(projectDir, orphanStorageKey), "unused");
+      const cleaned = await cleanProjectAssets(new Request(`http://localhost/api/project/assets?expectedFingerprint=${payload.fingerprint}`, {
+        method: "DELETE",
+        headers: { origin: "http://localhost", "sec-fetch-site": "same-origin" },
+      }));
+      expect(cleaned.status).toBe(200);
+      await expect(cleaned.json()).resolves.toEqual({ unused: [orphanStorageKey], removed: [orphanStorageKey] });
+      expect(readFileSync(join(projectDir, payload.asset.storageKey), "utf8")).toBe(`${svg}\n`);
+
+      const stale = new FormData();
+      stale.set("file", new File([svg], "stale.svg", { type: "image/svg+xml" }));
+      stale.set("id", "asset.stale");
+      stale.set("name", "Stale");
+      stale.set("expectedFingerprint", "0".repeat(64));
+      stale.set("licenseName", "Project-owned");
+      stale.set("redistribution", "unknown");
+      stale.set("exportPolicy", "reference");
+      const conflict = await importProjectAssetRoute(new Request("http://localhost/api/project/assets", {
+        method: "POST",
+        headers: { origin: "http://localhost", "sec-fetch-site": "same-origin" },
+        body: stale,
+      }));
+      expect(conflict.status).toBe(409);
+
+      process.env.VERCEL = "1";
+      const hosted = await importProjectAssetRoute(new Request("https://intentform.example/api/project/assets", { method: "POST" }));
       expect(hosted.status).toBe(403);
     } finally {
       rmSync(projectDir, { recursive: true, force: true });

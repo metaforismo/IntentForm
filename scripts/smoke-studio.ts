@@ -1308,7 +1308,13 @@ try {
   await runSmokeScenario(browser, {
     name: "token modes and licensed asset panels",
     run: async (tokenPage) => {
-      await gotoStudio(tokenPage, origin);
+      if (remoteOrigin) {
+        await gotoStudio(tokenPage, origin);
+      } else {
+        await gotoStudio(tokenPage, origin, "/");
+        await tokenPage.locator("header").getByRole("button", { name: "Open project" }).click();
+        await tokenPage.waitForURL(`${origin}/studio`);
+      }
       await tokenPage.getByRole("tab", { name: "Tokens", exact: true }).click();
       await tokenPage.getByText("DTCG 2025.10", { exact: true }).waitFor();
       const mode = tokenPage.getByLabel("Active token mode");
@@ -1341,6 +1347,29 @@ try {
 
       await tokenPage.getByRole("tab", { name: "Assets", exact: true }).click();
       await tokenPage.getByTestId("asset-library-panel").getByText("No project assets yet.", { exact: false }).waitFor();
+      if (!remoteOrigin) {
+        await tokenPage.getByRole("button", { name: "IntentForm project menu" }).click();
+        await tokenPage.getByRole("menuitem", { name: "Save to local project" }).click();
+        await tokenPage.locator('[aria-label="Unsaved local changes"]').waitFor({ state: "detached" });
+        await tokenPage.getByLabel("Import project asset").setInputFiles({
+          name: "smoke-mark.svg",
+          mimeType: "image/svg+xml",
+          buffer: Buffer.from('<svg viewBox="0 0 40 20"><path fill="#112233" stroke="#445566" d="M0 0h40v20H0z"/></svg>'),
+        });
+        const assetPanel = tokenPage.getByTestId("asset-library-panel");
+        await assetPanel.getByText("smoke-mark", { exact: true }).waitFor();
+        await assetPanel.getByText("40 × 20px", { exact: true }).waitFor();
+        const recolor = assetPanel.getByLabel("Recolor smoke-mark");
+        await recolor.fill("#4f8ff7");
+        await assetPanel.getByText("smoke-mark is ready on the canvas.", { exact: true }).waitFor();
+        await assetPanel.getByRole("button", { name: "Place", exact: true }).click();
+        const placed = tokenPage.getByTestId("canvas-node-payment-request.asset-smoke-mark-1");
+        await placed.waitFor();
+        const inspector = tokenPage.getByTestId("semantic-inspector");
+        await inspector.getByRole("button", { name: "Crop", exact: true }).click();
+        await inspector.getByTestId("asset-crop-preview").waitFor();
+        await inspector.getByText("Crop preview", { exact: true }).waitFor();
+      }
       const overflow = await tokenPage.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       if (overflow > 1) throw new Error(`Token/asset panels introduced ${overflow}px horizontal overflow`);
     },
