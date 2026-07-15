@@ -1441,9 +1441,20 @@ try {
         const assetPanel = tokenPage.getByTestId("asset-library-panel");
         await assetPanel.getByText("smoke-mark", { exact: true }).waitFor();
         await assetPanel.getByText("40 × 20px", { exact: true }).waitFor();
-        const recolor = assetPanel.getByLabel("Recolor smoke-mark");
-        await recolor.fill("#4f8ff7");
+        const fillPaint = assetPanel.getByLabel("Recolor #112233 in smoke-mark");
+        await fillPaint.waitFor();
+        await assetPanel.getByLabel("Recolor #445566 in smoke-mark").waitFor();
+        await fillPaint.fill("#4f8ff7");
         await assetPanel.getByText("smoke-mark is ready on the canvas.", { exact: true }).waitFor();
+        await assetPanel.getByLabel("Recolor #4f8ff7 in smoke-mark").waitFor();
+        await assetPanel.getByLabel("Recolor #445566 in smoke-mark").waitFor();
+        const updatedAsset = assetPanel.locator("article").filter({ hasText: "smoke-mark" });
+        const updatedSource = await updatedAsset.locator("img").getAttribute("src");
+        if (!updatedSource) throw new Error("Recolored SVG thumbnail did not expose its content-addressed source");
+        const storedSvg = await (await tokenPage.request.get(`${origin}${updatedSource}`)).text();
+        if (!storedSvg.includes('viewBox="0 0 40 20"') || !storedSvg.includes('d="M0 0h40v20H0z"') || !storedSvg.includes('fill="#4f8ff7"') || !storedSvg.includes('stroke="#445566"')) {
+          throw new Error(`SVG paint edit did not preserve geometry and untouched paints: ${storedSvg}`);
+        }
         await assetPanel.getByRole("button", { name: "Place", exact: true }).click();
         const placed = tokenPage.getByTestId("canvas-node-payment-request.asset-smoke-mark-1");
         await placed.waitFor();

@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/tokens.ts",
-    "./assets": "./src/assets.ts"
+    "./assets": "./src/assets.ts",
+    "./svg-paints": "./src/svg-paints.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
