@@ -68,6 +68,7 @@ const componentForNode = (node: PlatformIRNode): string => {
     ? displayedField(node.bindings.detail.name)
     : null;
   let source: string;
+  const children = node.children.map(componentForNode).join("\n");
   switch (node.kind) {
     case "balance-summary":
       source = `<section className="balance"${accessibility}><span>${label}</span>${value ? `<strong>${value}</strong>` : ""}${detail ? `<small>${detail}</small>` : ""}</section>`;
@@ -97,21 +98,48 @@ const componentForNode = (node: PlatformIRNode): string => {
     case "receipt-summary":
       source = `<section className="receipt"${accessibility}><span>${label}</span>${detail ? `<strong>${detail}</strong>` : ""}${value ? `<small>${value}</small>` : ""}</section>`;
       break;
+    case "stack":
+    case "grid":
+    case "overlay":
+    case "scroll":
+    case "safe-area":
+    case "adaptive":
+    case "wrap":
+    case "split":
+    case "freeform":
+    case "page-flow":
+      source = `<div className="if-container if-mode-compact-${node.layout.compactMode} if-mode-regular-${node.layout.regularMode}" style={{ "--if-columns": ${node.layout.columns}, "--if-split-ratio": ${node.layout.splitRatio} } as CSSProperties}${accessibility}${handler}>${children}</div>`;
+      break;
     default:
       source = `<div>${label}</div>`;
   }
 
+  const styleEntries = [
+    node.layout.fixedWidth !== undefined ? `width: ${node.layout.fixedWidth}` : null,
+    node.layout.fixedHeight !== undefined ? `height: ${node.layout.fixedHeight}` : null,
+    node.layout.minWidth !== undefined ? `minWidth: ${node.layout.minWidth}` : null,
+    node.layout.maxWidth !== undefined ? `maxWidth: ${node.layout.maxWidth}` : null,
+    node.layout.minHeight !== undefined ? `minHeight: ${node.layout.minHeight}` : null,
+    node.layout.maxHeight !== undefined ? `maxHeight: ${node.layout.maxHeight}` : null,
+    node.layout.position ? `"--if-x": "${node.layout.position.x}px"` : null,
+    node.layout.position ? `"--if-y": "${node.layout.position.y}px"` : null,
+    node.layout.position ? `"--if-z": ${node.layout.position.z}` : null,
+  ].filter((entry): entry is string => entry !== null).join(", ");
   const wrapperClasses = [
     "if-node",
     `if-axis-${node.layout.axis}`,
     `if-width-${node.layout.width}`,
+    `if-height-${node.layout.height}`,
+    `if-align-${node.layout.align}`,
+    `if-justify-${node.layout.justify}`,
+    `if-overflow-${node.layout.overflow}`,
     `if-gap-${classFragment(node.layout.gapToken)}`,
     `if-padding-${classFragment(node.layout.paddingToken)}`,
     `if-role-${classFragment(node.style.role)}`,
     `if-emphasis-${node.style.emphasis}`,
     `if-importance-${node.intent.importance}`,
   ].join(" ");
-  source = `<div className="${wrapperClasses}" data-intent-purpose={${JSON.stringify(node.intent.purpose)}} data-intent-role={${JSON.stringify(node.style.role)}}>${source}</div>`;
+  source = `<div className="${wrapperClasses}" style={{ ${styleEntries} } as CSSProperties} data-node-id="${node.id}" data-intent-purpose={${JSON.stringify(node.intent.purpose)}} data-intent-role={${JSON.stringify(node.style.role)}}>${source}</div>`;
 
   if (node.visibility.length > 0) {
     const condition = node.visibility.map((visibility) => visibility.expression
@@ -139,7 +167,8 @@ function screenSource(ir: PlatformIR, screenIndex: number): string {
   if (!screen) throw new Error(`Screen index ${screenIndex} is missing`);
   const body = screen.nodes.map((node) => `        ${componentForNode(node)}`).join("\n");
   const name = componentName(screen.id);
-  return `import type { ${name}Data, ${name}Events } from "../contracts/${screen.id}";
+  return `import type { CSSProperties } from "react";
+import type { ${name}Data, ${name}Events } from "../contracts/${screen.id}";
 
 export interface ${name}Props {
   data: ${name}Data;
@@ -275,6 +304,29 @@ h1 { margin: 8px 0 28px; font-size: 32px; letter-spacing: -.04em; }
 .if-axis-overlay > * > * { grid-area: 1 / 1; }
 .if-width-hug { width: fit-content; max-width: 100%; }
 .if-width-fill, .if-width-fixed { width: 100%; }
+.if-height-fill { min-height: 100%; }
+.if-align-start { align-self: flex-start; }
+.if-align-center { align-self: center; }
+.if-align-end { align-self: flex-end; }
+.if-align-stretch { align-self: stretch; }
+.if-justify-center { justify-content: center; }
+.if-justify-end { justify-content: flex-end; }
+.if-justify-space-between { justify-content: space-between; }
+.if-overflow-clip { overflow: clip; }
+.if-overflow-scroll { overflow: auto; }
+.if-container { display: flex; min-width: 0; flex-direction: column; }
+.if-mode-compact-grid { display: grid; grid-template-columns: repeat(var(--if-columns), minmax(0, 1fr)); }
+.if-mode-compact-overlay, .if-mode-compact-freeform { display: grid; position: relative; }
+.if-mode-compact-overlay > .if-node { grid-area: 1 / 1; }
+.if-mode-compact-freeform > .if-node { position: absolute; left: var(--if-x, 0); top: var(--if-y, 0); z-index: var(--if-z, 0); }
+.if-mode-compact-scroll { overflow: auto; }
+.if-mode-compact-safe-area { padding-top: max(16px, env(safe-area-inset-top)); padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+.if-mode-compact-wrap { flex-flow: row wrap; }
+.if-mode-compact-wrap > .if-node { flex: 1 1 calc((100% - (var(--if-columns) - 1) * var(--if-node-gap, 0px)) / var(--if-columns)); }
+.if-mode-compact-split { flex-direction: row; }
+.if-mode-compact-split > .if-node:first-child { flex: var(--if-split-ratio); }
+.if-mode-compact-split > .if-node:not(:first-child) { flex: calc(1 - var(--if-split-ratio)); }
+.if-mode-compact-page-flow { flex-direction: column; }
 .if-emphasis-quiet { opacity: .72; }
 .if-emphasis-strong > * { font-weight: 700; }
 .if-importance-primary > * { filter: saturate(1.08); }
@@ -301,6 +353,19 @@ button:focus-visible, input:focus-visible { outline: 3px solid color-mix(in okla
 .secondary { color: var(--if-accent-deep); background: var(--if-accent-soft); }
 .status { padding: 14px; border-left: 3px solid #b65e46; background: #f8e9e3; }
 @media (min-width: ${DEVICE_CLASS_LIMITS.compactMaxWidth + 1}px) and (min-height: ${DEVICE_CLASS_LIMITS.compactMaxHeight + 1}px) {
+  .if-container { display: flex; flex-direction: column; flex-wrap: nowrap; grid-template-columns: none; overflow: visible; position: static; padding-top: 0; padding-bottom: 0; }
+  .if-container > .if-node { position: relative; inset: auto; grid-area: auto; flex: initial; }
+  .if-mode-regular-grid { display: grid; grid-template-columns: repeat(var(--if-columns), minmax(0, 1fr)); }
+  .if-mode-regular-overlay, .if-mode-regular-freeform { display: grid; position: relative; }
+  .if-mode-regular-overlay > .if-node { grid-area: 1 / 1; }
+  .if-mode-regular-freeform > .if-node { position: absolute; left: var(--if-x, 0); top: var(--if-y, 0); z-index: var(--if-z, 0); }
+  .if-mode-regular-scroll { overflow: auto; }
+  .if-mode-regular-safe-area { padding-top: max(16px, env(safe-area-inset-top)); padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+  .if-mode-regular-wrap { display: flex; flex-flow: row wrap; }
+  .if-mode-regular-wrap > .if-node { flex: 1 1 calc((100% - (var(--if-columns) - 1) * var(--if-node-gap, 0px)) / var(--if-columns)); }
+  .if-mode-regular-split { display: flex; flex-direction: row; }
+  .if-mode-regular-split > .if-node:first-child { flex: var(--if-split-ratio); }
+  .if-mode-regular-split > .if-node:not(:first-child) { flex: calc(1 - var(--if-split-ratio)); }
   .primary.placement-compact-persistent { position: static; }
   .primary.placement-regular-persistent { position: fixed; right: max(22px, calc((100vw - 396px) / 2)); bottom: max(18px, env(safe-area-inset-bottom)); left: max(22px, calc((100vw - 396px) / 2)); }
 }

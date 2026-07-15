@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "0.2.0",
+  "product": {
+    "name": "Migration fixture",
+    "audience": ["interface teams"],
+    "principles": ["Preserve authored identities"]
+  },
+  "tokens": {
+    "colors": {
+      "color.accent": "#397461",
+      "color.surface": "#fbfcf9"
+    },
+    "spacing": {
+      "space.16": 16,
+      "space.20": 20
+    },
+    "radii": {
+      "radius.surface": 24
+    }
+  },
+  "platforms": [
+    {
+      "target": "compose",
+      "enabled": false,
+      "capabilities": ["vendor-special-mode"]
+    }
+  ],
+  "components": [],
+  "screens": [
+    {
+      "id": "home",
+      "title": "Home",
+      "purpose": "Explain migration state",
+      "route": "/",
+      "nodes": [
+        {
+          "id": "home.status",
+          "kind": "status-message",
+          "intent": {
+            "purpose": "Explain the current state",
+            "label": "Ready",
+            "importance": "supporting"
+          },
+          "layout": {
+            "axis": "vertical",
+            "width": "fill",
+            "height": "hug",
+            "align": "stretch",
+            "justify": "start",
+            "overflow": "visible",
+            "columns": 2,
+            "splitRatio": 0.5,
+            "gapToken": "space.16",
+            "paddingToken": "space.20"
+          },
+          "style": {
+            "role": "surface",
+            "emphasis": "normal"
+          },
+          "accessibility": {
+            "label": "Migration is ready",
+            "live": "polite"
+          },
+          "states": [],
+          "interactions": [],
+          "platformOverrides": {
+            "compose": {
+              "vendor-mode": true
+            }
+          },
+          "provenance": {
+            "author": "system",
+            "revision": 0
+          },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "flows": [],
+  "contracts": [],
+  "fixtures": []
+}

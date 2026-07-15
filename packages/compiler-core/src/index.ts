@@ -1,10 +1,13 @@
 import type {
+  ContainerNodeKind,
   Expression,
   PlatformTarget,
   SemanticInterfaceGraph,
   SemanticNode,
   UIContract,
 } from "@intentform/semantic-schema";
+import { isContainerNode } from "@intentform/semantic-schema";
+import { layoutCoverage } from "@intentform/layout-engine";
 
 export type PlatformIRField = UIContract["data"][number];
 
@@ -35,8 +38,23 @@ export interface PlatformIRNode {
     importance: SemanticNode["intent"]["importance"];
   };
   layout: {
+    compactMode: ContainerNodeKind | "leaf";
+    regularMode: ContainerNodeKind | "leaf";
     axis: SemanticNode["layout"]["axis"];
     width: SemanticNode["layout"]["width"];
+    height: SemanticNode["layout"]["height"];
+    fixedWidth?: number;
+    fixedHeight?: number;
+    minWidth?: number;
+    maxWidth?: number;
+    minHeight?: number;
+    maxHeight?: number;
+    align: SemanticNode["layout"]["align"];
+    justify: SemanticNode["layout"]["justify"];
+    overflow: SemanticNode["layout"]["overflow"];
+    columns: number;
+    splitRatio: number;
+    position?: { x: number; y: number; z: number };
     gapToken: string;
     paddingToken: string;
     gap: number;
@@ -53,6 +71,7 @@ export interface PlatformIRNode {
     detail: PlatformIRField | null;
     status: PlatformIRField | null;
   };
+  children: PlatformIRNode[];
 }
 
 export interface PlatformIRScreen {
@@ -64,6 +83,7 @@ export interface PlatformIRScreen {
   fixtures: PlatformIRFixture[];
   defaultFixture: PlatformIRFixture;
   eventTargets: Record<string, string>;
+  layoutCoverage: ReturnType<typeof layoutCoverage>;
   contract?: UIContract;
 }
 
@@ -246,6 +266,10 @@ type ResolvedNodeSemantics = Pick<PlatformIRNode, "intent" | "layout" | "style" 
 
 const axisValues = new Set<SemanticNode["layout"]["axis"]>(["vertical", "horizontal", "overlay"]);
 const widthValues = new Set<SemanticNode["layout"]["width"]>(["hug", "fill", "fixed"]);
+const heightValues = new Set<SemanticNode["layout"]["height"]>(["hug", "fill", "fixed"]);
+const alignValues = new Set<SemanticNode["layout"]["align"]>(["start", "center", "end", "stretch"]);
+const justifyValues = new Set<SemanticNode["layout"]["justify"]>(["start", "center", "end", "space-between"]);
+const overflowValues = new Set<SemanticNode["layout"]["overflow"]>(["visible", "clip", "scroll"]);
 const emphasisValues = new Set<SemanticNode["style"]["emphasis"]>(["quiet", "normal", "strong"]);
 const importanceValues = new Set<SemanticNode["intent"]["importance"]>(["primary", "secondary", "supporting"]);
 const liveValues = new Set<SemanticNode["accessibility"]["live"]>(["off", "polite", "assertive"]);
@@ -265,8 +289,27 @@ function resolveNodeSemantics(
       importance: node.intent.importance,
     },
     layout: {
+      compactMode: isContainerNode(node)
+        ? node.kind === "adaptive" ? node.layout.adaptive?.compact ?? "stack" : node.kind
+        : "leaf",
+      regularMode: isContainerNode(node)
+        ? node.kind === "adaptive" ? node.layout.adaptive?.regular ?? "stack" : node.kind
+        : "leaf",
       axis: node.layout.axis,
       width: node.layout.width,
+      height: node.layout.height,
+      ...(node.layout.fixedWidth !== undefined ? { fixedWidth: node.layout.fixedWidth } : {}),
+      ...(node.layout.fixedHeight !== undefined ? { fixedHeight: node.layout.fixedHeight } : {}),
+      ...(node.layout.minWidth !== undefined ? { minWidth: node.layout.minWidth } : {}),
+      ...(node.layout.maxWidth !== undefined ? { maxWidth: node.layout.maxWidth } : {}),
+      ...(node.layout.minHeight !== undefined ? { minHeight: node.layout.minHeight } : {}),
+      ...(node.layout.maxHeight !== undefined ? { maxHeight: node.layout.maxHeight } : {}),
+      align: node.layout.align,
+      justify: node.layout.justify,
+      overflow: node.layout.overflow,
+      columns: node.layout.columns,
+      splitRatio: node.layout.splitRatio,
+      ...(node.layout.position ? { position: node.layout.position } : {}),
       gapToken: node.layout.gapToken,
       paddingToken: node.layout.paddingToken,
       gap: graph.tokens.spacing[node.layout.gapToken] ?? 0,
@@ -303,6 +346,16 @@ function resolveNodeSemantics(
       warn(key, "Expected an existing spacing token. The shared semantic token was used.");
     }
   };
+  const readNumber = (
+    key: string,
+    minimum: number,
+    maximum: number,
+    apply: (value: number) => void,
+  ) => {
+    const value = overrides[key];
+    if (typeof value === "number" && Number.isFinite(value) && value >= minimum && value <= maximum) apply(value);
+    else warn(key, `Expected a number from ${minimum} through ${maximum}. The shared semantic value was used.`);
+  };
 
   const knownOverrides: Record<string, () => void> = {
     "intent.label": () => readText("intent.label", (value) => { resolved.intent.label = value; }),
@@ -310,6 +363,18 @@ function resolveNodeSemantics(
     "intent.importance": () => readEnum("intent.importance", importanceValues, (value) => { resolved.intent.importance = value; }),
     "layout.axis": () => readEnum("layout.axis", axisValues, (value) => { resolved.layout.axis = value; }),
     "layout.width": () => readEnum("layout.width", widthValues, (value) => { resolved.layout.width = value; }),
+    "layout.height": () => readEnum("layout.height", heightValues, (value) => { resolved.layout.height = value; }),
+    "layout.align": () => readEnum("layout.align", alignValues, (value) => { resolved.layout.align = value; }),
+    "layout.justify": () => readEnum("layout.justify", justifyValues, (value) => { resolved.layout.justify = value; }),
+    "layout.overflow": () => readEnum("layout.overflow", overflowValues, (value) => { resolved.layout.overflow = value; }),
+    "layout.fixedWidth": () => readNumber("layout.fixedWidth", 1, 10_000, (value) => { resolved.layout.fixedWidth = value; }),
+    "layout.fixedHeight": () => readNumber("layout.fixedHeight", 1, 10_000, (value) => { resolved.layout.fixedHeight = value; }),
+    "layout.minWidth": () => readNumber("layout.minWidth", 0, 10_000, (value) => { resolved.layout.minWidth = value; }),
+    "layout.maxWidth": () => readNumber("layout.maxWidth", 0, 10_000, (value) => { resolved.layout.maxWidth = value; }),
+    "layout.minHeight": () => readNumber("layout.minHeight", 0, 10_000, (value) => { resolved.layout.minHeight = value; }),
+    "layout.maxHeight": () => readNumber("layout.maxHeight", 0, 10_000, (value) => { resolved.layout.maxHeight = value; }),
+    "layout.columns": () => readNumber("layout.columns", 1, 12, (value) => { resolved.layout.columns = Math.round(value); }),
+    "layout.splitRatio": () => readNumber("layout.splitRatio", 0.1, 0.9, (value) => { resolved.layout.splitRatio = value; }),
     "layout.gapToken": () => readSpacingToken("layout.gapToken", "gapToken"),
     "layout.gap-token": () => readSpacingToken("layout.gap-token", "gapToken"),
     "layout.paddingToken": () => readSpacingToken("layout.paddingToken", "paddingToken"),
@@ -328,11 +393,37 @@ function resolveNodeSemantics(
     if (apply) apply();
     else warn(key, "This platform override is not supported and was ignored.");
   }
-  if (resolved.layout.width === "fixed") {
+  for (const dimension of ["Width", "Height"] as const) {
+    const minimumKey = `min${dimension}` as "minWidth" | "minHeight";
+    const maximumKey = `max${dimension}` as "maxWidth" | "maxHeight";
+    const minimum = resolved.layout[minimumKey];
+    const maximum = resolved.layout[maximumKey];
+    if (minimum !== undefined && maximum !== undefined && minimum > maximum) {
+      diagnostics.push({
+        severity: "warning",
+        path: `${overridePath}.layout.${minimumKey}`,
+        message: `The target minimum ${dimension.toLowerCase()} exceeded its maximum; shared constraints were restored.`,
+      });
+      const sharedMinimum = node.layout[minimumKey];
+      const sharedMaximum = node.layout[maximumKey];
+      if (sharedMinimum === undefined) delete resolved.layout[minimumKey];
+      else resolved.layout[minimumKey] = sharedMinimum;
+      if (sharedMaximum === undefined) delete resolved.layout[maximumKey];
+      else resolved.layout[maximumKey] = sharedMaximum;
+    }
+  }
+  if (resolved.layout.width === "fixed" && resolved.layout.fixedWidth === undefined) {
     diagnostics.push({
       severity: "warning",
       path: `screens.${screenId}.nodes.${node.id}.layout.width`,
-      message: "Fixed width requires an explicit dimension, which this schema does not provide; the compiler uses fill width.",
+      message: "Fixed width requires an explicit dimension; the compiler uses fill width.",
+    });
+  }
+  if (resolved.layout.height === "fixed" && resolved.layout.fixedHeight === undefined) {
+    diagnostics.push({
+      severity: "warning",
+      path: `screens.${screenId}.nodes.${node.id}.layout.height`,
+      message: "Fixed height requires an explicit dimension; the compiler uses intrinsic height.",
     });
   }
   if (target === "swiftui" && resolved.accessibility.live === "assertive") {
@@ -382,28 +473,31 @@ export function lowerGraph(graph: SemanticInterfaceGraph, target: PlatformTarget
           .filter((step) => step.from === screen.id)
           .map((step) => [step.event, step.to]),
       );
+      const lowerNode = (node: SemanticNode): PlatformIRNode => {
+        const semantics = resolveNodeSemantics(graph, screen.id, node, target, diagnostics);
+        return {
+          id: node.id,
+          kind: node.kind,
+          ...semantics,
+          events: eventsForNode(node, contract),
+          visibility: node.states.map((state) => ({
+            state: state.name,
+            ...(state.visibleWhen ? { expression: state.visibleWhen } : {}),
+          })),
+          bindings: bindingsForNode(node, contract?.data ?? []),
+          children: node.children.map(lowerNode),
+        };
+      };
       return {
         id: screen.id,
         title: screen.title,
         purpose: screen.purpose,
         route: screen.route,
-        nodes: screen.nodes.map((node) => {
-          const semantics = resolveNodeSemantics(graph, screen.id, node, target, diagnostics);
-          return {
-            id: node.id,
-            kind: node.kind,
-            ...semantics,
-            events: eventsForNode(node, contract),
-            visibility: node.states.map((state) => ({
-              state: state.name,
-              ...(state.visibleWhen ? { expression: state.visibleWhen } : {}),
-            })),
-            bindings: bindingsForNode(node, contract?.data ?? []),
-          };
-        }),
+        nodes: screen.nodes.map(lowerNode),
         fixtures,
         defaultFixture,
         eventTargets,
+        layoutCoverage: layoutCoverage(screen.nodes),
         ...(contract ? { contract } : {}),
       };
     }),
@@ -427,5 +521,17 @@ export function fingerprintFiles(files: GeneratedFile[]): string {
 }
 
 export function findPrimaryAction(screen: PlatformIRScreen): PlatformIRNode | undefined {
-  return screen.nodes.find((node) => node.kind === "primary-action");
+  return flattenIRNodes(screen.nodes).find((node) => node.kind === "primary-action");
+}
+
+export function flattenIRNodes(roots: readonly PlatformIRNode[]): PlatformIRNode[] {
+  const nodes: PlatformIRNode[] = [];
+  const visit = (items: readonly PlatformIRNode[]) => {
+    for (const node of items) {
+      nodes.push(node);
+      visit(node.children);
+    }
+  };
+  visit(roots);
+  return nodes;
 }

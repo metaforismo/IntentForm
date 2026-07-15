@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { demoGraph } from "@intentform/proof-report/demo";
+import { findGraphNodeLocation } from "@intentform/semantic-schema";
 import { compileReact } from "@intentform/compiler-react";
 import { toolDefinitions } from "./index.ts";
 import {
@@ -13,6 +14,7 @@ import {
   diffAgainstRevision,
   projectRevisions,
   previewMigration,
+  previewPatch,
   replaceGraph,
   revertProject,
   verifyProject,
@@ -50,6 +52,8 @@ describe("IntentForm agent project store", () => {
       required: ["expectedSourceFingerprint"],
       additionalProperties: false,
     });
+    expect(byName.get("intentform_preview_patch")?.inputSchema)
+      .toEqual(byName.get("intentform_apply_patch")?.inputSchema);
   });
 
   it("seeds a missing project from the verified sample and validates on load", () => {
@@ -71,7 +75,7 @@ describe("IntentForm agent project store", () => {
     expect(preview).toMatchObject({
       status: "migration-required",
       fromVersion: "0.0.1",
-      toVersion: "0.1.0",
+      toVersion: "0.2.0",
       sourceFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
     expect(readdirSync(dir)).toEqual(["graph.json"]);
@@ -82,7 +86,7 @@ describe("IntentForm agent project store", () => {
     expect(applied).toMatchObject({
       status: "current",
       fromVersion: "0.0.1",
-      toVersion: "0.1.0",
+      toVersion: "0.2.0",
       fingerprint: expect.stringMatching(/^[a-f0-9]{8}$/),
     });
     expect(applied.checkpoint).toMatch(/migration-checkpoints/);
@@ -154,7 +158,7 @@ describe("IntentForm agent project store", () => {
 
     expect(applied).toMatchObject({ status: "current", checkpoint: expect.any(String) });
     expect(applied).not.toHaveProperty("graph");
-    expect(previewMigration(dir)).toMatchObject({ status: "current", fromVersion: "0.1.0" });
+    expect(previewMigration(dir)).toMatchObject({ status: "current", fromVersion: "0.2.0" });
   });
 
   it("writes atomically and rejects a stale writer without losing the winning graph", () => {
@@ -198,8 +202,10 @@ describe("IntentForm agent project store", () => {
       graphFile: join(dir, ".intentform", "graph.json"),
     });
     expect(summary.product.name).toBe("Verdant Pay");
-    expect(summary.screens.map((screen) => screen.id)).toEqual(["home", "payment-request", "receipt"]);
+    expect(summary.screens.map((screen) => screen.id)).toEqual(["home", "payment-request", "receipt", "layout-lab"]);
     expect(summary.screens[1]?.nodes.map((node) => node.id)).toContain("payment-request.confirm");
+    expect(summary.screens[3]?.nodeCount).toBe(20);
+    expect(JSON.stringify(summary.screens[3]?.nodes)).toContain('"parentId":"layout-lab.grid"');
     expect(summary.outputs.react).toEqual({
       status: "generated",
       fingerprint: compileReact(demoGraph).fingerprint,
@@ -241,6 +247,92 @@ describe("IntentForm agent project store", () => {
     }));
     expect(result.revision?.reason).toContain("reachable");
     expect(projectRevisions(dir).revisions).toHaveLength(1);
+  });
+
+  it("previews the exact patch diff and fingerprint without creating a revision", () => {
+    const before = loadProject(dir);
+    const patch = {
+      id: "preview.direct-manipulation",
+      rationale: "Preview a snapped resize before commit",
+      operations: [{
+        op: "set-layout" as const,
+        target: "layout-lab.grid-a",
+        width: "fixed" as const,
+        fixedWidth: 184,
+        height: "fixed" as const,
+        fixedHeight: 72,
+      }],
+    };
+    const preview = previewPatch(dir, patch);
+
+    expect(preview).toMatchObject({
+      patchId: patch.id,
+      currentFingerprint: before.fingerprint,
+      previewFingerprint: expect.stringMatching(/^[a-f0-9]{8}$/),
+      changes: expect.arrayContaining([
+        expect.objectContaining({ path: "layout-lab.grid-a.layout.width", after: "fixed" }),
+        expect.objectContaining({ path: "layout-lab.grid-a.layout.fixedWidth", after: 184 }),
+      ]),
+      verification: { buildStatus: "not-run", passed: false },
+    });
+    expect(preview.previewFingerprint).not.toBe(before.fingerprint);
+    expect(loadProject(dir)).toMatchObject({ fingerprint: before.fingerprint, graph: before.graph });
+    expect(projectRevisions(dir).revisions).toEqual([]);
+
+    const applied = applyPatch(dir, patch);
+    expect(applied.fingerprint).toBe(preview.previewFingerprint);
+    expect(applied.changes).toEqual(preview.changes);
+  });
+
+  it("applies typed recursive layout and hierarchy operations in one atomic patch", () => {
+    const result = applyPatch(dir, {
+      id: "edit.recursive-layout",
+      rationale: "Position a grid item explicitly and move it into the freeform region",
+      operations: [
+        {
+          op: "set-layout",
+          target: "layout-lab.grid-a",
+          width: "fixed",
+          fixedWidth: 180,
+          position: { x: 24, y: 36, z: 3 },
+        },
+        {
+          op: "move-node",
+          target: "layout-lab.grid-a",
+          screenId: "layout-lab",
+          parent: "layout-lab.freeform",
+          index: 1,
+        },
+      ],
+    });
+    const graph = loadProject(dir).graph;
+    const moved = findGraphNodeLocation(graph, "layout-lab.grid-a");
+
+    expect(moved?.parent?.id).toBe("layout-lab.freeform");
+    expect(moved?.node.layout).toMatchObject({
+      width: "fixed",
+      fixedWidth: 180,
+      position: { x: 24, y: 36, z: 3 },
+    });
+    expect(result.changes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "layout-lab.grid-a.layout.width" }),
+      expect.objectContaining({ path: "layout-lab.freeform.children" }),
+    ]));
+  });
+
+  it("rejects recursive patch cycles without saving a revision", () => {
+    expect(() => applyPatch(dir, {
+      id: "edit.recursive-cycle",
+      rationale: "This invalid edit must remain atomic",
+      operations: [{
+        op: "move-node",
+        target: "layout-lab.adaptive",
+        screenId: "layout-lab",
+        parent: "layout-lab.grid",
+      }],
+    })).toThrow(/descendants/);
+    expect(projectRevisions(dir).revisions).toHaveLength(0);
+    expect(findGraphNodeLocation(loadProject(dir).graph, "layout-lab.adaptive")?.parent).toBeNull();
   });
 
   it("edits preview fixtures through a typed patch and reports a field-level diff", () => {
@@ -292,7 +384,7 @@ describe("IntentForm agent project store", () => {
   });
 
   it("rejects invalid replacement graphs and accepts valid ones with a diff", () => {
-    expect(() => replaceGraph(dir, { schemaVersion: "0.1.0" }, "broken")).toThrow();
+    expect(() => replaceGraph(dir, { schemaVersion: "0.2.0" }, "broken")).toThrow();
     const themed = structuredClone(demoGraph);
     themed.tokens.colors["color.accent"] = "#7a4b9e";
     const result = replaceGraph(dir, themed, "brand accent change");

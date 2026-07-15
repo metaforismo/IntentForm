@@ -13,19 +13,27 @@ import {
   Selection,
   Stack,
   TextT,
+  TreeStructure,
   Trash,
   X,
 } from "@phosphor-icons/react";
-import type { SemanticInterfaceGraph, SemanticNode } from "@intentform/semantic-schema";
+import {
+  flattenSemanticNodes,
+  isContainerNode,
+  type SemanticInterfaceGraph,
+  type SemanticNode,
+} from "@intentform/semantic-schema";
+import { buildNodeIndex } from "@intentform/layout-engine";
 import { Reorder } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IconButton } from "../ui/controls";
 import { isNodeVisible, nodeNames, type RailTab, type VisualState } from "./support";
+import type { SelectionIntent } from "./direct-manipulation";
 
 interface LayersPanelProps {
   graph: SemanticInterfaceGraph;
   screen: SemanticInterfaceGraph["screens"][number];
-  selectedNodeId: string | null;
+  selectedNodeIds: readonly string[];
   activeVisualState: VisualState;
   railTab: RailTab;
   visible: boolean;
@@ -34,7 +42,7 @@ interface LayersPanelProps {
   onRailTab(tab: RailTab): void;
   onLayerQuery(query: string): void;
   onSelectScreen(screenId: string): void;
-  onSelectNode(nodeId: string | null): void;
+  onSelectNode(nodeId: string | null, intent?: SelectionIntent): void;
   onHoverNode(nodeId: string | null): void;
   onAddScreen(): void;
   onReorderScreens(orderedIds: string[]): void;
@@ -47,6 +55,7 @@ interface LayersPanelProps {
 }
 
 function layerIcon(node: SemanticNode) {
+  if (isContainerNode(node)) return <TreeStructure size={13} />;
   if (node.kind === "primary-action" || node.kind === "secondary-action") return <Selection size={13} />;
   if (node.kind === "money-input") return <TextT size={13} />;
   return <Stack size={13} />;
@@ -92,7 +101,7 @@ function TokenNumberField({
 export function LayersPanel({
   graph,
   screen,
-  selectedNodeId,
+  selectedNodeIds,
   activeVisualState,
   railTab,
   visible,
@@ -125,10 +134,12 @@ export function LayersPanel({
     setPageOrder(graph.screens.map((item) => item.id));
   }, [graph.screens]);
 
-  const nodesById = useMemo(() => new Map(screen.nodes.map((node) => [node.id, node])), [screen.nodes]);
+  const allNodes = useMemo(() => flattenSemanticNodes(screen.nodes), [screen.nodes]);
+  const nodesById = useMemo(() => new Map(allNodes.map((node) => [node.id, node])), [allNodes]);
+  const nodeIndex = useMemo(() => buildNodeIndex(screen.nodes), [screen.nodes]);
   const query = layerQuery.trim().toLowerCase();
   const filteredNodes = query
-    ? screen.nodes.filter((node) => `${node.intent.label} ${nodeNames[node.kind]} ${node.id}`.toLowerCase().includes(query))
+    ? allNodes.filter((node) => `${node.intent.label ?? ""} ${nodeNames[node.kind]} ${node.id}`.toLowerCase().includes(query))
     : null;
 
   const commitOrder = () => {
@@ -153,17 +164,22 @@ export function LayersPanel({
     onReorderScreens(next);
   };
 
-  const layerRow = (node: SemanticNode, draggable: boolean) => {
+  const layerRow = (node: SemanticNode, draggable: boolean, depth = 0) => {
     const nodeVisible = isNodeVisible(node, activeVisualState);
     return (
       <button
         type="button"
         data-testid={`layer-${node.id}`}
         data-state-visible={nodeVisible}
-        onClick={() => { onSelectNode(node.id); onDismissMobile(); }}
+        aria-pressed={selectedNodeIds.includes(node.id)}
+        onClick={(event) => {
+          onSelectNode(node.id, event.shiftKey ? "range" : event.metaKey || event.ctrlKey ? "toggle" : "replace");
+          if (!event.shiftKey && !event.metaKey && !event.ctrlKey) onDismissMobile();
+        }}
         onMouseEnter={() => onHoverNode(node.id)}
         onMouseLeave={() => onHoverNode(null)}
-        className={`group flex h-8 w-full items-center gap-2 rounded-lg pl-1.5 pr-2 text-left text-[12px] ${node.id === selectedNodeId ? "bg-[var(--accent-soft)] font-medium text-[var(--accent-text)]" : nodeVisible ? "text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]" : "text-[var(--faint)] hover:bg-[var(--hover)]"}`}
+        className={`group flex h-8 w-full items-center gap-2 rounded-lg pr-2 text-left text-[12px] ${selectedNodeIds.includes(node.id) ? "bg-[var(--accent-soft)] font-medium text-[var(--accent-text)]" : nodeVisible ? "text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]" : "text-[var(--faint)] hover:bg-[var(--hover)]"}`}
+        style={{ paddingLeft: 6 + depth * 14 }}
       >
         <DotsSixVertical size={12} className={`shrink-0 ${draggable ? "cursor-grab opacity-0 group-hover:opacity-40" : "opacity-0"}`} />
         <span className="shrink-0 opacity-70">{layerIcon(node)}</span>
@@ -174,6 +190,13 @@ export function LayersPanel({
       </button>
     );
   };
+
+  const nestedRows = (node: SemanticNode, depth: number): React.ReactNode => node.children.map((child) => (
+    <div key={child.id}>
+      {layerRow(child, false, depth)}
+      {nestedRows(child, depth + 1)}
+    </div>
+  ));
 
   return (
     <aside
@@ -236,12 +259,12 @@ export function LayersPanel({
                     <div className={`group relative flex h-8 items-center overflow-hidden rounded-lg ${active ? "bg-[var(--accent-soft)]" : "hover:bg-[var(--hover)]"}`}>
                       <button
                         type="button"
-                        onClick={() => { onSelectScreen(item.id); onSelectNode(item.nodes[0]?.id ?? null); onDismissMobile(); }}
+                        onClick={() => { onSelectScreen(item.id); onSelectNode(item.nodes[0]?.id ?? null, "replace"); onDismissMobile(); }}
                         className={`flex h-8 min-w-0 flex-1 items-center gap-2 pl-2 pr-2 text-left text-[12px] ${active ? "font-medium text-[var(--accent-text)]" : "text-[var(--muted)] group-hover:text-[var(--ink)]"}`}
                       >
                         <FrameCorners size={13} className="shrink-0 opacity-70" />
                         <span className="min-w-0 flex-1 truncate">{item.title}</span>
-                        <span className="shrink-0 font-mono text-[10px] text-[var(--faint)] transition-opacity group-hover:opacity-0">{item.nodes.length}</span>
+                        <span className="shrink-0 font-mono text-[10px] text-[var(--faint)] transition-opacity group-hover:opacity-0">{flattenSemanticNodes(item.nodes).length}</span>
                       </button>
                       <span className={`pointer-events-none absolute inset-y-0 right-0 flex items-center gap-0.5 pl-3 pr-1 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 ${active ? "bg-gradient-to-l from-[var(--accent-soft)] via-[var(--accent-soft)] to-transparent" : "bg-gradient-to-l from-[var(--hover)] via-[var(--hover)] to-transparent"}`}>
                         <button type="button" aria-label={`Move screen ${item.title} up`} disabled={pageOrder.indexOf(item.id) === 0} onClick={() => movePage(item.id, -1)} className="grid size-6 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--field)] hover:text-[var(--ink)] disabled:opacity-25"><ArrowUp size={12} /></button>
@@ -269,7 +292,7 @@ export function LayersPanel({
           <div className="min-h-0 overflow-y-auto overflow-x-hidden px-2 pb-2 pt-1">
             {filteredNodes ? (
               <div className="grid grid-cols-1 gap-px">
-                {filteredNodes.map((node) => layerRow(node, false))}
+                {filteredNodes.map((node) => layerRow(node, false, (nodeIndex.get(node.id)?.depth ?? 1) - 1))}
                 {filteredNodes.length === 0 ? <div className="mx-1 mt-3 rounded-lg border border-dashed border-[var(--line-strong)] px-3 py-5 text-center text-[11px] leading-relaxed text-[var(--muted)]">No layers match “{layerQuery}”.</div> : null}
               </div>
             ) : (
@@ -288,6 +311,7 @@ export function LayersPanel({
                       className="relative"
                     >
                       {layerRow(node, true)}
+                      {nestedRows(node, 1)}
                     </Reorder.Item>
                   );
                 })}

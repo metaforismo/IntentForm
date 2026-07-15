@@ -23,6 +23,10 @@ export const GRAPH_LIMITS = {
   maxFixtureStringLength: 2_000,
   maxScreens: 32,
   maxNodesPerScreen: 64,
+  maxChildrenPerNode: 64,
+  maxNodeDepth: 16,
+  maxTotalNodesPerScreen: 512,
+  maxTotalNodes: 4_096,
   maxComponents: 128,
   maxFlows: 32,
   maxStepsPerFlow: 128,
@@ -57,6 +61,11 @@ const tokenKeySchema = z.string()
   .max(64)
   .regex(/^[a-z][a-z0-9.-]*$/)
   .refine((value) => !["prototype", "constructor"].includes(value), "Reserved token key");
+const overrideKeySchema = z.string()
+  .min(1)
+  .max(96)
+  .regex(/^[a-z][a-zA-Z0-9.-]*$/)
+  .refine((value) => !["prototype", "constructor", "__proto__"].includes(value), "Reserved override key");
 const colorTokenKeySchema = tokenKeySchema.refine(
   (key) => key.startsWith("color."),
   "Color token keys must start with color.",
@@ -107,12 +116,80 @@ export const placementSchema = z.strictObject({
   regular: z.enum(["inline", "persistent-bottom"]),
 });
 
+export const LEAF_NODE_KINDS = [
+  "balance-summary",
+  "transaction-list",
+  "money-input",
+  "recipient-identity",
+  "primary-action",
+  "secondary-action",
+  "status-message",
+  "receipt-summary",
+] as const;
+
+export const CONTAINER_NODE_KINDS = [
+  "stack",
+  "grid",
+  "overlay",
+  "scroll",
+  "safe-area",
+  "adaptive",
+  "wrap",
+  "split",
+  "freeform",
+  "page-flow",
+] as const;
+
+export type LeafNodeKind = typeof LEAF_NODE_KINDS[number];
+export type ContainerNodeKind = typeof CONTAINER_NODE_KINDS[number];
+export type SemanticNodeKind = LeafNodeKind | ContainerNodeKind;
+
+export const semanticNodeKindSchema = z.enum([...LEAF_NODE_KINDS, ...CONTAINER_NODE_KINDS]);
+const containerNodeKindSchema = z.enum(CONTAINER_NODE_KINDS);
+const dimensionPolicySchema = z.enum(["hug", "fill", "fixed"]);
+const alignmentSchema = z.enum(["start", "center", "end", "stretch"]);
+const justificationSchema = z.enum(["start", "center", "end", "space-between"]);
+const boundedDimensionSchema = z.number().finite().nonnegative().max(10_000);
+
 export const semanticLayoutSchema = z.strictObject({
   axis: z.enum(["vertical", "horizontal", "overlay"]).default("vertical"),
-  width: z.enum(["hug", "fill", "fixed"]).default("fill"),
+  width: dimensionPolicySchema.default("fill"),
+  height: dimensionPolicySchema.default("hug"),
+  fixedWidth: boundedDimensionSchema.positive().optional(),
+  fixedHeight: boundedDimensionSchema.positive().optional(),
+  minWidth: boundedDimensionSchema.optional(),
+  maxWidth: boundedDimensionSchema.optional(),
+  minHeight: boundedDimensionSchema.optional(),
+  maxHeight: boundedDimensionSchema.optional(),
+  align: alignmentSchema.default("stretch"),
+  justify: justificationSchema.default("start"),
+  overflow: z.enum(["visible", "clip", "scroll"]).default("visible"),
+  columns: z.number().int().min(1).max(12).default(2),
+  splitRatio: z.number().finite().min(0.1).max(0.9).default(0.5),
+  adaptive: z.strictObject({
+    compact: containerNodeKindSchema.exclude(["adaptive"]),
+    regular: containerNodeKindSchema.exclude(["adaptive"]),
+  }).optional(),
+  position: z.strictObject({
+    x: z.number().finite().min(-10_000).max(10_000),
+    y: z.number().finite().min(-10_000).max(10_000),
+    z: z.number().int().min(-1_000).max(1_000).default(0),
+  }).optional(),
   gapToken: tokenKeySchema.default("space.16"),
   paddingToken: tokenKeySchema.default("space.20"),
   placement: placementSchema.optional(),
+}).superRefine((layout, context) => {
+  for (const dimension of ["Width", "Height"] as const) {
+    const minimum = layout[`min${dimension}`];
+    const maximum = layout[`max${dimension}`];
+    if (minimum !== undefined && maximum !== undefined && minimum > maximum) {
+      context.addIssue({
+        code: "custom",
+        path: [`min${dimension}`],
+        message: `Minimum ${dimension.toLowerCase()} cannot exceed maximum ${dimension.toLowerCase()}`,
+      });
+    }
+  }
 });
 
 export const expressionSchema: z.ZodType<Expression> = z.lazy(() =>
@@ -130,18 +207,9 @@ export type Expression =
   | { op: "eq"; left: Expression; right: Expression }
   | { op: "not"; value: Expression };
 
-export const semanticNodeSchema = z.strictObject({
+const semanticNodeBaseSchema = z.strictObject({
   id: idSchema,
-  kind: z.enum([
-    "balance-summary",
-    "transaction-list",
-    "money-input",
-    "recipient-identity",
-    "primary-action",
-    "secondary-action",
-    "status-message",
-    "receipt-summary",
-  ]),
+  kind: semanticNodeKindSchema,
   intent: z.strictObject({
     purpose: safeTextSchema().min(3),
     label: safeTextSchema(240).optional(),
@@ -167,7 +235,10 @@ export const semanticNodeSchema = z.strictObject({
   platformOverrides: z
     .record(
       tokenKeySchema,
-      boundedRecord(fixtureValueSchema, 32),
+      z.record(overrideKeySchema, fixtureValueSchema).refine(
+        (record) => Object.keys(record).length <= 32,
+        "Record must contain at most 32 entries",
+      ),
     )
     .refine((record) => Object.keys(record).length <= 8, "Platform overrides must contain at most 8 targets")
     .optional(),
@@ -176,6 +247,126 @@ export const semanticNodeSchema = z.strictObject({
     revision: z.number().int().nonnegative(),
   }),
 });
+
+type SemanticNodeBase = z.infer<typeof semanticNodeBaseSchema>;
+
+export interface SemanticNode extends SemanticNodeBase {
+  children: SemanticNode[];
+}
+
+export const semanticNodeSchema: z.ZodType<SemanticNode> = z.lazy(() =>
+  semanticNodeBaseSchema.extend({
+    children: z.array(semanticNodeSchema).max(GRAPH_LIMITS.maxChildrenPerNode).default([]),
+  }).superRefine((node, context) => {
+    const container = (CONTAINER_NODE_KINDS as readonly string[]).includes(node.kind);
+    if (!container && node.children.length > 0) {
+      context.addIssue({ code: "custom", path: ["children"], message: `Leaf node ${node.kind} cannot contain children` });
+    }
+    if (node.kind === "adaptive" && !node.layout.adaptive) {
+      context.addIssue({ code: "custom", path: ["layout", "adaptive"], message: "Adaptive containers require compact and regular modes" });
+    }
+    if (node.kind !== "adaptive" && node.layout.adaptive) {
+      context.addIssue({ code: "custom", path: ["layout", "adaptive"], message: "Only adaptive containers can declare compact and regular modes" });
+    }
+    const canResolveToFreeform = node.kind === "freeform"
+      || (node.kind === "adaptive" && (
+        node.layout.adaptive?.compact === "freeform"
+        || node.layout.adaptive?.regular === "freeform"
+      ));
+    if (canResolveToFreeform) {
+      node.children.forEach((child, index) => {
+        if (!child.layout.position) {
+          context.addIssue({
+            code: "custom",
+            path: ["children", index, "layout", "position"],
+            message: "Containers that resolve to freeform require every child to have an explicit semantic position",
+          });
+        }
+      });
+    }
+  }),
+);
+
+export interface SemanticNodeVisit {
+  node: SemanticNode;
+  parent: SemanticNode | null;
+  depth: number;
+  indexPath: number[];
+}
+
+export function walkSemanticNodes(
+  roots: readonly SemanticNode[],
+  visit: (entry: SemanticNodeVisit) => void,
+): void {
+  const walk = (nodes: readonly SemanticNode[], parent: SemanticNode | null, depth: number, path: number[]) => {
+    for (const [index, node] of nodes.entries()) {
+      const indexPath = [...path, index];
+      visit({ node, parent, depth, indexPath });
+      walk(node.children, node, depth + 1, indexPath);
+    }
+  };
+  walk(roots, null, 1, []);
+}
+
+export function flattenSemanticNodes(roots: readonly SemanticNode[]): SemanticNode[] {
+  const nodes: SemanticNode[] = [];
+  walkSemanticNodes(roots, ({ node }) => nodes.push(node));
+  return nodes;
+}
+
+export function findSemanticNode(roots: readonly SemanticNode[], nodeId: string): SemanticNode | undefined {
+  let match: SemanticNode | undefined;
+  walkSemanticNodes(roots, ({ node }) => {
+    if (!match && node.id === nodeId) match = node;
+  });
+  return match;
+}
+
+export function flattenGraphNodes(graph: Pick<SemanticInterfaceGraph, "screens">): SemanticNode[] {
+  return graph.screens.flatMap((screen) => flattenSemanticNodes(screen.nodes));
+}
+
+export function findGraphNode(
+  graph: Pick<SemanticInterfaceGraph, "screens">,
+  nodeId: string,
+): SemanticNode | undefined {
+  for (const screen of graph.screens) {
+    const node = findSemanticNode(screen.nodes, nodeId);
+    if (node) return node;
+  }
+  return undefined;
+}
+
+export interface SemanticNodeLocation {
+  screen: SemanticInterfaceGraph["screens"][number];
+  node: SemanticNode;
+  parent: SemanticNode | null;
+  siblings: SemanticNode[];
+  index: number;
+}
+
+export function findGraphNodeLocation(
+  graph: Pick<SemanticInterfaceGraph, "screens">,
+  nodeId: string,
+): SemanticNodeLocation | undefined {
+  for (const screen of graph.screens) {
+    const visit = (siblings: SemanticNode[], parent: SemanticNode | null): SemanticNodeLocation | undefined => {
+      for (const [index, node] of siblings.entries()) {
+        if (node.id === nodeId) return { screen, node, parent, siblings, index };
+        const nested = visit(node.children, node);
+        if (nested) return nested;
+      }
+      return undefined;
+    };
+    const match = visit(screen.nodes, null);
+    if (match) return match;
+  }
+  return undefined;
+}
+
+export function isContainerNode(node: SemanticNode): node is SemanticNode & { kind: ContainerNodeKind } {
+  return (CONTAINER_NODE_KINDS as readonly string[]).includes(node.kind);
+}
 
 export const screenSchema = z.strictObject({
   id: z.string().min(1).max(64).regex(/^[a-z][a-z0-9-]*$/),
@@ -219,12 +410,12 @@ export function isTransactionalScreen(
   contract?: UIContract,
 ): boolean {
   return (contract?.events.length ?? 0) > 0
-    || screen.nodes.some((node) => node.interactions.length > 0);
+    || flattenSemanticNodes(screen.nodes).some((node) => node.interactions.length > 0);
 }
 
 export const semanticInterfaceGraphSchema = z
   .strictObject({
-    schemaVersion: z.literal("0.1.0"),
+    schemaVersion: z.literal("0.2.0"),
     product: z.strictObject({
       name: safeTextSchema(120),
       audience: z.array(safeTextSchema(240)).min(1).max(20),
@@ -358,6 +549,7 @@ export const semanticInterfaceGraphSchema = z
       return "boolean";
     };
 
+    let totalNodeCount = 0;
     for (const [screenIndex, screen] of graph.screens.entries()) {
       const contract = contractByScreen.get(screen.id);
       const contractFields = new Set(contract?.data.map((field) => field.name) ?? []);
@@ -367,7 +559,8 @@ export const semanticInterfaceGraphSchema = z
       ]) ?? []);
       const contractEvents = new Set(contract?.events.map((event) => event.name) ?? []);
       const visualStates = new Set(contract?.visualStates ?? []);
-      const primaryActions = screen.nodes.filter((node) => node.kind === "primary-action");
+      const screenNodes = flattenSemanticNodes(screen.nodes);
+      const primaryActions = screenNodes.filter((node) => node.kind === "primary-action");
       const transactional = isTransactionalScreen(screen, contract);
 
       if (primaryActions.length > 1) {
@@ -377,10 +570,34 @@ export const semanticInterfaceGraphSchema = z
         addIssue(`Transactional screen ${screen.id} must have exactly one primary action`, ["screens", screenIndex, "nodes"]);
       }
 
-      for (const [nodeIndex, node] of screen.nodes.entries()) {
-        const nodePath: Array<string | number> = ["screens", screenIndex, "nodes", nodeIndex];
+      if (screenNodes.length > GRAPH_LIMITS.maxTotalNodesPerScreen) {
+        addIssue(
+          `Screen ${screen.id} exceeds ${GRAPH_LIMITS.maxTotalNodesPerScreen} total nodes`,
+          ["screens", screenIndex, "nodes"],
+        );
+      }
+      totalNodeCount += screenNodes.length;
+
+      walkSemanticNodes(screen.nodes, ({ node, parent, depth, indexPath }) => {
+        const nodePath: Array<string | number> = ["screens", screenIndex, "nodes", indexPath[0]!];
+        for (const childIndex of indexPath.slice(1)) nodePath.push("children", childIndex);
+        if (depth > GRAPH_LIMITS.maxNodeDepth) {
+          addIssue(`Node tree exceeds maximum depth ${GRAPH_LIMITS.maxNodeDepth}`, nodePath);
+        }
         if (nodeIds.has(node.id)) addIssue(`Duplicate node id: ${node.id}`, [...nodePath, "id"]);
         nodeIds.add(node.id);
+
+        const parentResolvesToFreeform = parent?.kind === "freeform"
+          || (parent?.kind === "adaptive" && (
+            parent.layout.adaptive?.compact === "freeform"
+            || parent.layout.adaptive?.regular === "freeform"
+          ));
+        if (node.layout.position && !parentResolvesToFreeform) {
+          addIssue(
+            `Node ${node.id} has a position outside a freeform relation`,
+            [...nodePath, "layout", "position"],
+          );
+        }
 
         if (!Object.hasOwn(graph.tokens.spacing, node.layout.gapToken)) {
           addIssue(`Unknown spacing token: ${node.layout.gapToken}`, [...nodePath, "layout", "gapToken"]);
@@ -424,7 +641,11 @@ export const semanticInterfaceGraphSchema = z
             addIssue(`Node state without an expression requires a status field: ${screen.id}.${state.name}`, statePath);
           }
         }
-      }
+      });
+    }
+
+    if (totalNodeCount > GRAPH_LIMITS.maxTotalNodes) {
+      addIssue(`Graph exceeds ${GRAPH_LIMITS.maxTotalNodes} total nodes`, ["screens"]);
     }
 
     const fixtureStateKeys = new Set<string>();
@@ -507,7 +728,8 @@ export const semanticInterfaceGraphSchema = z
         if (!contract?.events.some((event) => event.name === step.event)) {
           addIssue(`Flow event is not declared by source contract: ${step.from}.${step.event}`, [...stepPath, "event"]);
         }
-        if (!source.nodes.some((node) => node.interactions.some((interaction) => interaction.event === step.event))) {
+        if (!flattenSemanticNodes(source.nodes).some((node) =>
+          node.interactions.some((interaction) => interaction.event === step.event))) {
           addIssue(`Flow event is not emitted by a source node: ${step.from}.${step.event}`, [...stepPath, "event"]);
         }
         const routeKey = `${step.from}\u0000${step.event}`;
@@ -520,7 +742,6 @@ export const semanticInterfaceGraphSchema = z
   });
 
 export type PlatformTarget = z.infer<typeof platformTargetSchema>;
-export type SemanticNode = z.infer<typeof semanticNodeSchema>;
 export type ScreenDefinition = z.infer<typeof screenSchema>;
 export type SemanticInterfaceGraph = z.infer<typeof semanticInterfaceGraphSchema>;
 export type UIContract = z.infer<typeof uiContractSchema>;
@@ -545,6 +766,42 @@ export const graphPatchSchema = z.strictObject({
       }),
       z.strictObject({ op: z.literal("set-gap-token"), target: idSchema, token: spacingTokenKeySchema }),
       z.strictObject({ op: z.literal("set-padding-token"), target: idSchema, token: spacingTokenKeySchema }),
+      z.strictObject({
+        op: z.literal("set-layout"),
+        target: idSchema,
+        axis: z.enum(["vertical", "horizontal", "overlay"]).optional(),
+        width: dimensionPolicySchema.optional(),
+        height: dimensionPolicySchema.optional(),
+        fixedWidth: boundedDimensionSchema.positive().nullable().optional(),
+        fixedHeight: boundedDimensionSchema.positive().nullable().optional(),
+        minWidth: boundedDimensionSchema.nullable().optional(),
+        maxWidth: boundedDimensionSchema.nullable().optional(),
+        minHeight: boundedDimensionSchema.nullable().optional(),
+        maxHeight: boundedDimensionSchema.nullable().optional(),
+        align: alignmentSchema.optional(),
+        justify: justificationSchema.optional(),
+        overflow: z.enum(["visible", "clip", "scroll"]).optional(),
+        columns: z.number().int().min(1).max(12).optional(),
+        splitRatio: z.number().finite().min(0.1).max(0.9).optional(),
+        adaptive: z.strictObject({
+          compact: containerNodeKindSchema.exclude(["adaptive"]),
+          regular: containerNodeKindSchema.exclude(["adaptive"]),
+        }).nullable().optional(),
+        position: z.strictObject({
+          x: z.number().finite().min(-10_000).max(10_000),
+          y: z.number().finite().min(-10_000).max(10_000),
+          z: z.number().int().min(-1_000).max(1_000).default(0),
+        }).nullable().optional(),
+      }).refine((operation) => Object.keys(operation).some((key) => !["op", "target"].includes(key)), {
+        message: "set-layout requires at least one layout field",
+      }),
+      z.strictObject({
+        op: z.literal("move-node"),
+        target: idSchema,
+        screenId: z.string().min(1).max(64).regex(/^[a-z][a-z0-9-]*$/),
+        parent: idSchema.nullable(),
+        index: z.number().int().nonnegative().max(GRAPH_LIMITS.maxChildrenPerNode).optional(),
+      }),
       z.strictObject({
         op: z.literal("set-color-token"),
         token: colorTokenKeySchema,
@@ -655,10 +912,69 @@ export function applyGraphPatch(
       continue;
     }
 
-    const node = clone.screens.flatMap((screen) => screen.nodes).find((item) => item.id === operation.target);
+    if (operation.op === "move-node") {
+      const source = findGraphNodeLocation(clone, operation.target);
+      if (!source) throw new Error(`Patch target not found: ${operation.target}`);
+      if (source.screen.id !== operation.screenId) {
+        throw new Error(`Move source ${operation.target} is not on screen ${operation.screenId}`);
+      }
+      const parentLocation = operation.parent ? findGraphNodeLocation(clone, operation.parent) : undefined;
+      if (operation.parent && !parentLocation) throw new Error(`Move parent not found: ${operation.parent}`);
+      if (parentLocation?.screen.id !== undefined && parentLocation.screen.id !== operation.screenId) {
+        throw new Error("A typed move cannot cross screen boundaries");
+      }
+      if (parentLocation && !isContainerNode(parentLocation.node)) {
+        throw new Error(`Move parent is not a container: ${operation.parent}`);
+      }
+      if (operation.parent === operation.target
+        || flattenSemanticNodes(source.node.children).some((node) => node.id === operation.parent)) {
+        throw new Error("A node cannot move into itself or one of its descendants");
+      }
+      const parentResolvesToFreeform = parentLocation?.node.kind === "freeform"
+        || (parentLocation?.node.kind === "adaptive" && (
+          parentLocation.node.layout.adaptive?.compact === "freeform"
+          || parentLocation.node.layout.adaptive?.regular === "freeform"
+        ));
+      if (parentResolvesToFreeform && !source.node.layout.position) {
+        throw new Error("Moving into freeform requires an explicit semantic position");
+      }
+      const targetSiblings = parentLocation?.node.children ?? source.screen.nodes;
+      const requestedIndex = operation.index ?? targetSiblings.length;
+      const sameSiblings = targetSiblings === source.siblings;
+      source.siblings.splice(source.index, 1);
+      const adjustedIndex = sameSiblings && requestedIndex > source.index ? requestedIndex - 1 : requestedIndex;
+      targetSiblings.splice(Math.max(0, Math.min(targetSiblings.length, adjustedIndex)), 0, source.node);
+      source.node.provenance.revision += 1;
+      continue;
+    }
+
+    const node = findGraphNode(clone, operation.target);
     if (!node) throw new Error(`Patch target not found: ${operation.target}`);
 
-    if (operation.op === "set-placement") {
+    if (operation.op === "set-layout") {
+      if (operation.axis !== undefined) node.layout.axis = operation.axis;
+      if (operation.width !== undefined) node.layout.width = operation.width;
+      if (operation.height !== undefined) node.layout.height = operation.height;
+      if (operation.align !== undefined) node.layout.align = operation.align;
+      if (operation.justify !== undefined) node.layout.justify = operation.justify;
+      if (operation.overflow !== undefined) node.layout.overflow = operation.overflow;
+      if (operation.columns !== undefined) node.layout.columns = operation.columns;
+      if (operation.splitRatio !== undefined) node.layout.splitRatio = operation.splitRatio;
+      for (const field of ["fixedWidth", "fixedHeight", "minWidth", "maxWidth", "minHeight", "maxHeight"] as const) {
+        if (!Object.hasOwn(operation, field)) continue;
+        const value = operation[field];
+        if (value === null) delete node.layout[field];
+        else if (value !== undefined) node.layout[field] = value;
+      }
+      if (Object.hasOwn(operation, "adaptive")) {
+        if (operation.adaptive === null) delete node.layout.adaptive;
+        else if (operation.adaptive !== undefined) node.layout.adaptive = operation.adaptive;
+      }
+      if (Object.hasOwn(operation, "position")) {
+        if (operation.position === null) delete node.layout.position;
+        else if (operation.position !== undefined) node.layout.position = operation.position;
+      }
+    } else if (operation.op === "set-placement") {
       node.layout.placement = { compact: operation.compact, regular: operation.regular };
     } else if (operation.op === "set-label") {
       node.intent.label = operation.label;
@@ -671,7 +987,7 @@ export function applyGraphPatch(
         throw new Error(`Unknown spacing token: ${operation.token}`);
       }
       node.layout.gapToken = operation.token;
-    } else {
+    } else if (operation.op === "set-padding-token") {
       if (!Object.hasOwn(clone.tokens.spacing, operation.token)) {
         throw new Error(`Unknown spacing token: ${operation.token}`);
       }
@@ -721,16 +1037,18 @@ export function semanticDiff(
     }
   }
 
-  const beforeNodes = new Map(before.screens.flatMap((screen) => screen.nodes).map((node) => [node.id, node]));
-  const afterNodeIds = new Set(after.screens.flatMap((screen) => screen.nodes).map((node) => node.id));
+  const beforeGraphNodes = flattenGraphNodes(before);
+  const afterGraphNodes = flattenGraphNodes(after);
+  const beforeNodes = new Map(beforeGraphNodes.map((node) => [node.id, node]));
+  const afterNodeIds = new Set(afterGraphNodes.map((node) => node.id));
 
-  for (const node of before.screens.flatMap((screen) => screen.nodes)) {
+  for (const node of beforeGraphNodes) {
     if (!afterNodeIds.has(node.id)) {
       changes.push({ path: node.id, before: node, after: undefined });
     }
   }
 
-  for (const node of after.screens.flatMap((screen) => screen.nodes)) {
+  for (const node of afterGraphNodes) {
     const previous = beforeNodes.get(node.id);
     if (!previous) {
       changes.push({ path: node.id, before: undefined, after: node });
@@ -738,6 +1056,9 @@ export function semanticDiff(
     }
     if (previous.intent.label !== node.intent.label) {
       changes.push({ path: `${node.id}.intent.label`, before: previous.intent.label, after: node.intent.label });
+    }
+    if (previous.kind !== node.kind) {
+      changes.push({ path: `${node.id}.kind`, before: previous.kind, after: node.kind });
     }
     if (previous.intent.purpose !== node.intent.purpose) {
       changes.push({ path: `${node.id}.intent.purpose`, before: previous.intent.purpose, after: node.intent.purpose });
@@ -753,6 +1074,32 @@ export function semanticDiff(
     }
     if (previous.layout.paddingToken !== node.layout.paddingToken) {
       changes.push({ path: `${node.id}.layout.paddingToken`, before: previous.layout.paddingToken, after: node.layout.paddingToken });
+    }
+    for (const property of [
+      "axis",
+      "width",
+      "height",
+      "fixedWidth",
+      "fixedHeight",
+      "minWidth",
+      "maxWidth",
+      "minHeight",
+      "maxHeight",
+      "align",
+      "justify",
+      "overflow",
+      "columns",
+      "splitRatio",
+      "adaptive",
+      "position",
+    ] as const) {
+      if (JSON.stringify(previous.layout[property]) !== JSON.stringify(node.layout[property])) {
+        changes.push({
+          path: `${node.id}.layout.${property}`,
+          before: previous.layout[property],
+          after: node.layout[property],
+        });
+      }
     }
     if (JSON.stringify(previous.layout.placement) !== JSON.stringify(node.layout.placement)) {
       changes.push({
@@ -774,6 +1121,11 @@ export function semanticDiff(
         before: previous.interactions.map((interaction) => interaction.event),
         after: node.interactions.map((interaction) => interaction.event),
       });
+    }
+    const previousChildren = previous.children.map((child) => child.id);
+    const nextChildren = node.children.map((child) => child.id);
+    if (JSON.stringify(previousChildren) !== JSON.stringify(nextChildren)) {
+      changes.push({ path: `${node.id}.children`, before: previousChildren, after: nextChildren });
     }
   }
 

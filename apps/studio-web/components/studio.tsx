@@ -40,6 +40,7 @@ import {
   type ProjectType,
 } from "../lib/browser-projects";
 import { ManualEditor, type WorkflowStage } from "./manual-editor";
+import { reconcileGraphSelection } from "./editor/direct-manipulation";
 import { deviceProfiles, type DeviceId } from "./editor/support";
 import { compileStudioTarget } from "./target-compilation";
 import { BriefStage } from "./stages/brief-stage";
@@ -311,16 +312,9 @@ export function Studio() {
   };
 
   const reconcileSelection = (nextGraph: SemanticInterfaceGraph) => {
-    const nextScreen = nextGraph.screens.find((screen) => screen.id === selectedScreen) ?? nextGraph.screens[0];
-    if (!nextScreen) {
-      setSelectedScreen("");
-      setSelectedNodeId(null);
-      return;
-    }
-    setSelectedScreen(nextScreen.id);
-    if (!selectedNodeId || !nextScreen.nodes.some((node) => node.id === selectedNodeId)) {
-      setSelectedNodeId(nextScreen.nodes[0]?.id ?? null);
-    }
+    const nextSelection = reconcileGraphSelection(nextGraph, selectedScreen, selectedNodeId);
+    setSelectedScreen(nextSelection.screenId);
+    setSelectedNodeId(nextSelection.nodeId);
   };
 
   const undo = () => {

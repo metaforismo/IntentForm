@@ -51,6 +51,16 @@ export const nodeNames: Record<SemanticNode["kind"], string> = {
   "secondary-action": "Secondary action",
   "status-message": "Status message",
   "receipt-summary": "Receipt summary",
+  stack: "Stack",
+  grid: "Grid",
+  overlay: "Overlay",
+  scroll: "Scroll container",
+  "safe-area": "Safe area",
+  adaptive: "Adaptive container",
+  wrap: "Wrap",
+  split: "Split",
+  freeform: "Freeform",
+  "page-flow": "Page flow",
 };
 
 export interface NodePreset {
@@ -71,6 +81,16 @@ export const nodeCatalog: NodePreset[] = [
   { kind: "recipient-identity", label: "Recipient", purpose: "Confirm who receives the payment", importance: "supporting", live: "off", description: "The verified identity of the counterparty." },
   { kind: "status-message", label: "Explain what happened and how to recover.", purpose: "Explain a recoverable state", importance: "supporting", live: "polite", description: "A recoverable status with next steps." },
   { kind: "receipt-summary", label: "Completed", purpose: "Summarize the completed outcome", importance: "supporting", live: "polite", description: "The completion evidence of a flow." },
+  { kind: "stack", label: "Stack", purpose: "Arrange related content in one direction", importance: "supporting", live: "off", description: "A vertical or horizontal semantic stack." },
+  { kind: "grid", label: "Grid", purpose: "Arrange peer content in deterministic columns", importance: "supporting", live: "off", description: "A responsive semantic grid." },
+  { kind: "overlay", label: "Overlay", purpose: "Layer related content in a shared region", importance: "supporting", live: "off", description: "A semantic overlay relation." },
+  { kind: "scroll", label: "Scroll", purpose: "Expose overflow content through scrolling", importance: "supporting", live: "off", description: "A bounded scroll relation." },
+  { kind: "safe-area", label: "Safe area", purpose: "Keep content clear of platform insets", importance: "supporting", live: "off", description: "A platform-aware safe-area container." },
+  { kind: "adaptive", label: "Adaptive", purpose: "Adapt content relations across device classes", importance: "supporting", live: "off", description: "A compact and regular layout switch." },
+  { kind: "wrap", label: "Wrap", purpose: "Wrap peer content into available rows", importance: "supporting", live: "off", description: "A wrapping semantic row." },
+  { kind: "split", label: "Split", purpose: "Divide available space between related regions", importance: "supporting", live: "off", description: "A proportional semantic split." },
+  { kind: "freeform", label: "Freeform", purpose: "Place explicitly positioned semantic children", importance: "supporting", live: "off", description: "An explicit bounded freeform region." },
+  { kind: "page-flow", label: "Page flow", purpose: "Arrange content in document reading order", importance: "supporting", live: "off", description: "A document-like page flow." },
 ];
 
 export function isNodeVisible(node: SemanticNode, visualState: VisualState): boolean {

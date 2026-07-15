@@ -34,7 +34,7 @@ export function PhonePreview({ graph, selectedScreen }: { graph: SemanticInterfa
           <div className="flex min-h-0 flex-1 flex-col" style={{ gap: 18 }}>
             {nodes.map((node) => (
               <div key={node.id} className={node.kind === "primary-action" && node.layout.placement?.[profile.breakpoint] === "persistent-bottom" ? "mt-auto" : ""}>
-                <NodePreview node={node} graph={graph} fixture={fixture} state="idle" />
+                <NodePreview node={node} graph={graph} fixture={fixture} state="idle" viewport={{ width: 375, height: 667 }} />
               </div>
             ))}
           </div>

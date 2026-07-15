@@ -5,12 +5,14 @@ import { compileSwiftUI } from "@intentform/compiler-swiftui";
 import {
   CANONICAL_DEVICE_VIEWPORTS,
   applyGraphPatch,
+  flattenSemanticNodes,
   graphPatchSchema,
   parseGraph,
   semanticDiff,
   stableSerialize,
   type SemanticChange,
   type SemanticInterfaceGraph,
+  type SemanticNode,
 } from "@intentform/semantic-schema";
 import { verifyGraph, type VerificationFinding } from "@intentform/verifier";
 import {
@@ -77,6 +79,30 @@ function outputSummary(graph: SemanticInterfaceGraph, target: CompilerTarget) {
 export function describeProject(dir: string) {
   const { graph, fingerprint, seeded } = loadProject(dir);
   const verification = verificationSummary(graph, "compact");
+  const describeNode = (node: SemanticNode, parentId: string | null, depth: number): Record<string, unknown> => ({
+    id: node.id,
+    parentId,
+    depth,
+    kind: node.kind,
+    label: node.intent.label,
+    importance: node.intent.importance,
+    layout: {
+      axis: node.layout.axis,
+      width: node.layout.width,
+      height: node.layout.height,
+      align: node.layout.align,
+      justify: node.layout.justify,
+      overflow: node.layout.overflow,
+      columns: node.layout.columns,
+      splitRatio: node.layout.splitRatio,
+      adaptive: node.layout.adaptive,
+      position: node.layout.position,
+      placement: node.layout.placement,
+    },
+    states: node.states.map((state) => state.name),
+    events: node.interactions.map((interaction) => interaction.event),
+    children: node.children.map((child) => describeNode(child, node.id, depth + 1)),
+  });
   return {
     project: {
       kind: "local" as const,
@@ -93,15 +119,8 @@ export function describeProject(dir: string) {
       title: screen.title,
       route: screen.route,
       purpose: screen.purpose,
-      nodes: screen.nodes.map((node) => ({
-        id: node.id,
-        kind: node.kind,
-        label: node.intent.label,
-        importance: node.intent.importance,
-        placement: node.layout.placement,
-        states: node.states.map((state) => state.name),
-        events: node.interactions.map((interaction) => interaction.event),
-      })),
+      nodeCount: flattenSemanticNodes(screen.nodes).length,
+      nodes: screen.nodes.map((node) => describeNode(node, null, 1)),
     })),
     flows: graph.flows,
     contracts: graph.contracts.map((contract) => ({
@@ -173,6 +192,24 @@ export function applyPatch(dir: string, patchInput: unknown): MutationResult {
   const { graph, fingerprint } = loadProject(dir);
   const after = applyGraphPatch(graph, patch);
   return commit(dir, graph, after, patch.rationale || `patch ${patch.id}`, fingerprint);
+}
+
+export function previewPatch(dir: string, patchInput: unknown) {
+  const patch = graphPatchSchema.parse(patchInput);
+  const { graph, fingerprint } = loadProject(dir);
+  const after = applyGraphPatch(graph, patch);
+  const verification = verificationSummary(after, "compact");
+  return {
+    patchId: patch.id,
+    currentFingerprint: fingerprint,
+    previewFingerprint: graphFingerprint(after),
+    changes: semanticDiff(graph, after),
+    verification: {
+      buildStatus: verification.buildStatus,
+      passed: verification.passed,
+      findings: verification.findings,
+    },
+  };
 }
 
 export function replaceGraph(dir: string, graphInput: unknown, reason: string): MutationResult {

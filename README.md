@@ -12,16 +12,16 @@ This repository is the OpenAI Build Week vertical slice. It intentionally proves
 
 - GPT-5.6 brief interpreter and scoped semantic editor through the Responses API with structured output and one corrective retry.
 - Deterministic offline replay, including typed adaptive-placement and primary-action rename edits, requiring no login or API key.
-- Versioned and runtime-validated Semantic Interface Graph.
+- Versioned and runtime-validated recursive Semantic Interface Graph with bounded depth, size and cycle-safe ingestion.
 - Stable node IDs, restricted expression AST, typed UI contracts and fixtures.
 - Infinite multi-frame semantic board with flow edges, live finding badges, pointer-anchored zoom, pan, fit commands and adaptive workspace panels.
 - State-aware previews that expose idle, loading, failed and completed fixtures without rendering state-bound nodes at the wrong time.
 - Compact and regular device profiles; direct manipulation changes the active semantic breakpoint rather than storing coordinates.
 - Fit-to-canvas, trackpad zoom, middle-mouse panning, preview mode and contextual keyboard shortcuts for selection, panels and revision history.
-- Searchable layers and commands, human editing for labels, stack axis, width, spacing tokens, emphasis, ordering, duplication and component insertion, with undo/redo.
+- Searchable recursive layers and commands, human editing for labels, layout relations, width, spacing tokens, emphasis, sibling ordering, subtree-safe duplication and component insertion, with undo/redo.
 - Project launcher with guided blank application/prototype/library starters, validated imports, copy-only examples, browser recovery diagnostics and an optional local-agent workspace bridge.
 - Versioned browser project recovery carrying project type, source, timestamp and local conflict fingerprint; invalid recovery remains inspectable instead of silently replacing a project.
-- Deterministic React and SwiftUI compiler backends.
+- Deterministic React and SwiftUI compiler backends for stack, grid, overlay, scroll, safe-area, adaptive, wrap, split, bounded freeform and page-flow hierarchy.
 - Active React preview embedded in Studio: it validates the current graph, verifies the exact compiler fingerprint, lowers the shared IR into an isolated runtime, and executes typed navigation events without evaluating arbitrary generated source.
 - Playwright screenshot, computed-style and layout-bounds verification for compact and regular viewports.
 - Typed repair proposal, semantic diff and independent verification rerun.
@@ -105,7 +105,8 @@ IntentForm is designed to be **driven by coding agents**, not just humans. The r
 intentform_preview_migration inspect schema status without writing
 intentform_apply_migration   checkpoint and migrate a previewed old graph
 intentform_describe_project   inspect screens, stable node IDs, tokens, flows, findings
-intentform_apply_patch        smallest typed semantic edit, validated and revisioned
+intentform_preview_patch      validate and inspect a typed semantic edit without writing
+intentform_apply_patch        smallest typed semantic or hierarchy edit, validated and revisioned
 intentform_replace_graph      structural edits with full schema validation
 intentform_verify             deterministic intent rules per device scenario
 intentform_compile            byte-stable React or SwiftUI into .intentform/output/
@@ -144,6 +145,7 @@ See [architecture](docs/ARCHITECTURE.md), [hackathon scope](docs/HACKATHON_SCOPE
 apps/studio-web/            Next.js product experience and server routes
 apps/react-preview/         Vite harness executing generated React output
 packages/semantic-schema/   graph, validation, canonical serialization, patches
+packages/layout-engine/     deterministic recursive indexing and neutral layout
 packages/compiler-core/     shared lowering and compiler contracts
 packages/compiler-react/    accessible responsive React output
 packages/compiler-swiftui/  native SwiftUI output

@@ -1,5 +1,6 @@
 import {
   fingerprintFiles,
+  findPrimaryAction,
   lowerGraph,
   validateGeneratedOutput,
   type CompilerBackend,
@@ -83,13 +84,16 @@ const swiftEventCall = (node: PlatformIRNode): string => node.events.map((event)
   return `${member}(${payload})`;
 }).join("; ");
 
-function swiftNode(node: PlatformIRNode): string {
+const swiftOptionalNumber = (value: number | undefined): string => value === undefined ? "nil" : String(value);
+
+function swiftNode(node: PlatformIRNode, guardedPrimaryId?: string): string {
   const label = escapeSwift(node.intent.label);
   const value = swiftDisplay(node.bindings.value);
   const detail = node.bindings.detail?.name === node.bindings.value?.name
     ? '""'
     : swiftDisplay(node.bindings.detail);
   const eventCall = swiftEventCall(node);
+  const children = node.children.map((child) => swiftNode(child, guardedPrimaryId)).filter(Boolean).join("\n\n");
   let source: string;
   switch (node.kind) {
     case "balance-summary":
@@ -116,6 +120,28 @@ function swiftNode(node: PlatformIRNode): string {
     case "receipt-summary":
       source = `ReceiptSummary(label: "${label}", value: ${value}, detail: ${node.bindings.detail ? detail : "nil"})`;
       break;
+    case "stack":
+    case "grid":
+    case "overlay":
+    case "scroll":
+    case "safe-area":
+    case "adaptive":
+    case "wrap":
+    case "split":
+    case "freeform":
+    case "page-flow":
+      source = `IntentFormContainer(
+                        mode: deviceClass == .compact ? "${node.layout.compactMode}" : "${node.layout.regularMode}",
+                        axis: "${node.layout.axis}",
+                        gap: ${node.layout.gap},
+                        columns: ${node.layout.columns},
+                        splitRatio: ${node.layout.splitRatio},
+                        align: "${node.layout.align}",
+                        justify: "${node.layout.justify}"
+                    ) {
+                        ${children}
+                    }`;
+      break;
   }
 
   source += `\n                        .accessibilityLabel(Text("${escapeSwift(node.accessibility.label)}"))`;
@@ -128,7 +154,7 @@ function swiftNode(node: PlatformIRNode): string {
   }
   source += `\n                        .accessibilityIdentifier("intentform.${escapeSwift(node.id)}")`;
 
-  source = `IntentFormNodeLayout(\n                        axis: "${node.layout.axis}",\n                        width: "${node.layout.width}",\n                        gap: ${node.layout.gap},\n                        padding: ${node.layout.padding},\n                        role: "${escapeSwift(node.style.role)}",\n                        emphasis: "${node.style.emphasis}",\n                        importance: "${node.intent.importance}",\n                        purpose: "${escapeSwift(node.intent.purpose)}"\n                    ) {\n                        ${source}\n                    }`;
+  source = `IntentFormNodeLayout(\n                        axis: "${node.layout.axis}",\n                        width: "${node.layout.width}",\n                        height: "${node.layout.height}",\n                        fixedWidth: ${swiftOptionalNumber(node.layout.fixedWidth)},\n                        fixedHeight: ${swiftOptionalNumber(node.layout.fixedHeight)},\n                        minWidth: ${swiftOptionalNumber(node.layout.minWidth)},\n                        maxWidth: ${swiftOptionalNumber(node.layout.maxWidth)},\n                        minHeight: ${swiftOptionalNumber(node.layout.minHeight)},\n                        maxHeight: ${swiftOptionalNumber(node.layout.maxHeight)},\n                        x: ${node.layout.position?.x ?? 0},\n                        y: ${node.layout.position?.y ?? 0},\n                        z: ${node.layout.position?.z ?? 0},\n                        gap: ${node.layout.gap},\n                        padding: ${node.layout.padding},\n                        align: "${node.layout.align}",\n                        overflow: "${node.layout.overflow}",\n                        role: "${escapeSwift(node.style.role)}",\n                        emphasis: "${node.style.emphasis}",\n                        importance: "${node.intent.importance}",\n                        purpose: "${escapeSwift(node.intent.purpose)}"\n                    ) {\n                        ${source}\n                    }`;
 
   if (node.visibility.length > 0) {
     const condition = node.visibility.map((visibility) => visibility.expression
@@ -136,7 +162,10 @@ function swiftNode(node: PlatformIRNode): string {
       : node.bindings.status
         ? `data.${swiftMember(node.bindings.status.name)} == "${escapeSwift(visibility.state)}"`
         : "true").join(" || ");
-    return `if ${condition} {\n                    ${source}\n                }`;
+    source = `if ${condition} {\n                    ${source}\n                }`;
+  }
+  if (guardedPrimaryId === node.id) {
+    source = `if !usesPersistentPrimary {\n                    ${source}\n                }`;
   }
   return source;
 }
@@ -180,19 +209,27 @@ function swiftScreen(ir: PlatformIR, screenIndex: number): string {
   const screen = ir.screens[screenIndex];
   if (!screen) throw new Error(`Screen index ${screenIndex} is missing`);
   const name = swiftScreenName(screen.id);
-  const primary = screen.nodes.find((node) => node.kind === "primary-action");
-  const contentNodes = screen.nodes.filter((node) => node.kind !== "primary-action");
-  const content = contentNodes.map((node) => `                ${swiftNode(node)}`).join("\n\n");
-  const adaptiveContent = primary
-    ? `${content}\n\n                if !usesPersistentPrimary {\n                    ${swiftNode(primary)}\n                }`
-    : content;
-  const screenBody = primary
-    ? `GeometryReader { proxy in
+  const primary = findPrimaryAction(screen);
+  const content = screen.nodes.map((node) => `                ${swiftNode(node, primary?.id)}`).join("\n\n");
+  const persistentInset = primary
+    ? `.safeAreaInset(edge: .bottom) {
+                if usesPersistentPrimary {
+                    ${swiftNode(primary)}
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .background(.regularMaterial)
+                }
+            }`
+    : "";
+  const persistentBinding = primary
+    ? `            let usesPersistentPrimary = deviceClass == .compact
+                ? ${primary.layout.compactPlacement === "persistent-bottom"}
+                : ${primary.layout.regularPlacement === "persistent-bottom"}`
+    : "";
+  const screenBody = `GeometryReader { proxy in
             let viewportFrame = proxy.frame(in: .global)
             let deviceClass = IntentFormDeviceClass.resolve(width: viewportFrame.maxX, height: viewportFrame.maxY)
-            let usesPersistentPrimary = deviceClass == .compact
-                ? ${primary.layout.compactPlacement === "persistent-bottom"}
-                : ${primary.layout.regularPlacement === "persistent-bottom"}
+${persistentBinding}
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
@@ -200,28 +237,11 @@ function swiftScreen(ir: PlatformIR, screenIndex: number): string {
                         .font(.caption.weight(.bold))
                         .foregroundStyle(.tint)
                         .accessibilityIdentifier("intentform.${escapeSwift(screen.id)}.scroll-anchor")
-${adaptiveContent}
+${content}
                 }
                 .padding(20)
             }
-            .safeAreaInset(edge: .bottom) {
-                if usesPersistentPrimary {
-                    ${swiftNode(primary)}
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                        .background(.regularMaterial)
-                }
-            }
-        }`
-    : `ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("${escapeSwift(ir.productName)}")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.tint)
-                    .accessibilityIdentifier("intentform.${escapeSwift(screen.id)}.scroll-anchor")
-${content}
-            }
-            .padding(20)
+            ${persistentInset}
         }`;
 
   return `import SwiftUI
@@ -362,11 +382,227 @@ enum IntentFormDeviceClass {
     }
 }
 
+struct IntentFormLinearLayout: Layout {
+    let axis: String
+    let gap: CGFloat
+    let align: String
+    let justify: String
+    let leadingRatio: CGFloat?
+
+    private func naturalSizes(_ subviews: Subviews) -> [CGSize] {
+        subviews.map { $0.sizeThatFits(.unspecified) }
+    }
+
+    private func mainLength(_ size: CGSize) -> CGFloat {
+        axis == "horizontal" ? size.width : size.height
+    }
+
+    private func crossLength(_ size: CGSize) -> CGFloat {
+        axis == "horizontal" ? size.height : size.width
+    }
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGSize {
+        let sizes = naturalSizes(subviews)
+        let totalGap = gap * CGFloat(max(0, subviews.count - 1))
+        let naturalMain = sizes.reduce(0) { $0 + mainLength($1) } + totalGap
+        let naturalCross = sizes.map(crossLength).max() ?? 0
+        let natural = axis == "horizontal"
+            ? CGSize(width: naturalMain, height: naturalCross)
+            : CGSize(width: naturalCross, height: naturalMain)
+        return CGSize(
+            width: proposal.width ?? natural.width,
+            height: proposal.height ?? natural.height
+        )
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        guard !subviews.isEmpty else { return }
+        let sizes = naturalSizes(subviews)
+        let availableMain = axis == "horizontal" ? bounds.width : bounds.height
+        let availableCross = axis == "horizontal" ? bounds.height : bounds.width
+        let naturalMain = sizes.reduce(0) { $0 + mainLength($1) }
+        let minimumGaps = gap * CGFloat(max(0, subviews.count - 1))
+        let contentMain = naturalMain + minimumGaps
+        var resolvedGap = gap
+        var cursor: CGFloat = 0
+
+        if leadingRatio == nil {
+            switch justify {
+            case "center": cursor = max(0, (availableMain - contentMain) / 2)
+            case "end": cursor = max(0, availableMain - contentMain)
+            case "space-between" where subviews.count > 1:
+                resolvedGap = max(gap, (availableMain - naturalMain) / CGFloat(subviews.count - 1))
+            default: break
+            }
+        }
+
+        let splitContentMain = max(0, availableMain - minimumGaps)
+        let clampedRatio = min(0.9, max(0.1, leadingRatio ?? 0.5))
+        for (index, subview) in subviews.enumerated() {
+            let naturalSize = sizes[index]
+            let childMain: CGFloat
+            if leadingRatio != nil && subviews.count > 1 {
+                childMain = index == 0
+                    ? splitContentMain * clampedRatio
+                    : splitContentMain * (1 - clampedRatio) / CGFloat(subviews.count - 1)
+            } else {
+                childMain = mainLength(naturalSize)
+            }
+            let naturalCross = crossLength(naturalSize)
+            let childCross = align == "stretch" ? availableCross : min(availableCross, naturalCross)
+            let crossOffset: CGFloat
+            switch align {
+            case "center": crossOffset = max(0, (availableCross - childCross) / 2)
+            case "end": crossOffset = max(0, availableCross - childCross)
+            default: crossOffset = 0
+            }
+            let point = axis == "horizontal"
+                ? CGPoint(x: bounds.minX + cursor, y: bounds.minY + crossOffset)
+                : CGPoint(x: bounds.minX + crossOffset, y: bounds.minY + cursor)
+            let childProposal = axis == "horizontal"
+                ? ProposedViewSize(width: childMain, height: childCross)
+                : ProposedViewSize(width: childCross, height: childMain)
+            subview.place(at: point, anchor: .topLeading, proposal: childProposal)
+            cursor += childMain + resolvedGap
+        }
+    }
+}
+
+struct IntentFormContainer<Content: View>: View {
+    let mode: String
+    let axis: String
+    let gap: CGFloat
+    let columns: Int
+    let splitRatio: CGFloat
+    let align: String
+    let justify: String
+    @ViewBuilder let content: Content
+
+    init(
+        mode: String,
+        axis: String,
+        gap: CGFloat,
+        columns: Int,
+        splitRatio: CGFloat,
+        align: String,
+        justify: String,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.mode = mode
+        self.axis = axis
+        self.gap = gap
+        self.columns = columns
+        self.splitRatio = splitRatio
+        self.align = align
+        self.justify = justify
+        self.content = content()
+    }
+
+    private var gridColumns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: gap), count: max(1, columns))
+    }
+
+    private var horizontalAlignment: HorizontalAlignment {
+        switch align {
+        case "center": return .center
+        case "end": return .trailing
+        default: return .leading
+        }
+    }
+
+    private var overlayAlignment: Alignment {
+        switch align {
+        case "center": return .center
+        case "end": return .bottomTrailing
+        default: return .topLeading
+        }
+    }
+
+    @ViewBuilder var body: some View {
+        switch mode {
+        case "grid":
+            LazyVGrid(columns: gridColumns, alignment: horizontalAlignment, spacing: gap) { content }
+        case "overlay", "freeform":
+            ZStack(alignment: overlayAlignment) { content }
+        case "scroll":
+            ScrollView(axis == "horizontal" ? .horizontal : .vertical) {
+                IntentFormLinearLayout(
+                    axis: axis,
+                    gap: gap,
+                    align: align,
+                    justify: justify,
+                    leadingRatio: nil
+                ) {
+                    content
+                }
+            }
+        case "wrap":
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 160), spacing: gap)],
+                alignment: horizontalAlignment,
+                spacing: gap
+            ) { content }
+        case "split":
+            IntentFormLinearLayout(
+                axis: axis,
+                gap: gap,
+                align: align,
+                justify: justify,
+                leadingRatio: splitRatio
+            ) {
+                content
+            }
+        case "safe-area":
+            IntentFormLinearLayout(
+                axis: axis,
+                gap: gap,
+                align: align,
+                justify: justify,
+                leadingRatio: nil
+            ) {
+                content
+            }
+                .padding(.horizontal)
+        default:
+            IntentFormLinearLayout(
+                axis: axis,
+                gap: gap,
+                align: align,
+                justify: justify,
+                leadingRatio: nil
+            ) {
+                content
+            }
+        }
+    }
+}
+
 struct IntentFormNodeLayout<Content: View>: View {
     let axis: String
     let width: String
+    let height: String
+    let fixedWidth: CGFloat?
+    let fixedHeight: CGFloat?
+    let minWidth: CGFloat?
+    let maxWidth: CGFloat?
+    let minHeight: CGFloat?
+    let maxHeight: CGFloat?
+    let x: CGFloat
+    let y: CGFloat
+    let z: Double
     let gap: CGFloat
     let padding: CGFloat
+    let align: String
+    let overflow: String
     let role: String
     let emphasis: String
     let importance: String
@@ -376,8 +612,20 @@ struct IntentFormNodeLayout<Content: View>: View {
     init(
         axis: String,
         width: String,
+        height: String,
+        fixedWidth: CGFloat?,
+        fixedHeight: CGFloat?,
+        minWidth: CGFloat?,
+        maxWidth: CGFloat?,
+        minHeight: CGFloat?,
+        maxHeight: CGFloat?,
+        x: CGFloat,
+        y: CGFloat,
+        z: Double,
         gap: CGFloat,
         padding: CGFloat,
+        align: String,
+        overflow: String,
         role: String,
         emphasis: String,
         importance: String,
@@ -386,8 +634,20 @@ struct IntentFormNodeLayout<Content: View>: View {
     ) {
         self.axis = axis
         self.width = width
+        self.height = height
+        self.fixedWidth = fixedWidth
+        self.fixedHeight = fixedHeight
+        self.minWidth = minWidth
+        self.maxWidth = maxWidth
+        self.minHeight = minHeight
+        self.maxHeight = maxHeight
+        self.x = x
+        self.y = y
+        self.z = z
         self.gap = gap
         self.padding = padding
+        self.align = align
+        self.overflow = overflow
         self.role = role
         self.emphasis = emphasis
         self.importance = importance
@@ -405,13 +665,49 @@ struct IntentFormNodeLayout<Content: View>: View {
         }
     }
 
-    var body: some View {
-        arrangedContent
-            .frame(maxWidth: width == "hug" ? nil : .infinity, alignment: .leading)
+    private var frameAlignment: Alignment {
+        switch align {
+        case "center": return .center
+        case "end": return .trailing
+        default: return .leading
+        }
+    }
+
+    private var resolvedMinWidth: CGFloat? { width == "fixed" ? fixedWidth : minWidth }
+    private var resolvedIdealWidth: CGFloat? { width == "fixed" ? fixedWidth : nil }
+    private var resolvedMaxWidth: CGFloat? {
+        if width == "fill" { return .infinity }
+        return width == "fixed" ? fixedWidth : maxWidth
+    }
+    private var resolvedMinHeight: CGFloat? { height == "fixed" ? fixedHeight : minHeight }
+    private var resolvedIdealHeight: CGFloat? { height == "fixed" ? fixedHeight : nil }
+    private var resolvedMaxHeight: CGFloat? {
+        if height == "fill" { return .infinity }
+        return height == "fixed" ? fixedHeight : maxHeight
+    }
+
+    @ViewBuilder var body: some View {
+        let laidOut = arrangedContent
+            .frame(
+                minWidth: resolvedMinWidth,
+                idealWidth: resolvedIdealWidth,
+                maxWidth: resolvedMaxWidth,
+                minHeight: resolvedMinHeight,
+                idealHeight: resolvedIdealHeight,
+                maxHeight: resolvedMaxHeight,
+                alignment: frameAlignment
+            )
             .padding(padding)
+            .offset(x: x, y: y)
+            .zIndex(z)
             .opacity(emphasis == "quiet" ? 0.72 : 1)
             .fontWeight(emphasis == "strong" || importance == "primary" ? .semibold : nil)
             .accessibilityValue(Text(purpose))
+        if overflow == "clip" {
+            laidOut.clipped()
+        } else {
+            laidOut
+        }
     }
 }
 

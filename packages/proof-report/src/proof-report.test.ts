@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { compileReact } from "@intentform/compiler-react";
+import { compileReact, lowerGraph } from "@intentform/compiler-react";
 import { compileSwiftUI } from "@intentform/compiler-swiftui";
 import {
   parseGraph,
+  findGraphNode,
   semanticDiff,
   stableSerialize,
   type SemanticInterfaceGraph,
@@ -25,6 +26,41 @@ describe("IntentForm proof pipeline", () => {
     expect(compileSwiftUI(demoGraph)).toEqual(compileSwiftUI(demoGraph));
   });
 
+  it("preserves the recursive layout hierarchy in IR and both generated targets", () => {
+    const layoutScreen = lowerGraph(demoGraph, "react").screens.find((screen) => screen.id === "layout-lab");
+    expect(layoutScreen?.layoutCoverage).toEqual({
+      nodeCount: 20,
+      maxDepth: 4,
+      containerKinds: [
+        "adaptive", "freeform", "grid", "overlay", "page-flow",
+        "safe-area", "scroll", "split", "stack", "wrap",
+      ],
+    });
+    expect(layoutScreen?.nodes[0]?.children[0]?.children[0]?.children[0]?.id).toBe("layout-lab.grid-a");
+
+    const react = compileReact(demoGraph);
+    const reactScreen = react.files.find((file) => file.path.endsWith("layout-lab.tsx"));
+    const reactStyles = react.files.find((file) => file.path.endsWith("styles.css"));
+    expect(reactScreen?.content).toContain("if-mode-compact-stack if-mode-regular-grid");
+    expect(reactScreen?.content).toContain('data-node-id="layout-lab.freeform-a"');
+    expect(reactStyles?.content).toContain(".if-mode-regular-freeform > .if-node { position: absolute;");
+
+    const swift = compileSwiftUI(demoGraph);
+    const swiftScreen = swift.files.find((file) => file.path.endsWith("layoutLab.swift"));
+    const swiftComponents = swift.files.find((file) => file.path.endsWith("IntentFormComponents.swift"));
+    expect(swiftScreen?.content).toContain('mode: deviceClass == .compact ? "stack" : "grid"');
+    expect(swiftScreen?.content).toContain('mode: deviceClass == .compact ? "freeform" : "freeform"');
+    expect(swiftScreen?.content).toContain("fixedHeight: 180");
+    expect(swiftScreen?.content).toContain('align: "stretch"');
+    expect(swiftScreen?.content).toContain('justify: "start"');
+    expect(swiftComponents?.content).toContain('case "grid":');
+    expect(swiftComponents?.content).toContain('case "overlay", "freeform":');
+    expect(swiftComponents?.content).toContain("struct IntentFormLinearLayout: Layout");
+    expect(swiftComponents?.content).toContain("leadingRatio: splitRatio");
+    expect(swiftComponents?.content).toContain("splitContentMain * clampedRatio");
+    expect(swiftComponents?.content).toContain('case "space-between" where subviews.count > 1:');
+  });
+
   const editableParityCases: Array<[
     string,
     (graph: SemanticInterfaceGraph) => void,
@@ -35,6 +71,14 @@ describe("IntentForm proof pipeline", () => {
     ["importance", (graph) => { graph.screens[1]!.nodes[1]!.intent.importance = "secondary"; }],
     ["layout axis", (graph) => { graph.screens[1]!.nodes[1]!.layout.axis = "horizontal"; }],
     ["layout width", (graph) => { graph.screens[1]!.nodes[1]!.layout.width = "hug"; }],
+    ["layout height", (graph) => { graph.screens[1]!.nodes[1]!.layout.height = "fixed"; graph.screens[1]!.nodes[1]!.layout.fixedHeight = 96; }],
+    ["layout constraints", (graph) => { graph.screens[1]!.nodes[1]!.layout.minWidth = 180; graph.screens[1]!.nodes[1]!.layout.maxWidth = 360; }],
+    ["layout alignment", (graph) => { graph.screens[1]!.nodes[1]!.layout.align = "center"; graph.screens[1]!.nodes[1]!.layout.justify = "space-between"; }],
+    ["layout overflow", (graph) => { graph.screens[1]!.nodes[1]!.layout.overflow = "clip"; }],
+    ["grid columns", (graph) => { findGraphNode(graph, "layout-lab.grid")!.layout.columns = 1; }],
+    ["split ratio", (graph) => { findGraphNode(graph, "layout-lab.split")!.layout.splitRatio = 0.65; }],
+    ["adaptive modes", (graph) => { findGraphNode(graph, "layout-lab.adaptive")!.layout.adaptive = { compact: "wrap", regular: "split" }; }],
+    ["freeform position", (graph) => { findGraphNode(graph, "layout-lab.freeform-a")!.layout.position = { x: 32, y: 48, z: 4 }; }],
     ["layout gap", (graph) => { graph.screens[1]!.nodes[1]!.layout.gapToken = "space.8"; }],
     ["layout padding", (graph) => { graph.screens[1]!.nodes[1]!.layout.paddingToken = "space.24"; }],
     ["style role", (graph) => { graph.screens[1]!.nodes[1]!.style.role = "surface"; }],
@@ -87,6 +131,27 @@ describe("IntentForm proof pipeline", () => {
     }));
   });
 
+  it("applies bounded target constraint overrides and restores invalid pairs", () => {
+    const edited = structuredClone(demoGraph);
+    edited.screens[1]!.nodes[1]!.platformOverrides = {
+      react: { "layout.minWidth": 180, "layout.maxWidth": 340 },
+      swiftui: { "layout.minHeight": 420, "layout.maxHeight": 120 },
+    };
+    const graph = parseGraph(edited);
+    const react = compileReact(graph);
+    const swift = compileSwiftUI(graph);
+    const reactScreen = react.files.find((file) => file.path.endsWith("payment-request.tsx"));
+    const swiftScreen = swift.files.find((file) => file.path.endsWith("paymentRequest.swift"));
+
+    expect(reactScreen?.content).toContain("minWidth: 180, maxWidth: 340");
+    expect(swiftScreen?.content).toContain("minHeight: nil");
+    expect(swiftScreen?.content).toContain("maxHeight: nil");
+    expect(swift.diagnostics).toContainEqual(expect.objectContaining({
+      path: "screens.payment-request.nodes.payment-request.recipient.platformOverrides.swiftui.layout.minHeight",
+      message: expect.stringMatching(/shared constraints were restored/i),
+    }));
+  });
+
   it("reports the SwiftUI assertive-live fallback while preserving native update semantics", () => {
     const edited = structuredClone(demoGraph);
     edited.screens[1]!.nodes[2]!.accessibility.live = "assertive";
@@ -117,6 +182,33 @@ describe("IntentForm proof pipeline", () => {
     expect(report.reconciledFindings.find((item) => item.id === finding?.id)?.status).toBe("verified");
     expect(report.before.reactFingerprint).not.toBe(report.after.reactFingerprint);
     expect(report.before.swiftFingerprint).not.toBe(report.after.swiftFingerprint);
+  });
+
+  it("finds and repairs transactional semantics at recursive depth", () => {
+    const nested = structuredClone(demoGraph);
+    const screen = nested.screens.find((item) => item.id === "payment-request")!;
+    const children = screen.nodes;
+    const wrapper = structuredClone(children[0]!);
+    wrapper.id = "payment-request.stack";
+    wrapper.kind = "stack";
+    wrapper.intent = { purpose: "Arrange the payment request fields", label: "Payment request fields", importance: "supporting" };
+    wrapper.style = { role: "surface", emphasis: "normal" };
+    wrapper.accessibility = { label: "Payment request fields", live: "off" };
+    wrapper.states = [];
+    wrapper.interactions = [];
+    wrapper.children = children;
+    screen.nodes = [wrapper];
+
+    const report = buildProofReport(parseGraph(nested), completedBuildEvidence);
+    expect(report.before.verification.findings).toContainEqual(expect.objectContaining({
+      id: "swiftui.payment-request.primary.compact-reachability",
+    }));
+    expect(report.changes).toContainEqual(expect.objectContaining({
+      path: "payment-request.confirm.layout.placement",
+    }));
+    expect(report.after.verification.passed).toBe(true);
+    expect(report.after.graph.screens.find((item) => item.id === "payment-request")?.nodes[0]?.children)
+      .toHaveLength(children.length);
   });
 
   it("lowers the repair into platform-native adaptive primitives", () => {

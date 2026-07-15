@@ -1,8 +1,15 @@
 "use client";
 
 import { Check } from "@phosphor-icons/react";
-import type { SemanticInterfaceGraph, SemanticNode } from "@intentform/semantic-schema";
-import { tokenColor, tokenRadius, type VisualState } from "./support";
+import { resolvedContainerMode } from "@intentform/layout-engine";
+import {
+  isContainerNode,
+  type SemanticInterfaceGraph,
+  type SemanticNode,
+} from "@intentform/semantic-schema";
+import type { CSSProperties } from "react";
+import { isNodeVisible, tokenColor, tokenRadius, type VisualState } from "./support";
+import type { SelectionIntent } from "./direct-manipulation";
 
 function formatMoney(value: unknown, fallback: string): string {
   const amount = typeof value === "number"
@@ -31,12 +38,40 @@ interface NodePreviewProps {
   graph: SemanticInterfaceGraph;
   fixture?: Record<string, unknown>;
   state?: VisualState;
+  viewport?: { width: number; height: number };
+  selectedNodeId?: string | null;
+  selectedNodeIds?: readonly string[];
+  hoveredNodeId?: string | null;
+  onSelectNode?(nodeId: string, intent: SelectionIntent): void;
+}
+
+export function semanticNodeBoxStyle(node: SemanticNode) {
+  return {
+    width: node.layout.width === "fixed" ? node.layout.fixedWidth : node.layout.width === "fill" ? "100%" : "fit-content",
+    height: node.layout.height === "fixed" ? node.layout.fixedHeight : undefined,
+    minWidth: node.layout.minWidth,
+    maxWidth: node.layout.maxWidth,
+    minHeight: node.layout.minHeight,
+    maxHeight: node.layout.maxHeight,
+    alignSelf: node.layout.align === "start" ? "flex-start" : node.layout.align === "end" ? "flex-end" : node.layout.align,
+    overflow: node.layout.overflow === "clip" ? "hidden" : node.layout.overflow === "scroll" ? "auto" : "visible",
+  };
 }
 
 /* Renders one semantic node at realistic mobile proportions. Colors and radii
    come from the graph's design tokens; the content comes from the screen's
    fixture for the active visual state, so state switches change real data. */
-export function NodePreview({ node, graph, fixture = {}, state = "idle" }: NodePreviewProps) {
+export function NodePreview({
+  node,
+  graph,
+  fixture = {},
+  state = "idle",
+  viewport = { width: 375, height: 667 },
+  selectedNodeId = null,
+  selectedNodeIds = [],
+  hoveredNodeId = null,
+  onSelectNode,
+}: NodePreviewProps) {
   const accent = tokenColor(graph, "color.accent", "#397461");
   const ink = tokenColor(graph, "color.ink", "#181c1a");
   const surfaceRadius = tokenRadius(graph, "radius.surface", 28);
@@ -45,6 +80,80 @@ export function NodePreview({ node, graph, fixture = {}, state = "idle" }: NodeP
   const soft = `color-mix(in oklab, ${accent} 14%, #ffffff)`;
   const hairline = `color-mix(in oklab, ${ink} 12%, #ffffff)`;
   const loading = state === "loading";
+
+  if (isContainerNode(node)) {
+    const mode = resolvedContainerMode(node, viewport);
+    const gap = graph.tokens.spacing[node.layout.gapToken] ?? 0;
+    const padding = graph.tokens.spacing[node.layout.paddingToken] ?? 0;
+    const horizontal = node.layout.axis === "horizontal";
+    const style: CSSProperties = {
+      ...semanticNodeBoxStyle(node),
+      display: mode === "grid" || mode === "overlay" || mode === "freeform" ? "grid" : "flex",
+      flexDirection: horizontal ? "row" : "column",
+      flexWrap: mode === "wrap" ? "wrap" : "nowrap",
+      gridTemplateColumns: mode === "grid" ? `repeat(${node.layout.columns}, minmax(0, 1fr))` : undefined,
+      position: mode === "freeform" ? "relative" : undefined,
+      gap,
+      padding: mode === "safe-area" ? `${padding + 16}px ${padding}px ${padding + 24}px` : padding,
+      justifyContent: node.layout.justify === "space-between" ? "space-between" : node.layout.justify,
+      overflow: mode === "scroll" ? "auto" : semanticNodeBoxStyle(node).overflow,
+      borderRadius: 14,
+      outline: "1px dashed color-mix(in oklab, currentColor 14%, transparent)",
+      outlineOffset: -1,
+    };
+    const selected = new Set([...selectedNodeIds, ...(selectedNodeId ? [selectedNodeId] : [])]);
+    const visibleChildren = node.children.filter((child) => isNodeVisible(child, state));
+    return (
+      <div data-layout-mode={mode} data-container-id={node.id} aria-label={node.accessibility.label} style={style}>
+        {visibleChildren.length > 0 ? visibleChildren.map((child, index) => {
+          const position = child.layout.position;
+          const childStyle: CSSProperties = {
+            ...semanticNodeBoxStyle(child),
+            ...(mode === "overlay" ? { gridArea: "1 / 1" } : {}),
+            ...(mode === "freeform" ? {
+              position: "absolute",
+              left: position?.x ?? 0,
+              top: position?.y ?? 0,
+              zIndex: position?.z ?? 0,
+            } : {}),
+            ...(mode === "split" ? {
+              flex: index === 0 ? node.layout.splitRatio : 1 - node.layout.splitRatio,
+            } : {}),
+            ...(mode === "wrap" ? { flex: `1 1 calc(${100 / node.layout.columns}% - ${gap}px)` } : {}),
+            ...(selected.has(child.id) ? { outline: "2px solid var(--select)", outlineOffset: 2, borderRadius: 12 } : {}),
+            ...(child.id === hoveredNodeId && !selected.has(child.id) ? { outline: "1px solid var(--select)", outlineOffset: 2, borderRadius: 12 } : {}),
+          };
+          return (
+            <div
+              key={child.id}
+              data-testid={`canvas-node-${child.id}`}
+              data-node-selected={selected.has(child.id) || undefined}
+              style={childStyle}
+              onPointerDown={onSelectNode ? (event) => {
+                event.stopPropagation();
+                onSelectNode(child.id, event.shiftKey ? "range" : event.metaKey || event.ctrlKey ? "toggle" : "replace");
+              } : undefined}
+              onClick={onSelectNode ? (event) => event.stopPropagation() : undefined}
+            >
+              <NodePreview
+                node={child}
+                graph={graph}
+                fixture={fixture}
+                state={state}
+                viewport={viewport}
+                selectedNodeId={selectedNodeId}
+                selectedNodeIds={selectedNodeIds}
+                hoveredNodeId={hoveredNodeId}
+                {...(onSelectNode ? { onSelectNode } : {})}
+              />
+            </div>
+          );
+        }) : (
+          <span className="p-3 text-center text-[11px] text-zinc-400">Empty {mode}</span>
+        )}
+      </div>
+    );
+  }
 
   switch (node.kind) {
     case "balance-summary":

@@ -9,7 +9,7 @@ import {
   ShieldCheck,
   TreeStructure,
 } from "@phosphor-icons/react";
-import type { SemanticChange, SemanticInterfaceGraph } from "@intentform/semantic-schema";
+import { flattenGraphNodes, type SemanticChange, type SemanticInterfaceGraph } from "@intentform/semantic-schema";
 import type { VerificationResult } from "@intentform/verifier";
 import type { StudioGeneratedFileSet } from "../target-compilation";
 
@@ -43,7 +43,7 @@ export function ReportStage({
   const steps = [
     {
       label: "Graph validated",
-      detail: `${graph.screens.length} screens · ${graph.screens.flatMap((screen) => screen.nodes).length} semantic nodes`,
+      detail: `${graph.screens.length} screens · ${flattenGraphNodes(graph).length} semantic nodes`,
       icon: TreeStructure,
       complete: true,
     },

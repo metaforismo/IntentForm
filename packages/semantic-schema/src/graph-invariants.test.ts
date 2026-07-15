@@ -21,7 +21,7 @@ function makeValidGraph() {
   };
 
   return {
-    schemaVersion: "0.1.0",
+    schemaVersion: "0.2.0",
     product: {
       name: "Invariant test",
       audience: ["product teams"],
@@ -106,7 +106,7 @@ function expectInvalid(change: (graph: GraphDraft) => void, message: string | Re
 
 describe("semantic graph invariants", () => {
   it("accepts a canonical graph and a stateless contract-free screen", () => {
-    const graph = makeValidGraph();
+    const graph: GraphDraft = makeValidGraph();
     const manual = structuredClone(graph.screens[1]!);
     manual.id = "manual";
     manual.route = "/manual";
@@ -114,6 +114,119 @@ describe("semantic graph invariants", () => {
     graph.screens.push(manual);
 
     expect(parseGraph(graph).screens.at(-1)?.id).toBe("manual");
+  });
+
+  it("migrates flat roots into recursive nodes with deterministic layout defaults", () => {
+    const parsed = parseGraph(makeValidGraph());
+    expect(parsed.schemaVersion).toBe("0.2.0");
+    expect(parsed.screens[0]?.nodes[0]).toMatchObject({
+      children: [],
+      layout: {
+        height: "hug",
+        align: "stretch",
+        justify: "start",
+        overflow: "visible",
+        columns: 2,
+        splitRatio: 0.5,
+      },
+    });
+  });
+
+  it("accepts nested semantic containers and patches descendant nodes by stable id", () => {
+    const graph: GraphDraft = makeValidGraph();
+    const leaf = structuredClone(graph.screens[1]!.nodes[0]!);
+    leaf.id = "receipt.content";
+    graph.screens[1]!.nodes = [{
+      ...structuredClone(leaf),
+      id: "receipt.stack",
+      kind: "stack",
+      children: [leaf],
+    }];
+    const parsed = parseGraph(graph);
+    const patched = applyGraphPatch(parsed, {
+      id: "nested-label",
+      rationale: "Rename a nested leaf",
+      operations: [{ op: "set-label", target: "receipt.content", label: "Nested receipt" }],
+    });
+    expect(patched.screens[1]?.nodes[0]?.children[0]?.intent.label).toBe("Nested receipt");
+  });
+
+  it("rejects invalid recursive shape, constraints, freeform position, and adaptive modes", () => {
+    expectInvalid((graph) => {
+      graph.screens[1]!.nodes[0]!.children = [structuredClone(graph.screens[1]!.nodes[0]!)];
+    }, /Leaf node receipt-summary cannot contain children/);
+    expectInvalid((graph) => {
+      graph.screens[1]!.nodes[0]!.layout.minWidth = 300;
+      graph.screens[1]!.nodes[0]!.layout.maxWidth = 200;
+    }, /Minimum width cannot exceed maximum width/);
+    expectInvalid((graph) => {
+      graph.screens[1]!.nodes[0]!.layout.position = { x: 12, y: 20, z: 1 };
+    }, /position outside a freeform relation/);
+    expectInvalid((graph) => {
+      graph.screens[1]!.nodes[0]!.layout.adaptive = { compact: "stack", regular: "grid" };
+    }, /Only adaptive containers/);
+    expectInvalid((graph) => {
+      const leaf = structuredClone(graph.screens[1]!.nodes[0]!);
+      leaf.id = "receipt.free-child";
+      graph.screens[1]!.nodes = [{ ...structuredClone(leaf), id: "receipt.free", kind: "freeform", children: [leaf] }];
+    }, /resolve to freeform require every child/);
+    expectInvalid((graph) => {
+      const leaf = structuredClone(graph.screens[1]!.nodes[0]!);
+      leaf.id = "receipt.adaptive-child";
+      graph.screens[1]!.nodes = [{ ...structuredClone(leaf), id: "receipt.adaptive", kind: "adaptive", children: [leaf] }];
+    }, /Adaptive containers require compact and regular modes/);
+    expectInvalid((graph) => {
+      const leaf = structuredClone(graph.screens[1]!.nodes[0]!);
+      leaf.id = "receipt.adaptive-child";
+      graph.screens[1]!.nodes = [{
+        ...structuredClone(leaf),
+        id: "receipt.adaptive-freeform",
+        kind: "adaptive",
+        layout: {
+          ...leaf.layout,
+          adaptive: { compact: "stack", regular: "freeform" },
+        },
+        children: [leaf],
+      }];
+    }, /resolve to freeform require every child/);
+  });
+
+  it("bounds recursive depth and total nodes per screen", () => {
+    expectInvalid((graph) => {
+      let child = structuredClone(graph.screens[1]!.nodes[0]!);
+      child.id = "receipt.depth-leaf";
+      for (let depth = GRAPH_LIMITS.maxNodeDepth; depth >= 1; depth -= 1) {
+        child = { ...structuredClone(child), id: `receipt.depth-${depth}`, kind: "stack", children: [child] };
+      }
+      graph.screens[1]!.nodes = [child];
+    }, /maximum depth/);
+
+    expectInvalid((graph) => {
+      const template = structuredClone(graph.screens[1]!.nodes[0]!);
+      graph.screens[1]!.nodes = Array.from({ length: 9 }, (_, group) => ({
+        ...structuredClone(template),
+        id: `receipt.group-${group}`,
+        kind: "stack",
+        children: Array.from({ length: 64 }, (_, index) => ({
+          ...structuredClone(template),
+          id: `receipt.leaf-${group}-${index}`,
+        })),
+      }));
+    }, /exceeds 512 total nodes/);
+  });
+
+  it("rejects duplicate descendant ids and in-memory reference cycles", () => {
+    expectInvalid((graph) => {
+      const first = structuredClone(graph.screens[1]!.nodes[0]!);
+      first.id = "receipt.same";
+      const second = structuredClone(first);
+      graph.screens[1]!.nodes = [{ ...structuredClone(first), id: "receipt.group", kind: "stack", children: [first, second] }];
+    }, /Duplicate node id: receipt.same/);
+
+    const cyclic = makeValidGraph();
+    const node = cyclic.screens[1]!.nodes[0]! as GraphDraft;
+    node.children = [node];
+    expect(() => parseGraph(cyclic)).toThrow(/JSON-serializable/);
   });
 
   it("rejects unknown persisted fields instead of silently deleting them", () => {

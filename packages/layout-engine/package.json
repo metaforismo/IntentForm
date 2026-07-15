@@ -1,12 +1,9 @@
 {
-  "name": "@intentform/compiler-core",
+  "name": "@intentform/layout-engine",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "exports": { ".": "./src/index.ts" },
   "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" },
-  "dependencies": {
-    "@intentform/layout-engine": "workspace:*",
-    "@intentform/semantic-schema": "workspace:*"
-  }
+  "dependencies": { "@intentform/semantic-schema": "workspace:*" }
 }

@@ -9,6 +9,7 @@ import {
   getGraph,
   projectRevisions,
   previewMigration,
+  previewPatch,
   replaceGraph,
   revertProject,
   verifyProject,
@@ -32,8 +33,25 @@ interface ToolDefinition {
 }
 
 const PATCH_CONTRACT = `A GraphPatch is {"id": string, "rationale": string, "operations": Operation[]} where Operation is one of:
-{"op":"set-label","target":nodeId,"label":string} · {"op":"set-placement","target":nodeId,"compact":"inline"|"persistent-bottom","regular":"inline"|"persistent-bottom"} · {"op":"set-purpose","target":nodeId,"purpose":string} · {"op":"set-emphasis","target":nodeId,"emphasis":"quiet"|"normal"|"strong"} · {"op":"set-gap-token","target":nodeId,"token":string} · {"op":"set-padding-token","target":nodeId,"token":string} · {"op":"set-color-token","token":colorTokenName,"value":"#rrggbb"} · {"op":"set-fixture-value","screenId":screenId,"state":"idle"|"loading"|"empty"|"failed"|"completed","field":contractField,"value":string|number|boolean}.
+{"op":"set-label","target":nodeId,"label":string} · {"op":"set-placement","target":nodeId,"compact":"inline"|"persistent-bottom","regular":"inline"|"persistent-bottom"} · {"op":"set-purpose","target":nodeId,"purpose":string} · {"op":"set-emphasis","target":nodeId,"emphasis":"quiet"|"normal"|"strong"} · {"op":"set-gap-token","target":nodeId,"token":string} · {"op":"set-padding-token","target":nodeId,"token":string} · {"op":"set-layout","target":nodeId, ...layoutFields} · {"op":"move-node","target":nodeId,"screenId":screenId,"parent":nodeId|null,"index"?:number} · {"op":"set-color-token","token":colorTokenName,"value":"#rrggbb"} · {"op":"set-fixture-value","screenId":screenId,"state":"idle"|"loading"|"empty"|"failed"|"completed","field":contractField,"value":string|number|boolean}.
 Node IDs are stable; discover them with intentform_describe_project. The patch is schema-validated and rejected atomically if any operation is invalid.`;
+
+const PATCH_INPUT_SCHEMA = {
+  type: "object",
+  properties: {
+    patch: {
+      type: "object",
+      description: "GraphPatch object: {id, rationale, operations[]}",
+      properties: {
+        id: { type: "string" },
+        rationale: { type: "string" },
+        operations: { type: "array", items: { type: "object" } },
+      },
+      required: ["id", "rationale", "operations"],
+    },
+  },
+  required: ["patch"],
+} satisfies Record<string, unknown>;
 
 export const toolDefinitions: ToolDefinition[] = [
   {
@@ -72,29 +90,20 @@ export const toolDefinitions: ToolDefinition[] = [
     run: () => getGraph(projectDir),
   },
   {
+    name: "intentform_preview_patch",
+    description: `Preview a typed semantic transaction without writing the project. Returns the exact semantic diff, candidate graph fingerprint, and fresh compact verification that intentform_apply_patch would commit. ${PATCH_CONTRACT}`,
+    inputSchema: PATCH_INPUT_SCHEMA,
+    run: (args) => previewPatch(projectDir, args.patch),
+  },
+  {
     name: "intentform_apply_patch",
     description: `Apply a typed semantic patch to the project graph. Preferred way to edit: smallest change, schema-validated, revisioned, and re-verified. ${PATCH_CONTRACT} Returns the semantic diff, the new fingerprint and the compact-scenario verification findings.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        patch: {
-          type: "object",
-          description: "GraphPatch object: {id, rationale, operations[]}",
-          properties: {
-            id: { type: "string" },
-            rationale: { type: "string" },
-            operations: { type: "array", items: { type: "object" } },
-          },
-          required: ["id", "rationale", "operations"],
-        },
-      },
-      required: ["patch"],
-    },
+    inputSchema: PATCH_INPUT_SCHEMA,
     run: (args) => applyPatch(projectDir, args.patch),
   },
   {
     name: "intentform_replace_graph",
-    description: "Replace the entire Semantic Interface Graph (schemaVersion 0.1.0). Use for structural edits a typed patch cannot express (adding screens or nodes). The graph is fully validated; invalid graphs are rejected without side effects. Returns the semantic diff and fresh verification findings.",
+    description: "Replace the entire Semantic Interface Graph (current schemaVersion 0.2.0). Use for structural edits a typed patch cannot express (adding screens or nodes). Recursive hierarchy, depth, node-count and layout constraints are fully validated; invalid graphs are rejected without side effects. Returns the semantic diff and fresh verification findings.",
     inputSchema: {
       type: "object",
       properties: {

@@ -76,17 +76,22 @@ try {
             status: 409,
             contentType: "application/json",
             body: JSON.stringify({
-              error: "Project schema 0.0.1 must be migrated to 0.1.0 before it can be opened.",
+              error: "Project schema 0.0.1 must be migrated to 0.2.0 before it can be opened.",
               migration: {
                 status: "migration-required",
                 sourceFingerprint: "a".repeat(64),
                 fromVersion: "0.0.1",
-                toVersion: "0.1.0",
+                toVersion: "0.2.0",
                 diagnostics: [{
                   severity: "info",
                   code: "schema.migrated.0.0.1.to.0.1.0",
                   path: "schemaVersion",
                   message: "Converted schema 0.0.1 to 0.1.0.",
+                }, {
+                  severity: "info",
+                  code: "schema.migrated.0.1.0.to.0.2.0",
+                  path: "schemaVersion",
+                  message: "Converted schema 0.1.0 to 0.2.0.",
                 }],
               },
             }),
@@ -118,7 +123,7 @@ try {
       await importInput.setInputFiles({
         name: "invalid.intentform.json",
         mimeType: "application/json",
-        buffer: Buffer.from(JSON.stringify({ schemaVersion: "0.1.0" })),
+        buffer: Buffer.from(JSON.stringify({ schemaVersion: "0.2.0" })),
       });
       await page.getByRole("alert").getByText(/Import failed:/).waitFor();
       await page.getByRole("button", { name: "Dismiss launcher error" }).click();
@@ -203,6 +208,94 @@ try {
         throw new Error("Layer search did not filter non-matching semantic nodes");
       }
       await page.getByRole("button", { name: "Clear layer search" }).click();
+      await page.getByRole("button", { name: "Layout lab 20", exact: true }).click();
+      const adaptiveLayer = page.getByTestId("layer-layout-lab.adaptive");
+      const nestedGridLayer = page.getByTestId("layer-layout-lab.grid");
+      const nestedLeafLayer = page.getByTestId("layer-layout-lab.grid-a");
+      await nestedLeafLayer.waitFor();
+      const indentation = await Promise.all([adaptiveLayer, nestedGridLayer, nestedLeafLayer].map((locator) =>
+        locator.evaluate((element) => Number.parseFloat(getComputedStyle(element).paddingLeft)),
+      ));
+      if (!(indentation[0]! < indentation[1]! && indentation[1]! < indentation[2]!)) {
+        throw new Error(`Recursive layer indentation is not increasing (${indentation.join(", ")})`);
+      }
+      await nestedLeafLayer.click();
+      await page.getByTestId("semantic-inspector").getByText("layout-lab.grid-a", { exact: true }).waitFor();
+      if (await page.getByTestId("canvas-node-layout-lab.grid-a").getAttribute("data-node-selected") !== "true") {
+        throw new Error("Selecting a nested layer did not surface its canvas selection");
+      }
+      const selectionOverlay = page.getByTestId("selection-overlay");
+      await selectionOverlay.waitFor();
+      if (await selectionOverlay.getAttribute("data-selection-count") !== "1"
+        || await selectionOverlay.getAttribute("data-selection-ids") !== "layout-lab.grid-a") {
+        throw new Error("Nested selection did not create a single deterministic selection overlay");
+      }
+      const additiveSelectionModifier = process.platform === "darwin" ? "Meta" : "Control";
+      await page.getByTestId("layer-layout-lab.grid-b").click({ modifiers: [additiveSelectionModifier] });
+      await page.waitForFunction(() => document.querySelector('[data-testid="selection-overlay"]')?.getAttribute("data-selection-count") === "2");
+      await page.getByTestId("multi-selection-inspector").getByText("2 layers selected", { exact: true }).waitFor();
+      await selectionOverlay.getByRole("button", { name: "Group", exact: true }).click();
+      await page.getByTestId("layer-layout-lab.group-1").waitFor();
+      if (await page.getByTestId("canvas-node-layout-lab.group-1").getAttribute("data-node-selected") !== "true") {
+        throw new Error("Grouping did not select the committed semantic container");
+      }
+      await page.getByRole("button", { name: "Undo" }).click();
+      await page.getByTestId("layer-layout-lab.group-1").waitFor({ state: "detached" });
+      await nestedLeafLayer.click();
+      await page.waitForFunction(() => document.querySelector('[data-testid="selection-overlay"]')?.getAttribute("data-selection-ids") === "layout-lab.grid-a");
+
+      const moveHandle = page.getByRole("button", { name: "Move selected layer", exact: true });
+      const moveBox = await moveHandle.boundingBox();
+      const gridBBox = await page.getByTestId("canvas-node-layout-lab.grid-b").boundingBox();
+      if (!moveBox || !gridBBox) throw new Error("Direct reorder handles have no browser geometry");
+      await page.mouse.move(moveBox.x + moveBox.width / 2, moveBox.y + moveBox.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(gridBBox.x + gridBBox.width / 2, gridBBox.y + gridBBox.height + 8, { steps: 5 });
+      await page.mouse.up();
+      await page.waitForFunction(() => {
+        const container = document.querySelector('[data-container-id="layout-lab.grid"]');
+        return [...(container?.children ?? [])].map((child) => child.getAttribute("data-testid"))
+          .slice(0, 2).join("|") === "canvas-node-layout-lab.grid-b|canvas-node-layout-lab.grid-a";
+      });
+      await page.getByRole("button", { name: "Undo" }).click();
+      await page.waitForFunction(() => {
+        const container = document.querySelector('[data-container-id="layout-lab.grid"]');
+        return [...(container?.children ?? [])].map((child) => child.getAttribute("data-testid"))
+          .slice(0, 2).join("|") === "canvas-node-layout-lab.grid-a|canvas-node-layout-lab.grid-b";
+      });
+
+      const resizeHandle = page.getByRole("button", { name: "Resize selected layer southeast", exact: true });
+      const resizeBox = await resizeHandle.boundingBox();
+      if (!resizeBox) throw new Error("Resize handle has no browser geometry");
+      await page.mouse.move(resizeBox.x + resizeBox.width / 2, resizeBox.y + resizeBox.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(resizeBox.x + resizeBox.width / 2 + 36, resizeBox.y + resizeBox.height / 2 + 24, { steps: 5 });
+      await page.mouse.up();
+      await page.getByLabel("Fixed width").waitFor();
+      const committedWidth = Number(await page.getByLabel("Fixed width").inputValue());
+      const committedHeight = Number(await page.getByLabel("Fixed height").inputValue());
+      if (!Number.isFinite(committedWidth) || !Number.isFinite(committedHeight)
+        || committedWidth % 8 !== 0 || committedHeight % 8 !== 0) {
+        throw new Error(`Resize did not commit snapped semantic dimensions (${committedWidth} × ${committedHeight})`);
+      }
+      await page.getByRole("button", { name: "Undo" }).click();
+      await page.getByLabel("Fixed width").waitFor({ state: "detached" });
+      const adaptivePreview = page.getByTestId("canvas-node-layout-lab.adaptive").locator('[data-container-id="layout-lab.adaptive"]');
+      if (await adaptivePreview.getAttribute("data-layout-mode") !== "stack") {
+        throw new Error("Compact canvas did not resolve the shared adaptive mode to stack");
+      }
+      await page.getByLabel("Preview device").selectOption("regular-phone");
+      if (await adaptivePreview.getAttribute("data-layout-mode") !== "grid") {
+        throw new Error("Regular canvas did not resolve the shared adaptive mode to grid");
+      }
+      await page.getByLabel("Preview device").selectOption("compact-phone");
+      await nestedGridLayer.click();
+      await page.getByRole("button", { name: "Duplicate layer" }).click();
+      await page.getByTestId("layer-layout-lab.grid-copy").waitFor();
+      await page.getByTestId("layer-layout-lab.grid-a-copy").waitFor();
+      await page.getByRole("button", { name: "Undo" }).click();
+      await page.getByTestId("layer-layout-lab.grid-copy").waitFor({ state: "detached" });
+      await page.getByRole("button", { name: "Request payment 4", exact: true }).click();
       await page.getByTestId("layer-payment-request.amount").click();
       await page.getByRole("button", { name: "Duplicate layer" }).click();
       await page.getByTestId("layer-payment-request.amount-copy").waitFor();
@@ -278,6 +371,12 @@ try {
       await page.screenshot({ path: join(root, "output/playwright/studio-redesign-wide.png"), fullPage: true });
 
       await page.getByTestId("layer-payment-request.confirm").click();
+      const compactPlacement = page.getByRole("group", { name: "Compact placement" });
+      const inlinePlacement = compactPlacement.getByRole("button", { name: "Inline", exact: true });
+      const bottomPlacement = compactPlacement.getByRole("button", { name: "Bottom safe area", exact: true });
+      await inlinePlacement.click();
+      await page.waitForFunction(() => document.querySelector('[role="group"][aria-label="Compact placement"] button[aria-pressed="true"]')?.textContent?.trim() === "Inline");
+      await page.waitForFunction(() => document.querySelector('[data-testid="selection-overlay"]')?.getAttribute("data-selection-ids") === "payment-request.confirm");
       const action = page.getByTestId("canvas-node-payment-request.confirm");
       const bounds = await action.boundingBox();
       if (!bounds) throw new Error("Primary action is not visible on the semantic canvas");
@@ -286,8 +385,11 @@ try {
       await page.mouse.move(x, y);
       await page.mouse.down();
       for (const delta of [8, 18, 30, 44, 60, 76]) await page.mouse.move(x, y + delta);
-      await page.mouse.up();
       await page.getByText("Bottom safe area · compact", { exact: true }).waitFor();
+      await page.mouse.up();
+      if (await bottomPlacement.getAttribute("aria-pressed") !== "true") {
+        throw new Error("The placement preview did not commit the exact bottom-safe-area relation");
+      }
 
       const label = page.getByLabel("Label", { exact: true });
       await label.fill("Send verified request");
@@ -516,7 +618,7 @@ try {
       await transactionPage.getByRole("menu", { name: "Insert semantic component" })
         .getByRole("menuitem").filter({ hasText: "Status message" }).click();
       const insertedId = "payment-request.custom-status-message-2";
-      await transactionPage.getByTestId(`canvas-node-${insertedId}`).waitFor();
+      await transactionPage.getByTestId(`canvas-node-${insertedId}`).waitFor({ state: "attached" });
       await transactionPage.getByLabel("Visual state").selectOption("idle");
       await transactionPage.getByTestId(`canvas-node-${insertedId}`).waitFor({ state: "detached" });
       if (await transactionPage.getByTestId(`layer-${insertedId}`).getAttribute("data-state-visible") !== "false") {
@@ -532,14 +634,22 @@ try {
       await transactionPage.getByRole("heading", { name: "The repair changed the graph. Available output was regenerated; verification is still pending." }).waitFor();
       await transactionPage.getByRole("button", { name: "Design canvas" }).click();
       await transactionPage.getByTestId("layer-payment-request.confirm").click();
-      const repairedPlacement = transactionPage.getByText("Bottom safe area · compact", { exact: true });
+      const repairedPlacement = transactionPage.getByRole("group", { name: "Compact placement" });
+      const inlinePlacement = repairedPlacement.getByRole("button", { name: "Inline", exact: true });
+      const bottomPlacement = repairedPlacement.getByRole("button", { name: "Bottom safe area", exact: true });
       await repairedPlacement.waitFor();
+      if (await bottomPlacement.getAttribute("aria-pressed") !== "true") {
+        throw new Error("The accepted repair did not reach the compact placement control");
+      }
       const undo = transactionPage.getByRole("button", { name: "Undo" });
       if (await undo.isDisabled()) throw new Error("The accepted repair bypassed semantic undo history");
       await undo.click();
-      await repairedPlacement.waitFor({ state: "detached" });
+      await transactionPage.waitForFunction(() => document.querySelector('[role="group"][aria-label="Compact placement"] button[aria-pressed="true"]')?.textContent?.trim() === "Inline");
       await transactionPage.getByRole("button", { name: "Redo" }).click();
-      await repairedPlacement.waitFor();
+      await transactionPage.waitForFunction(() => document.querySelector('[role="group"][aria-label="Compact placement"] button[aria-pressed="true"]')?.textContent?.trim() === "Bottom safe area");
+      if (await inlinePlacement.getAttribute("aria-pressed") !== "false") {
+        throw new Error("Redo left both compact placement options active");
+      }
     },
   });
 

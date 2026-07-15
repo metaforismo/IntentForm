@@ -235,7 +235,7 @@ describe("local project trust boundary", () => {
         migration: { sourceFingerprint: string; fromVersion: string; toVersion: string };
       };
       expect(open.status).toBe(409);
-      expect(blocked.migration).toMatchObject({ fromVersion: "0.0.1", toVersion: "0.1.0" });
+      expect(blocked.migration).toMatchObject({ fromVersion: "0.0.1", toVersion: "0.2.0" });
       expect(readdirSync(projectDir)).toEqual(["graph.json"]);
 
       const stale = await migrateProjectRoute(jsonRequest(

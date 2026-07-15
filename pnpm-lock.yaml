@@ -63,6 +63,9 @@ importers:
       '@intentform/intent-interpreter':
         specifier: workspace:*
         version: link:../../packages/intent-interpreter
+      '@intentform/layout-engine':
+        specifier: workspace:*
+        version: link:../../packages/layout-engine
       '@intentform/mcp-server':
         specifier: workspace:*
         version: link:../../packages/mcp-server
@@ -118,6 +121,9 @@ importers:
 
   packages/compiler-core:
     dependencies:
+      '@intentform/layout-engine':
+        specifier: workspace:*
+        version: link:../layout-engine
       '@intentform/semantic-schema':
         specifier: workspace:*
         version: link:../semantic-schema
@@ -151,6 +157,12 @@ importers:
       zod:
         specifier: ^4.3.6
         version: 4.4.3
+
+  packages/layout-engine:
+    dependencies:
+      '@intentform/semantic-schema':
+        specifier: workspace:*
+        version: link:../semantic-schema
 
   packages/mcp-server:
     dependencies:

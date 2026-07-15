@@ -1,5 +1,6 @@
 import {
   classifyDevice,
+  flattenSemanticNodes,
   isTransactionalScreen,
   type PlatformTarget,
   type SemanticInterfaceGraph,
@@ -244,7 +245,8 @@ export function verifyGraph(
 
   const deviceClass = classifyDevice(scenario.viewport);
   for (const screen of graph.screens) {
-    const primaryAction = screen.nodes.find((node) => node.kind === "primary-action");
+    const screenNodes = flattenSemanticNodes(screen.nodes);
+    const primaryAction = screenNodes.find((node) => node.kind === "primary-action");
     const contract = graph.contracts.find((item) => item.screenId === screen.id);
     if (!primaryAction && isTransactionalScreen(screen, contract)) {
       findings.push({
@@ -281,7 +283,7 @@ export function verifyGraph(
       });
     }
 
-    const hasFailureState = screen.nodes.some((node) =>
+    const hasFailureState = screenNodes.some((node) =>
       node.states.some((state) => state.name === "failed"),
     );
     if (contract?.visualStates.includes("failed") && !hasFailureState) {

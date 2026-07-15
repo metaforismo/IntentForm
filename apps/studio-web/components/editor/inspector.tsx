@@ -5,10 +5,16 @@ import {
   ArrowUp,
   Copy,
   Cursor,
+  Stack,
   Trash,
   X,
 } from "@phosphor-icons/react";
-import type { SemanticInterfaceGraph, SemanticNode } from "@intentform/semantic-schema";
+import {
+  isContainerNode,
+  type ContainerNodeKind,
+  type SemanticInterfaceGraph,
+  type SemanticNode,
+} from "@intentform/semantic-schema";
 import { IconButton } from "../ui/controls";
 import { nodeNames, type DeviceProfile, type VisualState } from "./support";
 
@@ -26,11 +32,12 @@ export function SegmentedControl<T extends string>({
   return (
     <div className="grid gap-1.5">
       <span className="text-[11px] font-medium text-[var(--muted)]">{label}</span>
-      <div className="grid grid-flow-col rounded-lg bg-[var(--hover)] p-0.5">
+      <div role="group" aria-label={label} className="grid grid-flow-col rounded-lg bg-[var(--hover)] p-0.5">
         {options.map((option) => (
           <button
             key={option.value}
             type="button"
+            aria-pressed={value === option.value}
             onClick={() => onChange(option.value)}
             className={`min-h-7 truncate rounded-md px-2 text-[11px] font-medium transition-colors ${value === option.value ? "bg-[var(--seg-active)] text-[var(--t-strong)] shadow-[0_1px_4px_-2px_var(--shadow-strong)]" : "text-[var(--muted)] hover:text-[var(--t-strong)]"}`}
           >
@@ -82,6 +89,52 @@ function TextField({
   );
 }
 
+function NumberField({
+  label,
+  value,
+  min = 0,
+  max = 10_000,
+  step = 1,
+  onCommit,
+}: {
+  label: string;
+  value: number | undefined;
+  min?: number;
+  max?: number;
+  step?: number;
+  onCommit(next: number | undefined): void;
+}) {
+  return (
+    <label className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">
+      {label}
+      <input
+        key={`${label}-${value ?? "auto"}`}
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        defaultValue={value}
+        placeholder="Auto"
+        onBlur={(event) => {
+          const source = event.target.value.trim();
+          if (!source) {
+            if (value !== undefined) onCommit(undefined);
+            return;
+          }
+          const next = Number(source);
+          if (Number.isFinite(next) && next >= min && next <= max && next !== value) onCommit(next);
+        }}
+        onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); }}
+        className="min-h-8 rounded-lg border border-[var(--line)] bg-[var(--field)] px-2.5 font-mono text-[11px] font-normal text-[var(--t-strong)] outline-none transition-colors hover:border-[var(--line-strong)] focus:border-[var(--accent)]"
+      />
+    </label>
+  );
+}
+
+const adaptiveModes = [
+  "stack", "grid", "overlay", "scroll", "safe-area", "wrap", "split", "freeform", "page-flow",
+] as const satisfies readonly Exclude<ContainerNodeKind, "adaptive">[];
+
 function Section({ title, children }: { title?: string; children: React.ReactNode }) {
   return (
     <section className="grid gap-3 px-3.5 pb-4 pt-3">
@@ -95,6 +148,7 @@ interface InspectorProps {
   graph: SemanticInterfaceGraph;
   screen: SemanticInterfaceGraph["screens"][number];
   selectedNode: SemanticNode | null;
+  selectionCount: number;
   profile: DeviceProfile;
   visualState: VisualState;
   visible: boolean;
@@ -106,6 +160,8 @@ interface InspectorProps {
   onDuplicate(): void;
   onReorder(direction: -1 | 1): void;
   onDelete(): void;
+  onGroup(): void;
+  canDelete: boolean;
   onScreenTitle(title: string): void;
   onScreenPurpose(purpose: string): void;
   onClose(): void;
@@ -115,6 +171,7 @@ export function Inspector({
   graph,
   screen,
   selectedNode,
+  selectionCount,
   profile,
   visualState,
   visible,
@@ -126,6 +183,8 @@ export function Inspector({
   onDuplicate,
   onReorder,
   onDelete,
+  onGroup,
+  canDelete,
   onScreenTitle,
   onScreenPurpose,
   onClose,
@@ -213,7 +272,21 @@ export function Inspector({
         </div>
       ) : null}
 
-      {selectedNode ? (
+      {selectionCount > 1 ? (
+        <div data-testid="multi-selection-inspector" className="border-b border-[var(--line)] px-3.5 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <span className="block text-[12px] font-semibold text-[var(--ink)]">{selectionCount} layers selected</span>
+              <span className="mt-0.5 block text-[10px] text-[var(--faint)]">Drag as a block, or group into one semantic stack.</span>
+            </div>
+            <div className="flex shrink-0 gap-0.5">
+              <IconButton ariaLabel="Group selected layers" onClick={onGroup}><Stack size={13} /></IconButton>
+              <IconButton ariaLabel="Duplicate selected layers" onClick={onDuplicate}><Copy size={13} /></IconButton>
+              <IconButton ariaLabel="Delete selected layers" onClick={onDelete} danger><Trash size={13} /></IconButton>
+            </div>
+          </div>
+        </div>
+      ) : selectedNode ? (
         <div data-testid="semantic-inspector" className="divide-y divide-[var(--line)]">
           <div className="flex items-center justify-between py-2 pl-3.5 pr-2">
             <div className="min-w-0">
@@ -224,7 +297,7 @@ export function Inspector({
               <IconButton ariaLabel="Duplicate layer" onClick={onDuplicate}><Copy size={13} /></IconButton>
               <IconButton ariaLabel="Move layer up" onClick={() => onReorder(-1)}><ArrowUp size={13} /></IconButton>
               <IconButton ariaLabel="Move layer down" onClick={() => onReorder(1)}><ArrowDown size={13} /></IconButton>
-              <IconButton ariaLabel="Delete layer" onClick={onDelete} disabled={screen.nodes.length <= 1} danger><Trash size={13} /></IconButton>
+              <IconButton ariaLabel="Delete layer" onClick={onDelete} disabled={!canDelete} danger><Trash size={13} /></IconButton>
             </div>
           </div>
 
@@ -272,10 +345,63 @@ export function Inspector({
           <Section title="Layout">
             <SegmentedControl label="Axis" value={selectedNode.layout.axis} options={[{ value: "vertical", label: "Vertical" }, { value: "horizontal", label: "Horizontal" }, { value: "overlay", label: "Overlay" }]} onChange={(value) => updateNode((node) => { node.layout.axis = value; }, `Changed layout axis to ${value}.`)} />
             <SegmentedControl label="Width" value={selectedNode.layout.width} options={[{ value: "hug", label: "Hug" }, { value: "fill", label: "Fill" }, { value: "fixed", label: "Fixed" }]} onChange={(value) => updateNode((node) => { node.layout.width = value; }, `Changed semantic width to ${value}.`)} />
+            <SegmentedControl label="Height" value={selectedNode.layout.height} options={[{ value: "hug", label: "Hug" }, { value: "fill", label: "Fill" }, { value: "fixed", label: "Fixed" }]} onChange={(value) => updateNode((node) => { node.layout.height = value; }, `Changed semantic height to ${value}.`)} />
+            {selectedNode.layout.width === "fixed" || selectedNode.layout.height === "fixed" ? (
+              <div className="grid grid-cols-2 gap-2">
+                {selectedNode.layout.width === "fixed" ? <NumberField label="Fixed width" value={selectedNode.layout.fixedWidth} min={1} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.fixedWidth; else node.layout.fixedWidth = value; }, "Updated the fixed width constraint.")} /> : <span />}
+                {selectedNode.layout.height === "fixed" ? <NumberField label="Fixed height" value={selectedNode.layout.fixedHeight} min={1} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.fixedHeight; else node.layout.fixedHeight = value; }, "Updated the fixed height constraint.")} /> : null}
+              </div>
+            ) : null}
+            <div className="grid grid-cols-2 gap-2">
+              <NumberField label="Min width" value={selectedNode.layout.minWidth} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.minWidth; else node.layout.minWidth = value; }, "Updated the minimum width.")} />
+              <NumberField label="Max width" value={selectedNode.layout.maxWidth} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.maxWidth; else node.layout.maxWidth = value; }, "Updated the maximum width.")} />
+              <NumberField label="Min height" value={selectedNode.layout.minHeight} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.minHeight; else node.layout.minHeight = value; }, "Updated the minimum height.")} />
+              <NumberField label="Max height" value={selectedNode.layout.maxHeight} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.maxHeight; else node.layout.maxHeight = value; }, "Updated the maximum height.")} />
+            </div>
+            {selectedNode.layout.position ? (
+              <div className="grid grid-cols-3 gap-2" data-testid="freeform-position-controls">
+                {(["x", "y", "z"] as const).map((field) => (
+                  <NumberField
+                    key={field}
+                    label={`Position ${field.toUpperCase()}`}
+                    value={selectedNode.layout.position?.[field]}
+                    min={0}
+                    max={2_048}
+                    onCommit={(value) => {
+                      if (value === undefined) return;
+                      updateNode((node) => {
+                        if (node.layout.position) node.layout.position[field] = value;
+                      }, `Set freeform ${field.toUpperCase()} to ${value}.`);
+                    }}
+                  />
+                ))}
+              </div>
+            ) : null}
+            <SegmentedControl label="Align" value={selectedNode.layout.align} options={[{ value: "start", label: "Start" }, { value: "center", label: "Center" }, { value: "end", label: "End" }, { value: "stretch", label: "Stretch" }]} onChange={(value) => updateNode((node) => { node.layout.align = value; }, `Changed cross-axis alignment to ${value}.`)} />
+            <SegmentedControl label="Justify" value={selectedNode.layout.justify} options={[{ value: "start", label: "Start" }, { value: "center", label: "Center" }, { value: "end", label: "End" }, { value: "space-between", label: "Between" }]} onChange={(value) => updateNode((node) => { node.layout.justify = value; }, `Changed main-axis justification to ${value}.`)} />
+            <SegmentedControl label="Overflow" value={selectedNode.layout.overflow} options={[{ value: "visible", label: "Visible" }, { value: "clip", label: "Clip" }, { value: "scroll", label: "Scroll" }]} onChange={(value) => updateNode((node) => { node.layout.overflow = value; }, `Changed overflow behavior to ${value}.`)} />
             <div className="grid grid-cols-2 gap-2">
               <label className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">Gap token<select value={selectedNode.layout.gapToken} onChange={(event) => updateNode((node) => { node.layout.gapToken = event.target.value; }, `Bound gap to ${event.target.value}.`)} className="select-control font-mono text-[11px] font-normal">{Object.keys(graph.tokens.spacing).map((token) => <option key={token}>{token}</option>)}</select></label>
               <label className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">Padding token<select value={selectedNode.layout.paddingToken} onChange={(event) => updateNode((node) => { node.layout.paddingToken = event.target.value; }, `Bound padding to ${event.target.value}.`)} className="select-control font-mono text-[11px] font-normal">{Object.keys(graph.tokens.spacing).map((token) => <option key={token}>{token}</option>)}</select></label>
             </div>
+            {isContainerNode(selectedNode) ? (
+              <div className="grid grid-cols-2 gap-2">
+                <NumberField label="Columns" value={selectedNode.layout.columns} min={1} max={12} onCommit={(value) => { if (value !== undefined) updateNode((node) => { node.layout.columns = Math.round(value); }, `Set the container to ${Math.round(value)} columns.`); }} />
+                <NumberField label="Split ratio" value={selectedNode.layout.splitRatio} min={0.1} max={0.9} step={0.05} onCommit={(value) => { if (value !== undefined) updateNode((node) => { node.layout.splitRatio = value; }, `Set the split ratio to ${value}.`); }} />
+              </div>
+            ) : null}
+            {selectedNode.kind === "adaptive" && selectedNode.layout.adaptive ? (
+              <div className="grid grid-cols-2 gap-2">
+                {(["compact", "regular"] as const).map((deviceClass) => (
+                  <label key={deviceClass} className="grid gap-1.5 text-[11px] font-medium capitalize text-[var(--muted)]">
+                    {deviceClass} mode
+                    <select value={selectedNode.layout.adaptive![deviceClass]} onChange={(event) => updateNode((node) => { if (node.layout.adaptive) node.layout.adaptive[deviceClass] = event.target.value as typeof adaptiveModes[number]; }, `Changed the ${deviceClass} adaptive mode.`)} className="select-control text-[11px] font-normal">
+                      {adaptiveModes.map((mode) => <option key={mode} value={mode}>{mode}</option>)}
+                    </select>
+                  </label>
+                ))}
+              </div>
+            ) : null}
             {selectedNode.kind === "primary-action" && selectedNode.layout.placement ? (
               <SegmentedControl
                 label={`${profile.breakpoint === "compact" ? "Compact" : "Regular"} placement`}

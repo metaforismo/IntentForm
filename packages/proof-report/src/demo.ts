@@ -4,6 +4,22 @@ import {
   type SemanticNode,
 } from "@intentform/semantic-schema";
 
+const baseLayout = (
+  overrides: Partial<SemanticNode["layout"]> = {},
+): SemanticNode["layout"] => ({
+  axis: "vertical",
+  width: "fill",
+  height: "hug",
+  align: "stretch",
+  justify: "start",
+  overflow: "visible",
+  columns: 2,
+  splitRatio: 0.5,
+  gapToken: "space.16",
+  paddingToken: "space.20",
+  ...overrides,
+});
+
 const baseNode = (
   id: string,
   kind: SemanticNode["kind"],
@@ -14,13 +30,35 @@ const baseNode = (
   id,
   kind,
   intent: { purpose, label, importance },
-  layout: { axis: "vertical", width: "fill", gapToken: "space.16", paddingToken: "space.20" },
+  layout: baseLayout(),
   style: { role: kind, emphasis: importance === "primary" ? "strong" : "normal" },
   accessibility: { label, live: kind === "status-message" ? "polite" : "off" },
   states: [],
   interactions: [],
   provenance: { author: "system", revision: 0 },
+  children: [],
 });
+
+const containerNode = (
+  id: string,
+  kind: Extract<SemanticNode["kind"], "stack" | "grid" | "overlay" | "scroll" | "safe-area" | "adaptive" | "wrap" | "split" | "freeform" | "page-flow">,
+  children: SemanticNode[],
+  layout: Partial<SemanticNode["layout"]> = {},
+): SemanticNode => ({
+  ...baseNode(id, kind, `Arrange the ${id} content`, id),
+  layout: baseLayout({
+    gapToken: "space.12",
+    paddingToken: "space.16",
+    ...layout,
+  }),
+  children,
+});
+
+const positionedLeaf = (id: string, x: number, y: number, z: number): SemanticNode => {
+  const leaf = baseNode(id, "status-message", `Show the ${id} layout sample`, id);
+  leaf.layout.position = { x, y, z };
+  return leaf;
+};
 
 const primaryAction = (
   screenId: string,
@@ -29,13 +67,9 @@ const primaryAction = (
   event: string,
 ): SemanticNode => ({
   ...baseNode(`${screenId}.confirm`, "primary-action", "Advance the product flow", label, "primary"),
-  layout: {
-    axis: "vertical",
-    width: "fill",
-    gapToken: "space.16",
-    paddingToken: "space.20",
+  layout: baseLayout({
     placement: { compact, regular: "inline" },
-  },
+  }),
   interactions: [{ event, requires: [] }],
 });
 
@@ -43,7 +77,7 @@ export const demoBrief =
   "Create a calm payment flow for independent professionals. Keep the amount, recipient and next action unmistakable. Never expose blockchain terminology. Every failure must provide a recovery path.";
 
 export const demoGraph: SemanticInterfaceGraph = parseGraph({
-  schemaVersion: "0.1.0",
+  schemaVersion: "0.2.0",
   product: {
     name: "Verdant Pay",
     audience: ["independent professionals", "non-technical customers"],
@@ -107,6 +141,44 @@ export const demoGraph: SemanticInterfaceGraph = parseGraph({
       nodes: [
         baseNode("receipt.summary", "receipt-summary", "Show completion evidence", "Payment request sent", "primary"),
         primaryAction("receipt", "Done", "persistent-bottom", "onDone"),
+      ],
+    },
+    {
+      id: "layout-lab",
+      title: "Layout lab",
+      purpose: "Exercise every recursive layout relation",
+      route: "/layout-lab",
+      nodes: [
+        containerNode("layout-lab.adaptive", "adaptive", [
+          containerNode("layout-lab.safe-area", "safe-area", [
+            containerNode("layout-lab.grid", "grid", [
+              baseNode("layout-lab.grid-a", "status-message", "Show the first grid sample", "Grid A"),
+              baseNode("layout-lab.grid-b", "status-message", "Show the second grid sample", "Grid B"),
+            ], { columns: 2 }),
+          ]),
+          containerNode("layout-lab.overlay", "overlay", [
+            baseNode("layout-lab.overlay-a", "status-message", "Show the overlay base", "Overlay base"),
+            baseNode("layout-lab.overlay-b", "status-message", "Show the overlay foreground", "Overlay foreground"),
+          ], { axis: "overlay" }),
+          containerNode("layout-lab.scroll", "scroll", [
+            containerNode("layout-lab.wrap", "wrap", [
+              baseNode("layout-lab.wrap-a", "status-message", "Show the first wrapped sample", "Wrap A"),
+              baseNode("layout-lab.wrap-b", "status-message", "Show the second wrapped sample", "Wrap B"),
+            ], { axis: "horizontal", columns: 2 }),
+          ], { axis: "horizontal", overflow: "scroll" }),
+          containerNode("layout-lab.split", "split", [
+            containerNode("layout-lab.page-flow", "page-flow", [
+              baseNode("layout-lab.page", "status-message", "Show the page flow sample", "Page flow"),
+            ]),
+            containerNode("layout-lab.stack", "stack", [
+              baseNode("layout-lab.stack-item", "status-message", "Show the stack sample", "Stack"),
+            ]),
+          ], { axis: "horizontal", splitRatio: 0.4 }),
+          containerNode("layout-lab.freeform", "freeform", [
+            positionedLeaf("layout-lab.freeform-a", 12, 18, 2),
+            positionedLeaf("layout-lab.freeform-b", 84, 44, 1),
+          ], { height: "fixed", fixedHeight: 180, overflow: "clip" }),
+        ], { adaptive: { compact: "stack", regular: "grid" }, columns: 2 }),
       ],
     },
   ],

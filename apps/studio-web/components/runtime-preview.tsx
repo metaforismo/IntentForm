@@ -57,7 +57,7 @@ function RuntimeNode({
 }: {
   node: PlatformIRNode;
   data: Record<string, unknown>;
-  emit: () => void;
+  emit: (node: PlatformIRNode) => void;
 }) {
   if (!isVisible(node, data)) return null;
   const value = display(data, node.bindings.value);
@@ -81,21 +81,40 @@ function RuntimeNode({
   } else if (node.kind === "primary-action") {
     const compact = node.layout.compactPlacement === "persistent-bottom" ? "persistent" : "inline";
     const regular = node.layout.regularPlacement === "persistent-bottom" ? "persistent" : "inline";
-    content = <button className={`runtime-primary runtime-compact-${compact} runtime-regular-${regular}`} type="button" {...accessibility} onClick={emit}>{node.intent.label}</button>;
+    content = <button className={`runtime-primary runtime-compact-${compact} runtime-regular-${regular}`} type="button" {...accessibility} onClick={() => emit(node)}>{node.intent.label}</button>;
   } else if (node.kind === "secondary-action") {
-    content = <button className="runtime-secondary" type="button" {...accessibility} onClick={emit}>{node.intent.label}</button>;
+    content = <button className="runtime-secondary" type="button" {...accessibility} onClick={() => emit(node)}>{node.intent.label}</button>;
   } else if (node.kind === "status-message") {
     content = <p role="status" className="runtime-status" {...accessibility}>{node.intent.label}</p>;
-  } else {
+  } else if (node.kind === "receipt-summary") {
     content = <section className="runtime-receipt" {...accessibility}><span>{node.intent.label}</span>{detail ? <strong>{detail}</strong> : null}{value ? <small>{value}</small> : null}</section>;
+  } else {
+    content = (
+      <div
+        className={`runtime-container runtime-mode-compact-${node.layout.compactMode} runtime-mode-regular-${node.layout.regularMode}`}
+        style={{ "--runtime-columns": node.layout.columns, "--runtime-split-ratio": node.layout.splitRatio } as CSSProperties}
+        {...accessibility}
+      >
+        {node.children.map((child) => <RuntimeNode key={child.id} node={child} data={data} emit={emit} />)}
+      </div>
+    );
   }
   const semantics = {
     "--runtime-node-gap": `${node.layout.gap}px`,
     "--runtime-node-padding": `${node.layout.padding}px`,
+    "--runtime-x": `${node.layout.position?.x ?? 0}px`,
+    "--runtime-y": `${node.layout.position?.y ?? 0}px`,
+    "--runtime-z": node.layout.position?.z ?? 0,
+    width: node.layout.fixedWidth,
+    height: node.layout.fixedHeight,
+    minWidth: node.layout.minWidth,
+    maxWidth: node.layout.maxWidth,
+    minHeight: node.layout.minHeight,
+    maxHeight: node.layout.maxHeight,
   } as CSSProperties;
   return (
     <div
-      className={`runtime-node runtime-axis-${node.layout.axis} runtime-width-${node.layout.width} runtime-emphasis-${node.style.emphasis} runtime-importance-${node.intent.importance}`}
+      className={`runtime-node runtime-axis-${node.layout.axis} runtime-width-${node.layout.width} runtime-height-${node.layout.height} runtime-align-${node.layout.align} runtime-justify-${node.layout.justify} runtime-overflow-${node.layout.overflow} runtime-emphasis-${node.style.emphasis} runtime-importance-${node.intent.importance}`}
       data-intent-purpose={node.intent.purpose}
       data-intent-role={node.style.role}
       style={semantics}
@@ -143,8 +162,8 @@ function RuntimeScreen({
             key={node.id}
             node={node}
             data={data}
-            emit={() => {
-              for (const event of node.events) {
+            emit={(emittingNode) => {
+              for (const event of emittingNode.events) {
                 const target = screen.eventTargets[event.name];
                 if (target) navigate(target);
               }

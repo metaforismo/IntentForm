@@ -42,7 +42,7 @@ export function createStarterGraph(input: StarterProjectInput): SemanticInterfac
   const copy = starterCopy[input.projectType];
 
   return parseGraph({
-    schemaVersion: "0.1.0",
+    schemaVersion: "0.2.0",
     product: {
       name,
       audience: [audience],

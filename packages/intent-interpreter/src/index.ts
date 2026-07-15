@@ -3,6 +3,7 @@ import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import {
   applyGraphPatch,
+  flattenSemanticNodes,
   graphPatchSchema,
   parseGraph,
   semanticInterfaceGraphSchema,
@@ -197,7 +198,9 @@ async function generateWithCorrection<T>(options: {
 }
 
 function deterministicEdit(instruction: string, graph: SemanticInterfaceGraph, screenId?: string): GraphPatch {
-  const scope = screenId ? graph.screens.find((screen) => screen.id === screenId)?.nodes ?? [] : graph.screens.flatMap((screen) => screen.nodes);
+  const scope = screenId
+    ? flattenSemanticNodes(graph.screens.find((screen) => screen.id === screenId)?.nodes ?? [])
+    : graph.screens.flatMap((screen) => flattenSemanticNodes(screen.nodes));
   const primary = scope.find((node) => node.kind === "primary-action");
   if (!primary) throw new Error("The replay graph has no primary action to edit safely.");
 

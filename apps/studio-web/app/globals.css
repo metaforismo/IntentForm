@@ -252,6 +252,28 @@ textarea:focus-visible,
 .runtime-axis-overlay > * > * { grid-area: 1 / 1; }
 .runtime-width-hug { width: fit-content; max-width: 100%; }
 .runtime-width-fill, .runtime-width-fixed { width: 100%; }
+.runtime-height-fill { min-height: 100%; }
+.runtime-align-start { align-self: flex-start; }
+.runtime-align-center { align-self: center; }
+.runtime-align-end { align-self: flex-end; }
+.runtime-align-stretch { align-self: stretch; }
+.runtime-justify-center { justify-content: center; }
+.runtime-justify-end { justify-content: flex-end; }
+.runtime-justify-space-between { justify-content: space-between; }
+.runtime-overflow-clip { overflow: hidden; }
+.runtime-overflow-scroll { overflow: auto; }
+.runtime-container { display: flex; min-width: 0; flex-direction: column; }
+.runtime-mode-compact-grid { display: grid; grid-template-columns: repeat(var(--runtime-columns), minmax(0, 1fr)); }
+.runtime-mode-compact-overlay, .runtime-mode-compact-freeform { display: grid; position: relative; }
+.runtime-mode-compact-overlay > .runtime-node { grid-area: 1 / 1; }
+.runtime-mode-compact-freeform > .runtime-node { position: absolute; left: var(--runtime-x); top: var(--runtime-y); z-index: var(--runtime-z); }
+.runtime-mode-compact-scroll { overflow: auto; }
+.runtime-mode-compact-safe-area { padding-top: max(16px, env(safe-area-inset-top)); padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+.runtime-mode-compact-wrap { flex-flow: row wrap; }
+.runtime-mode-compact-wrap > .runtime-node { flex: 1 1 calc((100% - (var(--runtime-columns) - 1) * var(--runtime-node-gap, 0px)) / var(--runtime-columns)); }
+.runtime-mode-compact-split { flex-direction: row; }
+.runtime-mode-compact-split > .runtime-node:first-child { flex: var(--runtime-split-ratio); }
+.runtime-mode-compact-split > .runtime-node:not(:first-child) { flex: calc(1 - var(--runtime-split-ratio)); }
 .runtime-emphasis-quiet { opacity: .72; }
 .runtime-emphasis-strong > * { font-weight: 700; }
 .runtime-importance-primary > * { filter: saturate(1.08); }
@@ -279,6 +301,19 @@ textarea:focus-visible,
 .runtime-preview-spinner { width: 24px; height: 24px; border: 2px solid #dfe6e2; border-top-color: #397461; border-radius: 50%; animation: runtime-preview-spin 700ms linear infinite; }
 @keyframes runtime-preview-spin { to { transform: rotate(360deg); } }
 @media (min-width: 391px) and (min-height: 701px) {
+  .runtime-container { display: flex; flex-direction: column; flex-wrap: nowrap; grid-template-columns: none; overflow: visible; position: static; padding-top: 0; padding-bottom: 0; }
+  .runtime-container > .runtime-node { position: relative; inset: auto; grid-area: auto; flex: initial; }
+  .runtime-mode-regular-grid { display: grid; grid-template-columns: repeat(var(--runtime-columns), minmax(0, 1fr)); }
+  .runtime-mode-regular-overlay, .runtime-mode-regular-freeform { display: grid; position: relative; }
+  .runtime-mode-regular-overlay > .runtime-node { grid-area: 1 / 1; }
+  .runtime-mode-regular-freeform > .runtime-node { position: absolute; left: var(--runtime-x); top: var(--runtime-y); z-index: var(--runtime-z); }
+  .runtime-mode-regular-scroll { overflow: auto; }
+  .runtime-mode-regular-safe-area { padding-top: max(16px, env(safe-area-inset-top)); padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+  .runtime-mode-regular-wrap { display: flex; flex-flow: row wrap; }
+  .runtime-mode-regular-wrap > .runtime-node { flex: 1 1 calc((100% - (var(--runtime-columns) - 1) * var(--runtime-node-gap, 0px)) / var(--runtime-columns)); }
+  .runtime-mode-regular-split { display: flex; flex-direction: row; }
+  .runtime-mode-regular-split > .runtime-node:first-child { flex: var(--runtime-split-ratio); }
+  .runtime-mode-regular-split > .runtime-node:not(:first-child) { flex: calc(1 - var(--runtime-split-ratio)); }
   .runtime-primary.runtime-compact-persistent { position: static; }
   .runtime-primary.runtime-regular-persistent { position: fixed; right: max(22px, calc((100vw - 396px) / 2)); bottom: max(18px, env(safe-area-inset-bottom)); left: max(22px, calc((100vw - 396px) / 2)); }
 }

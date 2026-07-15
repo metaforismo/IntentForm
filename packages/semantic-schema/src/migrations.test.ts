@@ -7,28 +7,44 @@ import {
   previewGraphMigration,
 } from "./migrations";
 
-function fixture(version: "0.0.1" | "0.1.0"): unknown {
+function fixture(version: "0.0.1" | "0.1.0" | "0.2.0"): unknown {
   return JSON.parse(readFileSync(new URL(`./fixtures/migrations/${version}.json`, import.meta.url), "utf8"));
 }
 
 describe("Semantic Interface Graph migrations", () => {
-  it("converts the 0.0.1 golden fixture to byte-stable canonical 0.1.0 output", () => {
+  it("converts the 0.0.1 golden fixture through every step to byte-stable canonical 0.2.0 output", () => {
     const preview = previewGraphMigration(fixture("0.0.1"));
-    const expected = previewGraphMigration(fixture("0.1.0"));
+    const expected = previewGraphMigration(fixture("0.2.0"));
 
     expect(preview).toMatchObject({
       fromVersion: "0.0.1",
       toVersion: CURRENT_SCHEMA_VERSION,
       changed: true,
-      diagnostics: [{
-        severity: "info",
-        code: "schema.migrated.0.0.1.to.0.1.0",
-        path: "schemaVersion",
-      }],
+      diagnostics: [
+        { severity: "info", code: "schema.migrated.0.0.1.to.0.1.0", path: "schemaVersion" },
+        { severity: "info", code: "schema.migrated.0.1.0.to.0.2.0", path: "schemaVersion" },
+      ],
     });
     expect(preview.graph).toEqual(expected.graph);
     expect(preview.canonical).toBe(expected.canonical);
     expect(preview.canonical).toBe(stableSerialize(JSON.parse(preview.canonical)));
+  });
+
+  it("converts a flat 0.1.0 graph into recursive roots with explicit layout defaults", () => {
+    const preview = previewGraphMigration(fixture("0.1.0"));
+    expect(preview).toMatchObject({ fromVersion: "0.1.0", toVersion: "0.2.0", changed: true });
+    expect(preview.graph.screens[0]?.nodes[0]).toMatchObject({
+      children: [],
+      layout: {
+        height: "hug",
+        align: "stretch",
+        justify: "start",
+        overflow: "visible",
+        columns: 2,
+        splitRatio: 0.5,
+      },
+    });
+    expect(preview.graph).toEqual(previewGraphMigration(fixture("0.2.0")).graph);
   });
 
   it("preserves stable IDs, platform declarations, capabilities, and overrides", () => {
@@ -48,7 +64,7 @@ describe("Semantic Interface Graph migrations", () => {
   });
 
   it("treats the current version as an identity conversion", () => {
-    const input = fixture("0.1.0");
+    const input = fixture("0.2.0");
     const preview = previewGraphMigration(input);
     expect(preview.changed).toBe(false);
     expect(preview.graph).toEqual(input);
@@ -58,7 +74,7 @@ describe("Semantic Interface Graph migrations", () => {
   it.each([
     [{ product: {} }, "schema.version.missing"],
     [{ schemaVersion: "0.0.0" }, "schema.version.unsupported"],
-    [{ schemaVersion: "0.2.0" }, "schema.version.future"],
+    [{ schemaVersion: "0.3.0" }, "schema.version.future"],
     [{ schemaVersion: "not-semver" }, "schema.version.unsupported"],
   ])("fails closed for unsupported version input %#", (input, code) => {
     expect(() => previewGraphMigration(input)).toThrow(GraphMigrationError);

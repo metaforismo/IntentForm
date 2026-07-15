@@ -38,6 +38,9 @@ import {
   type Icon,
 } from "@phosphor-icons/react";
 import {
+  flattenGraphNodes,
+  flattenSemanticNodes,
+  findSemanticNode,
   parseGraph,
   type SemanticInterfaceGraph,
   type SemanticNode,
@@ -49,10 +52,28 @@ import { Inspector } from "./editor/inspector";
 import { LayersPanel } from "./editor/layers-panel";
 import { CommandMenu, ShortcutsSheet, type EditorCommand } from "./editor/overlays";
 import {
+  duplicateNodesTransaction,
+  duplicateNodeTransaction,
   duplicateScreenTransaction,
   editorTransactionError,
   insertionStateBindings,
+  locateEditorNode,
+  moveSelectionTransaction,
+  removeNodesTransaction,
+  removeNodeTransaction,
+  reorderChildrenTransaction,
+  setFreeformPositionsTransaction,
+  updateNodeLayoutTransaction,
+  wrapNodesTransaction,
 } from "./editor/transactions";
+import {
+  normalizeNodeSelection,
+  selectionParentId,
+  updateNodeSelection,
+  type Point,
+  type ResizeCandidate,
+  type SelectionIntent,
+} from "./editor/direct-manipulation";
 import {
   deviceProfiles,
   isFormControl,
@@ -100,7 +121,32 @@ const catalogIcons: Record<SemanticNode["kind"], Icon> = {
   "recipient-identity": UserCircle,
   "status-message": WarningCircle,
   "receipt-summary": CheckCircle,
+  stack: Stack,
+  grid: TreeStructure,
+  overlay: Stack,
+  scroll: ListDashes,
+  "safe-area": FrameCorners,
+  adaptive: ArrowsOutSimple,
+  wrap: Stack,
+  split: TreeStructure,
+  freeform: Cursor,
+  "page-flow": ListDashes,
 };
+
+const newNodeLayout = (kind: SemanticNode["kind"]): SemanticNode["layout"] => ({
+  axis: "vertical",
+  width: "fill",
+  height: "hug",
+  align: "stretch",
+  justify: "start",
+  overflow: kind === "scroll" ? "scroll" : "visible",
+  columns: 2,
+  splitRatio: 0.5,
+  ...(kind === "adaptive" ? { adaptive: { compact: "stack" as const, regular: "grid" as const } } : {}),
+  gapToken: "space.16",
+  paddingToken: "space.20",
+  ...(kind === "primary-action" ? { placement: { compact: "inline" as const, regular: "inline" as const } } : {}),
+});
 
 export function ManualEditor({
   graph,
@@ -136,6 +182,7 @@ export function ManualEditor({
   const [layerQuery, setLayerQuery] = useState("");
   const [previewMode, setPreviewMode] = useState(false);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>(() => selectedNodeId ? [selectedNodeId] : []);
   const [panelWidths, setPanelWidths] = useState(() => {
     if (typeof window !== "undefined") {
       try {
@@ -258,8 +305,38 @@ export function ManualEditor({
   };
 
   const screen = graph.screens.find((item) => item.id === selectedScreen) ?? graph.screens[0];
-  const selectedNode = screen?.nodes.find((node) => node.id === selectedNodeId) ?? null;
+  const selectedNode = screen && selectedNodeId ? findSemanticNode(screen.nodes, selectedNodeId) ?? null : null;
+  const selectedLocation = selectedNodeId ? locateEditorNode(graph, selectedNodeId) : null;
   const activeProfile = deviceProfiles.find((profile) => profile.id === deviceId) ?? deviceProfiles[0]!;
+
+  useEffect(() => {
+    const validIds = new Set(screen ? flattenSemanticNodes(screen.nodes).map((node) => node.id) : []);
+    setSelectedNodeIds((current) => {
+      if (!selectedNodeId || !validIds.has(selectedNodeId)) return [];
+      if (current.includes(selectedNodeId) && current.every((id) => validIds.has(id))) return current;
+      return [selectedNodeId];
+    });
+  }, [screen, selectedNodeId]);
+
+  const selectNode = useCallback((nodeId: string | null, intent: SelectionIntent = "replace") => {
+    if (!nodeId) {
+      setSelectedNodeIds([]);
+      onSelectNode(null);
+      return;
+    }
+    const targetScreen = graph.screens.find((candidate) => flattenSemanticNodes(candidate.nodes).some((node) => node.id === nodeId));
+    if (!targetScreen) return;
+    const preorder = flattenSemanticNodes(targetScreen.nodes).map((node) => node.id);
+    const current = selectedNodeIds.filter((id) => preorder.includes(id));
+    const next = updateNodeSelection(current, nodeId, preorder, intent);
+    setSelectedNodeIds(next);
+    onSelectNode(next.includes(nodeId) ? nodeId : next.at(-1) ?? null);
+  }, [graph.screens, onSelectNode, selectedNodeIds]);
+
+  const normalizedSelection = useMemo(
+    () => screen ? normalizeNodeSelection(graph, screen.id, selectedNodeIds) : [],
+    [graph, screen, selectedNodeIds],
+  );
 
   const statusByScreen = useMemo(() => {
     const map = new Map<string, FrameStatus>();
@@ -295,17 +372,9 @@ export function ManualEditor({
     }
   }, [onCommit, onNotice]);
 
-  const findNode = (draft: SemanticInterfaceGraph, nodeId: string) => {
-    for (const item of draft.screens) {
-      const node = item.nodes.find((candidate) => candidate.id === nodeId);
-      if (node) return { screen: item, node };
-    }
-    return null;
-  };
-
   const updateNodeById = useCallback((nodeId: string, mutate: (node: SemanticNode) => void, notice: string) => {
     const draft = structuredClone(graph);
-    const found = findNode(draft, nodeId);
+    const found = locateEditorNode(draft, nodeId);
     if (!found) return;
     mutate(found.node);
     found.node.provenance = { author: "human", revision: found.node.provenance.revision + 1 };
@@ -329,10 +398,10 @@ export function ManualEditor({
 
   const moveNode = useCallback((nodeId: string, direction: -1 | 1) => {
     const draft = structuredClone(graph);
-    const found = findNode(draft, nodeId);
+    const found = locateEditorNode(draft, nodeId);
     if (!found) return;
-    const nodes = found.screen.nodes;
-    const index = nodes.findIndex((node) => node.id === nodeId);
+    const nodes = found.siblings;
+    const index = found.index;
     const target = index + direction;
     if (index < 0 || target < 0 || target >= nodes.length) return;
     [nodes[index], nodes[target]] = [nodes[target]!, nodes[index]!];
@@ -352,34 +421,138 @@ export function ManualEditor({
   }, [commitDraft, graph]);
 
   const deleteNodeById = useCallback((nodeId: string) => {
-    const draft = structuredClone(graph);
-    const found = findNode(draft, nodeId);
-    if (!found || found.screen.nodes.length <= 1) return;
-    found.screen.nodes = found.screen.nodes.filter((node) => node.id !== nodeId);
-    const committed = commitDraft(draft, `Removed ${nodeNames[found.node.kind]} from ${found.screen.title}.`);
-    if (committed && selectedNodeId === nodeId) onSelectNode(found.screen.nodes[0]?.id ?? null);
-  }, [commitDraft, graph, onSelectNode, selectedNodeId]);
+    const found = locateEditorNode(graph, nodeId);
+    if (!found) return;
+    try {
+      const next = removeNodeTransaction(graph, nodeId);
+      const committed = commitDraft(next, `Removed ${nodeNames[found.node.kind]} from ${found.screen.title}.`);
+      if (committed && selectedNodeId === nodeId) {
+        const remainingScreen = committed.screens.find((item) => item.id === found.screen.id);
+        onSelectNode(found.parent?.id ?? remainingScreen?.nodes[0]?.id ?? null);
+      }
+    } catch (error) {
+      onNotice(editorTransactionError(error));
+    }
+  }, [commitDraft, graph, onNotice, onSelectNode, selectedNodeId]);
 
   const duplicateNodeById = useCallback((nodeId: string) => {
-    const draft = structuredClone(graph);
-    const found = findNode(draft, nodeId);
+    const found = locateEditorNode(graph, nodeId);
     if (!found) return;
-    const index = found.screen.nodes.findIndex((node) => node.id === nodeId);
-    let copyIndex = 2;
-    let id = `${nodeId}-copy`;
-    while (draft.screens.some((item) => item.nodes.some((node) => node.id === id))) {
-      id = `${nodeId}-copy-${copyIndex}`;
-      copyIndex += 1;
+    try {
+      const result = duplicateNodeTransaction(graph, nodeId);
+      const committed = commitDraft(result.graph, `Duplicated ${nodeNames[found.node.kind]} with its semantic descendants.`);
+      if (committed) onSelectNode(result.nodeId);
+    } catch (error) {
+      onNotice(editorTransactionError(error));
     }
-    const copy = structuredClone(found.node);
-    copy.id = id;
-    copy.intent.label = `${found.node.intent.label} copy`;
-    copy.accessibility.label = copy.intent.label;
-    copy.provenance = { author: "human", revision: 0 };
-    found.screen.nodes.splice(index + 1, 0, copy);
-    const committed = commitDraft(draft, `Duplicated ${nodeNames[found.node.kind]} as a new semantic node.`);
-    if (committed) onSelectNode(id);
-  }, [commitDraft, graph, onSelectNode]);
+  }, [commitDraft, graph, onNotice, onSelectNode]);
+
+  const duplicateSelection = useCallback(() => {
+    if (normalizedSelection.length === 0) return;
+    try {
+      const result = duplicateNodesTransaction(graph, normalizedSelection);
+      const committed = commitDraft(result.graph, `Duplicated ${result.nodeIds.length} selected ${result.nodeIds.length === 1 ? "layer" : "layers"} atomically.`);
+      if (committed) {
+        setSelectedNodeIds(result.nodeIds);
+        onSelectNode(result.nodeIds.at(-1) ?? null);
+      }
+    } catch (error) {
+      onNotice(editorTransactionError(error));
+    }
+  }, [commitDraft, graph, normalizedSelection, onNotice, onSelectNode]);
+
+  const deleteSelection = useCallback(() => {
+    if (normalizedSelection.length === 0) return;
+    const fallback = locateEditorNode(graph, normalizedSelection[0]!)?.parent?.id ?? null;
+    try {
+      const next = removeNodesTransaction(graph, normalizedSelection);
+      const committed = commitDraft(next, `Removed ${normalizedSelection.length} selected ${normalizedSelection.length === 1 ? "layer" : "layers"}.`);
+      if (committed) {
+        const fallbackExists = fallback ? locateEditorNode(committed, fallback) : null;
+        setSelectedNodeIds(fallbackExists ? [fallback!] : []);
+        onSelectNode(fallbackExists ? fallback : null);
+      }
+    } catch (error) {
+      onNotice(editorTransactionError(error));
+    }
+  }, [commitDraft, graph, normalizedSelection, onNotice, onSelectNode]);
+
+  const moveSelection = useCallback((direction: -1 | 1) => {
+    if (normalizedSelection.length === 0) return;
+    try {
+      const next = moveSelectionTransaction(graph, normalizedSelection, direction);
+      commitDraft(next, `Moved ${normalizedSelection.length === 1 ? "the selected layer" : "the selected layers"} ${direction < 0 ? "up" : "down"}.`);
+    } catch (error) {
+      onNotice(editorTransactionError(error));
+    }
+  }, [commitDraft, graph, normalizedSelection, onNotice]);
+
+  const groupSelection = useCallback(() => {
+    if (!screen || normalizedSelection.length < 2) return;
+    const parentId = selectionParentId(graph, normalizedSelection);
+    if (parentId === undefined) {
+      onNotice("Edit rejected: Grouped layers must share one parent. No changes were saved.");
+      return;
+    }
+    const existingIds = new Set(flattenGraphNodes(graph).map((node) => node.id));
+    let index = 1;
+    while (existingIds.has(`${screen.id}.group-${index}`)) index += 1;
+    const id = `${screen.id}.group-${index}`;
+    const wrapper: SemanticNode = {
+      id,
+      kind: "stack",
+      intent: { purpose: "Keep selected layers together", label: "Group", importance: "supporting" },
+      layout: newNodeLayout("stack"),
+      style: { role: "group", emphasis: "normal" },
+      accessibility: { label: "Grouped content", live: "off" },
+      states: [],
+      interactions: [],
+      provenance: { author: "human", revision: 0 },
+      children: [],
+    };
+    try {
+      const next = wrapNodesTransaction(graph, screen.id, normalizedSelection, wrapper);
+      const committed = commitDraft(next, `Grouped ${normalizedSelection.length} layers in a semantic stack.`);
+      if (committed) {
+        setSelectedNodeIds([id]);
+        onSelectNode(id);
+      }
+    } catch (error) {
+      onNotice(editorTransactionError(error));
+    }
+  }, [commitDraft, graph, normalizedSelection, onNotice, onSelectNode, screen]);
+
+  const reorderSelection = useCallback((screenId: string, parentId: string | null, orderedIds: string[]) => {
+    try {
+      const next = reorderChildrenTransaction(graph, screenId, parentId, orderedIds);
+      commitDraft(next, `Reordered ${normalizedSelection.length === 1 ? "a layer" : `${normalizedSelection.length} selected layers`} by direct manipulation.`);
+    } catch (error) {
+      onNotice(editorTransactionError(error));
+    }
+  }, [commitDraft, graph, normalizedSelection.length, onNotice]);
+
+  const moveFreeformSelection = useCallback((positions: Readonly<Record<string, Point>>) => {
+    try {
+      const next = setFreeformPositionsTransaction(graph, positions);
+      commitDraft(next, `Moved ${Object.keys(positions).length} freeform ${Object.keys(positions).length === 1 ? "layer" : "layers"} on the semantic grid.`);
+    } catch (error) {
+      onNotice(editorTransactionError(error));
+    }
+  }, [commitDraft, graph, onNotice]);
+
+  const resizeNode = useCallback((nodeId: string, size: ResizeCandidate) => {
+    try {
+      const next = updateNodeLayoutTransaction(graph, nodeId, (layout) => {
+        layout.width = "fixed";
+        layout.fixedWidth = size.width;
+        layout.height = "fixed";
+        layout.fixedHeight = size.height;
+      });
+      commitDraft(next, `Resized the selected layer to ${Math.round(size.width)} × ${Math.round(size.height)}.`);
+    } catch (error) {
+      onNotice(editorTransactionError(error));
+    }
+  }, [commitDraft, graph, onNotice]);
 
   const insertNode = (kind: SemanticNode["kind"]) => {
     if (!screen) return;
@@ -388,18 +561,21 @@ export function ManualEditor({
     const draft = structuredClone(graph);
     const draftScreen = draft.screens.find((item) => item.id === screen.id);
     if (!draftScreen) return;
-    const count = draftScreen.nodes.filter((node) => node.kind === kind).length + 1;
+    const existingIds = new Set(flattenGraphNodes(draft).map((node) => node.id));
+    let count = flattenSemanticNodes(draftScreen.nodes).filter((node) => node.kind === kind).length + 1;
+    while (existingIds.has(`${screen.id}.custom-${kind}-${count}`)) count += 1;
     const id = `${screen.id}.custom-${kind}-${count}`;
     draftScreen.nodes.push({
       id,
       kind,
       intent: { purpose: preset.purpose, label: preset.label, importance: preset.importance },
-      layout: { axis: "vertical", width: "fill", gapToken: "space.16", paddingToken: "space.20", ...(kind === "primary-action" ? { placement: { compact: "inline" as const, regular: "inline" as const } } : {}) },
+      layout: newNodeLayout(kind),
       style: { role: kind, emphasis: preset.importance === "primary" ? "strong" : preset.importance === "secondary" ? "quiet" : "normal" },
       accessibility: { label: preset.label, live: preset.live },
       states: insertionStateBindings(activeVisualState),
       interactions: [],
       provenance: { author: "human", revision: 0 },
+      children: [],
     });
     const committed = commitDraft(draft, `Inserted a semantic ${nodeNames[kind].toLowerCase()}.`);
     if (committed) {
@@ -466,12 +642,13 @@ export function ManualEditor({
         id: nodeId,
         kind: "status-message",
         intent: { purpose: "Describe the screen purpose", label: "Start shaping this screen", importance: "supporting" },
-        layout: { axis: "vertical", width: "fill", gapToken: "space.16", paddingToken: "space.20" },
+        layout: newNodeLayout("status-message"),
         style: { role: "status-message", emphasis: "normal" },
         accessibility: { label: "Start shaping this screen", live: "polite" },
         states: [],
         interactions: [],
         provenance: { author: "human", revision: 0 },
+        children: [],
       }],
     });
     const committed = commitDraft(draft, "Added a new semantic screen without introducing platform code.");
@@ -500,7 +677,7 @@ export function ManualEditor({
      graph (interactions + flows), so the board's arrows update immediately. */
   const setActionEvent = useCallback((nodeId: string, eventName: string | null) => {
     const draft = structuredClone(graph);
-    const found = findNode(draft, nodeId);
+    const found = locateEditorNode(draft, nodeId);
     if (!found) return;
     const previous = found.node.interactions[0]?.event ?? null;
     found.node.interactions = eventName ? [{ event: eventName, requires: [] }] : [];
@@ -561,7 +738,7 @@ export function ManualEditor({
     if (!screen) return;
     setVisualStateByScreen((current) => ({ ...current, [screen.id]: nextState }));
     if (selectedNode && selectedNode.states.length > 0 && !selectedNode.states.some((binding) => binding.name === nextState)) {
-      onSelectNode(null);
+      selectNode(null);
     }
   };
 
@@ -589,11 +766,11 @@ export function ManualEditor({
         setMobilePanel(null);
         return;
       }
-      onSelectNode(null);
+      selectNode(null);
     },
-    duplicate: () => { if (selectedNode) duplicateNodeById(selectedNode.id); },
-    remove: () => { if (selectedNode) deleteNodeById(selectedNode.id); },
-    moveSelected: (direction) => { if (selectedNode) moveNode(selectedNode.id, direction); },
+    duplicate: duplicateSelection,
+    remove: deleteSelection,
+    moveSelected: moveSelection,
     navigate: (direction) => {
       if (!screen) return;
       if (direction === "left" || direction === "right") {
@@ -601,14 +778,14 @@ export function ManualEditor({
         const next = graph.screens[index + (direction === "right" ? 1 : -1)];
         if (next) {
           onSelectScreen(next.id);
-          onSelectNode(next.nodes[0]?.id ?? null);
+          selectNode(next.nodes[0]?.id ?? null);
         }
         return;
       }
-      const visible = screen.nodes.filter((node) => isNodeVisible(node, activeVisualState));
+      const visible = flattenSemanticNodes(screen.nodes).filter((node) => isNodeVisible(node, activeVisualState));
       const index = visible.findIndex((node) => node.id === selectedNodeId);
       const next = index === -1 ? visible[0] : visible[index + (direction === "down" ? 1 : -1)];
-      if (next) onSelectNode(next.id);
+      if (next) selectNode(next.id);
     },
     zoomToSelection: () => { if (screen) canvasApi.current?.fitScreen(screen.id, true); },
     undo: () => { if (canUndo) onUndo(); },
@@ -732,9 +909,12 @@ export function ManualEditor({
     ...(graph.screens.length > 1 && screen ? [
       { label: "Delete current screen", section: "Edit", icon: Trash, action: () => deleteScreen(screen.id) },
     ] : []),
-    ...(selectedNode ? [
-      { label: "Duplicate selected layer", shortcut: "⌘D", section: "Edit", icon: Copy, action: () => duplicateNodeById(selectedNode.id) },
-      { label: "Delete selected layer", shortcut: "⌫", section: "Edit", icon: Trash, action: () => deleteNodeById(selectedNode.id) },
+    ...(normalizedSelection.length > 0 ? [
+      { label: `Duplicate selected ${normalizedSelection.length === 1 ? "layer" : "layers"}`, shortcut: "⌘D", section: "Edit", icon: Copy, action: duplicateSelection },
+      { label: `Delete selected ${normalizedSelection.length === 1 ? "layer" : "layers"}`, shortcut: "⌫", section: "Edit", icon: Trash, action: deleteSelection },
+    ] : []),
+    ...(normalizedSelection.length > 1 ? [
+      { label: "Group selected layers", section: "Edit", icon: Stack, action: groupSelection },
     ] : []),
     ...deviceProfiles.map((profile) => ({
       label: `Preview on ${profile.label.toLowerCase()} (${profile.detail})`,
@@ -794,7 +974,7 @@ export function ManualEditor({
       <LayersPanel
         graph={graph}
         screen={screen}
-        selectedNodeId={selectedNodeId}
+        selectedNodeIds={selectedNodeIds}
         activeVisualState={activeVisualState}
         railTab={railTab}
         visible={mobilePanel === "structure"}
@@ -803,7 +983,7 @@ export function ManualEditor({
         onRailTab={setRailTab}
         onLayerQuery={setLayerQuery}
         onSelectScreen={onSelectScreen}
-        onSelectNode={onSelectNode}
+        onSelectNode={selectNode}
         onHoverNode={setHoveredNodeId}
         onAddScreen={addScreen}
         onReorderScreens={reorderScreens}
@@ -848,6 +1028,7 @@ export function ManualEditor({
           graph={graph}
           selectedScreen={screen.id}
           selectedNodeId={selectedNodeId}
+          selectedNodeIds={selectedNodeIds}
           hoveredNodeId={hoveredNodeId}
           tool={tool}
           spaceHeld={spaceHeld}
@@ -857,12 +1038,19 @@ export function ManualEditor({
           visualStateFor={visualStateFor}
           frameStatus={(screenId) => statusByScreen.get(screenId) ?? { errors: 0, warnings: 0 }}
           onSelectScreen={onSelectScreen}
-          onSelectNode={onSelectNode}
+          onSelectNode={selectNode}
           onAnchor={(nodeId, placement) => updateNodeById(nodeId, (draft) => {
             if (draft.layout.placement) draft.layout.placement[activeProfile.breakpoint] = placement;
           }, placement === "persistent-bottom"
             ? `Anchored primary action to the ${activeProfile.breakpoint} bottom safe area.`
             : `Returned primary action to the ${activeProfile.breakpoint} semantic stack.`)}
+          onReorderSelection={reorderSelection}
+          onMoveFreeform={moveFreeformSelection}
+          onResizeNode={resizeNode}
+          onGroupSelection={groupSelection}
+          onDuplicateSelection={duplicateSelection}
+          onDeleteSelection={deleteSelection}
+          onMoveSelection={moveSelection}
           onNodeCommand={handleNodeCommand}
           onRenameNode={(nodeId, _screenId, label) => updateNodeById(nodeId, (draft) => {
             draft.intent.label = label;
@@ -1002,7 +1190,8 @@ export function ManualEditor({
       <Inspector
         graph={graph}
         screen={screen}
-        selectedNode={selectedNode}
+        selectedNode={normalizedSelection.length === 1 ? selectedNode : null}
+        selectionCount={normalizedSelection.length}
         profile={activeProfile}
         visualState={activeVisualState}
         visible={mobilePanel === "inspector"}
@@ -1011,9 +1200,11 @@ export function ManualEditor({
         onUpdateFixture={updateFixture}
         onSetActionEvent={setActionEvent}
         onSetFlowTarget={setFlowTarget}
-        onDuplicate={() => { if (selectedNode) duplicateNodeById(selectedNode.id); }}
-        onReorder={(direction) => { if (selectedNode) moveNode(selectedNode.id, direction); }}
-        onDelete={() => { if (selectedNode) deleteNodeById(selectedNode.id); }}
+        onDuplicate={duplicateSelection}
+        onReorder={moveSelection}
+        onDelete={deleteSelection}
+        onGroup={groupSelection}
+        canDelete={Boolean(selectedLocation && (selectedLocation.parent || selectedLocation.screen.nodes.length > 1))}
         onScreenTitle={(title) => updateScreenField("title", title)}
         onScreenPurpose={(purpose) => updateScreenField("purpose", purpose)}
         onClose={() => closeEditorPanel("inspector")}

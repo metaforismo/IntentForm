@@ -9,7 +9,7 @@ import {
   Trash,
   Warning,
 } from "@phosphor-icons/react";
-import type { SemanticInterfaceGraph, SemanticNode } from "@intentform/semantic-schema";
+import { findSemanticNode, type SemanticInterfaceGraph, type SemanticNode } from "@intentform/semantic-schema";
 import { motion } from "motion/react";
 import {
   useCallback,
@@ -20,7 +20,9 @@ import {
   useState,
   type RefObject,
 } from "react";
-import { NodePreview } from "./node-preview";
+import { NodePreview, semanticNodeBoxStyle } from "./node-preview";
+import { SelectionOverlay } from "./selection-overlay";
+import type { Point, ResizeCandidate, SelectionIntent } from "./direct-manipulation";
 import {
   FRAME_GAP,
   FRAME_HEADER_WORLD,
@@ -52,6 +54,7 @@ interface CanvasStageProps {
   graph: SemanticInterfaceGraph;
   selectedScreen: string;
   selectedNodeId: string | null;
+  selectedNodeIds: readonly string[];
   hoveredNodeId: string | null;
   tool: EditorTool;
   spaceHeld: boolean;
@@ -61,8 +64,15 @@ interface CanvasStageProps {
   visualStateFor(screenId: string): VisualState;
   frameStatus(screenId: string): FrameStatus;
   onSelectScreen(screenId: string): void;
-  onSelectNode(nodeId: string | null): void;
+  onSelectNode(nodeId: string | null, intent?: SelectionIntent): void;
   onAnchor(nodeId: string, placement: "inline" | "persistent-bottom"): void;
+  onReorderSelection(screenId: string, parentId: string | null, orderedIds: string[]): void;
+  onMoveFreeform(positions: Readonly<Record<string, Point>>): void;
+  onResizeNode(nodeId: string, size: ResizeCandidate): void;
+  onGroupSelection(): void;
+  onDuplicateSelection(): void;
+  onDeleteSelection(): void;
+  onMoveSelection(direction: -1 | 1): void;
   onNodeCommand(command: NodeCommand, nodeId: string, screenId: string): void;
   onRenameNode(nodeId: string, screenId: string, label: string): void;
   onOpenVerify(): void;
@@ -79,6 +89,7 @@ export function CanvasStage({
   graph,
   selectedScreen,
   selectedNodeId,
+  selectedNodeIds,
   hoveredNodeId,
   tool,
   spaceHeld,
@@ -90,6 +101,13 @@ export function CanvasStage({
   onSelectScreen,
   onSelectNode,
   onAnchor,
+  onReorderSelection,
+  onMoveFreeform,
+  onResizeNode,
+  onGroupSelection,
+  onDuplicateSelection,
+  onDeleteSelection,
+  onMoveSelection,
   onNodeCommand,
   onRenameNode,
   onOpenVerify,
@@ -481,31 +499,14 @@ export function CanvasStage({
                 <h2 className="mb-6 mt-1.5 text-[27px] font-semibold leading-[1.05] tracking-[-.045em]">{screen.title}</h2>
                 <div className="flex min-h-0 flex-1 flex-col" style={{ gap: 18 }}>
                   {visibleNodes.map((node) => {
-                    const selected = node.id === selectedNodeId && isSelectedScreen;
+                    const selected = selectedNodeIds.includes(node.id) && isSelectedScreen;
                     const persistent = node.kind === "primary-action" && node.layout.placement?.[profile.breakpoint] === "persistent-bottom";
-                    const draggable = !previewMode && tool === "select" && node.kind === "primary-action";
                     const flowStep = previewMode && node.interactions[0]
                       ? graph.flows.flatMap((flow) => flow.steps).find((step) => step.from === screen.id && step.event === node.interactions[0]?.event)
                       : undefined;
                     return (
                       <motion.div
                         layout
-                        drag={draggable ? "y" : false}
-                        dragConstraints={{ top: -72, bottom: 72 }}
-                        dragElastic={0.12}
-                        dragSnapToOrigin
-                        onDragEnd={(_, info) => {
-                          if (node.kind !== "primary-action") return;
-                          if (info.offset.y > 28 && node.layout.placement?.[profile.breakpoint] !== "persistent-bottom") {
-                            onSelectScreen(screen.id);
-                            onSelectNode(node.id);
-                            onAnchor(node.id, "persistent-bottom");
-                          } else if (info.offset.y < -28 && node.layout.placement?.[profile.breakpoint] === "persistent-bottom") {
-                            onSelectScreen(screen.id);
-                            onSelectNode(node.id);
-                            onAnchor(node.id, "inline");
-                          }
-                        }}
                         key={node.id}
                         data-testid={`canvas-node-${node.id}`}
                         data-selected={selected}
@@ -526,7 +527,7 @@ export function CanvasStage({
                             return;
                           }
                           onSelectScreen(screen.id);
-                          onSelectNode(node.id);
+                          onSelectNode(node.id, event.shiftKey ? "range" : event.metaKey || event.ctrlKey ? "toggle" : "replace");
                         }}
                         onDoubleClick={(event) => {
                           event.stopPropagation();
@@ -562,23 +563,20 @@ export function CanvasStage({
                             onSelectNode(node.id);
                           }
                         }}
-                        className={`canvas-node rounded-[18px] outline-none ${persistent ? "mt-auto" : ""} ${draggable ? "cursor-ns-resize" : flowStep ? "cursor-pointer" : "cursor-default"}`}
+                        className={`canvas-node relative rounded-[18px] outline-none ${persistent ? "mt-auto" : ""} ${flowStep ? "cursor-pointer" : "cursor-default"}`}
+                        style={semanticNodeBoxStyle(node)}
                       >
-                        <NodePreview node={node} graph={graph} fixture={fixture} state={state} />
-                        {selected && !previewMode ? (
-                          <>
-                            <span className="pointer-events-none absolute -inset-1.5 rounded-[20px] border-2 border-[var(--select)]" />
-                            {[["-left-2.5", "-top-2.5"], ["-right-2.5", "-top-2.5"], ["-bottom-2.5", "-left-2.5"], ["-bottom-2.5", "-right-2.5"]].map((position) => (
-                              <span key={position.join()} className={`pointer-events-none absolute size-2 rounded-[2px] border border-[var(--select-deep)] bg-white ${position.join(" ")}`} />
-                            ))}
-                            <span className="pointer-events-none absolute -top-8 left-0 rounded-md bg-[var(--select-deep)] px-2 py-1 font-mono text-[10px] text-white">{nodeNames[node.kind]}</span>
-                          </>
-                        ) : null}
-                        {selected && persistent && !previewMode ? (
-                          <span className="pointer-events-none absolute -bottom-9 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-[#85b4ee] bg-[#edf5ff] px-2.5 py-1 font-mono text-[10px] text-[var(--select-deep)]">
-                            Bottom safe area · {profile.breakpoint}
-                          </span>
-                        ) : null}
+                        <NodePreview
+                          node={node}
+                          graph={graph}
+                          fixture={fixture}
+                          state={state}
+                          viewport={profile}
+                          selectedNodeId={isSelectedScreen ? selectedNodeId : null}
+                          selectedNodeIds={isSelectedScreen ? selectedNodeIds : []}
+                          hoveredNodeId={hoveredNodeId}
+                          {...(!previewMode && isSelectedScreen ? { onSelectNode: (nodeId: string, intent: SelectionIntent) => onSelectNode(nodeId, intent) } : {})}
+                        />
                       </motion.div>
                     );
                   })}
@@ -593,6 +591,28 @@ export function CanvasStage({
             </div>
           );
         })}
+        <SelectionOverlay
+          graph={graph}
+          screenId={selectedScreen}
+          selectedNodeIds={selectedNodeIds}
+          worldRef={worldRef}
+          enabled={!previewMode && tool === "select"}
+          breakpoint={profile.breakpoint}
+          getScale={() => viewRef.current.scale}
+          onReorder={onReorderSelection}
+          onMoveFreeform={onMoveFreeform}
+          onResize={onResizeNode}
+          onAnchor={onAnchor}
+          onGroup={onGroupSelection}
+          onDuplicate={onDuplicateSelection}
+          onDelete={onDeleteSelection}
+          onOpenContextMenu={(clientPosition) => {
+            const nodeId = selectedNodeId ?? selectedNodeIds.at(-1);
+            const escaped = nodeId && typeof CSS !== "undefined" && CSS.escape ? CSS.escape(nodeId) : nodeId;
+            const element = escaped ? worldRef.current?.querySelector<HTMLElement>(`[data-testid="canvas-node-${escaped}"]`) : null;
+            if (element && nodeId) openContextMenu(element, nodeId, selectedScreen, clientPosition);
+          }}
+        />
       </div>
 
       {rename ? (
@@ -639,13 +659,13 @@ export function CanvasStage({
           {([
             { label: "Rename label", icon: PencilSimple, run: () => {
               const screen = graph.screens.find((item) => item.id === contextMenu.screenId);
-              const node = screen?.nodes.find((item) => item.id === contextMenu.nodeId);
+              const node = screen ? findSemanticNode(screen.nodes, contextMenu.nodeId) : undefined;
               if (node && screen) startRename(node, screen.id);
             } },
-            { label: "Duplicate", icon: Copy, shortcut: "⌘D", run: () => onNodeCommand("duplicate", contextMenu.nodeId, contextMenu.screenId) },
-            { label: "Move up", icon: ArrowUp, shortcut: "⌥↑", run: () => onNodeCommand("move-up", contextMenu.nodeId, contextMenu.screenId) },
-            { label: "Move down", icon: ArrowDown, shortcut: "⌥↓", run: () => onNodeCommand("move-down", contextMenu.nodeId, contextMenu.screenId) },
-            { label: "Delete", icon: Trash, shortcut: "⌫", run: () => onNodeCommand("delete", contextMenu.nodeId, contextMenu.screenId), danger: true },
+            { label: selectedNodeIds.length > 1 ? "Duplicate selection" : "Duplicate", icon: Copy, shortcut: "⌘D", run: () => selectedNodeIds.length > 1 && selectedNodeIds.includes(contextMenu.nodeId) ? onDuplicateSelection() : onNodeCommand("duplicate", contextMenu.nodeId, contextMenu.screenId) },
+            { label: "Move up", icon: ArrowUp, shortcut: "⌥↑", run: () => selectedNodeIds.length > 1 && selectedNodeIds.includes(contextMenu.nodeId) ? onMoveSelection(-1) : onNodeCommand("move-up", contextMenu.nodeId, contextMenu.screenId) },
+            { label: "Move down", icon: ArrowDown, shortcut: "⌥↓", run: () => selectedNodeIds.length > 1 && selectedNodeIds.includes(contextMenu.nodeId) ? onMoveSelection(1) : onNodeCommand("move-down", contextMenu.nodeId, contextMenu.screenId) },
+            { label: selectedNodeIds.length > 1 ? "Delete selection" : "Delete", icon: Trash, shortcut: "⌫", run: () => selectedNodeIds.length > 1 && selectedNodeIds.includes(contextMenu.nodeId) ? onDeleteSelection() : onNodeCommand("delete", contextMenu.nodeId, contextMenu.screenId), danger: true },
           ] as const).map((item) => {
             const Icon = item.icon;
             return (

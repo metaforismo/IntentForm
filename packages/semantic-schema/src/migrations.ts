@@ -5,8 +5,8 @@ import {
   type SemanticInterfaceGraph,
 } from "./index";
 
-export const CURRENT_SCHEMA_VERSION = "0.1.0" as const;
-export const SUPPORTED_SCHEMA_VERSIONS = ["0.0.1", CURRENT_SCHEMA_VERSION] as const;
+export const CURRENT_SCHEMA_VERSION = "0.2.0" as const;
+export const SUPPORTED_SCHEMA_VERSIONS = ["0.0.1", "0.1.0", CURRENT_SCHEMA_VERSION] as const;
 
 export type SupportedSchemaVersion = typeof SUPPORTED_SCHEMA_VERSIONS[number];
 export type MigrationDiagnosticSeverity = "info" | "warning" | "error";
@@ -47,6 +47,10 @@ type MigrationStep = {
    identities unless that version's ADR explicitly documents an ID rewrite. */
 const migrationSteps: Partial<Record<SupportedSchemaVersion, MigrationStep>> = {
   "0.0.1": {
+    toVersion: "0.1.0",
+    convert: (input) => ({ ...structuredClone(input), schemaVersion: "0.1.0" }),
+  },
+  "0.1.0": {
     toVersion: CURRENT_SCHEMA_VERSION,
     convert: (input) => ({ ...structuredClone(input), schemaVersion: CURRENT_SCHEMA_VERSION }),
   },
