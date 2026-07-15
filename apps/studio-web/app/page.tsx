@@ -1,5 +1,5 @@
-import { Studio } from "@/components/studio";
+import { Launcher } from "@/components/launcher";
 
 export default function HomePage() {
-  return <Studio />;
+  return <Launcher />;
 }

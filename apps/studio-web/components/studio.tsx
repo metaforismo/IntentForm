@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ArrowLeft,
   ArrowsCounterClockwise,
   BracketsCurly,
   CaretDown,
@@ -31,6 +32,13 @@ import {
 import { verifyGraph, type VerificationFinding } from "@intentform/verifier";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  clearBrowserProject,
+  loadBrowserProject,
+  saveBrowserProject,
+  type ProjectSource,
+  type ProjectType,
+} from "../lib/browser-projects";
 import { ManualEditor, type WorkflowStage } from "./manual-editor";
 import { deviceProfiles, type DeviceId } from "./editor/support";
 import { compileStudioTarget } from "./target-compilation";
@@ -57,8 +65,6 @@ const scenarios = Object.fromEntries(deviceProfiles.map((profile) => [
   profile.id,
   { label: profile.label, viewport: { width: profile.width, height: profile.height } },
 ])) as Record<ScenarioId, { label: string; viewport: { width: number; height: number } }>;
-
-const DRAFT_KEY = "intentform-project-draft-v1";
 
 function getSessionId(): string {
   const key = "intentform-session";
@@ -127,6 +133,8 @@ export function Studio() {
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [requestFailure, setRequestFailure] = useState<RequestFailure | null>(null);
   const [localProjectFingerprint, setLocalProjectFingerprint] = useState<string | null>(null);
+  const [projectType, setProjectType] = useState<ProjectType>("application");
+  const [projectSource, setProjectSource] = useState<ProjectSource>("example");
   const lastCommit = useRef({ at: 0, notice: "" });
   const graphRef = useRef(graph);
   graphRef.current = graph;
@@ -163,20 +171,28 @@ export function Studio() {
 
   useEffect(() => {
     try {
-      const saved = window.localStorage.getItem(DRAFT_KEY);
-      if (saved) {
-        const restored = parseGraph(JSON.parse(saved));
+      const recovered = loadBrowserProject(window.localStorage);
+      if (recovered.status === "ready") {
+        const restored = recovered.project.graph;
         const nextScreen = restored.screens.find((screen) => screen.id === selectedScreen) ?? restored.screens[0];
         setGraph(restored);
         setBaseline(restored);
+        setProjectType(recovered.project.projectType);
+        setProjectSource(recovered.project.source);
+        setLocalProjectFingerprint(recovered.project.localFingerprint ?? null);
         setSelectedScreen(nextScreen?.id ?? "");
         setSelectedNodeId(nextScreen?.nodes[0]?.id ?? null);
-        setNotice("Restored the local semantic draft.");
+        setNotice(`Restored ${restored.product.name} from browser recovery.`);
+      } else if (recovered.status === "invalid") {
+        setNotice("Browser recovery needs attention. Return to the project launcher to inspect or discard it.");
+        window.location.replace("/");
+        return;
+      } else {
+        setNotice("Opened the verified example because no browser project was selected.");
       }
+      setDraftReady(true);
     } catch {
-      window.localStorage.removeItem(DRAFT_KEY);
-      setNotice("The local draft was invalid, so IntentForm reopened the verified sample.");
-    } finally {
+      setNotice("Browser recovery is unavailable, so this session is temporary.");
       setDraftReady(true);
     }
     // Restoring the draft is a mount-only concern.
@@ -185,12 +201,13 @@ export function Studio() {
 
   useEffect(() => {
     if (!draftReady) return;
-    try {
-      window.localStorage.setItem(DRAFT_KEY, JSON.stringify(graph));
-    } catch {
-      setNoticeText("The semantic graph is valid, but this browser could not save the local draft.");
-    }
-  }, [draftReady, graph]);
+    const saved = saveBrowserProject(window.localStorage, graph, {
+      projectType,
+      source: projectSource,
+      ...(localProjectFingerprint ? { localFingerprint: localProjectFingerprint } : {}),
+    });
+    if (!saved.ok) setNoticeText(saved.message);
+  }, [draftReady, graph, localProjectFingerprint, projectSource, projectType]);
 
   useEffect(() => {
     if (/failed|could not|invalid|quota|unavailable|rejected/i.test(notice)) setNoticeOpen(true);
@@ -329,9 +346,12 @@ export function Studio() {
   };
 
   const resetProject = () => {
-    window.localStorage.removeItem(DRAFT_KEY);
+    clearBrowserProject(window.localStorage);
     setGraph(demoGraph);
     setBaseline(demoGraph);
+    setProjectType("application");
+    setProjectSource("example");
+    setLocalProjectFingerprint(null);
     setHistory([]);
     setFuture([]);
     setSelectedScreen("payment-request");
@@ -372,6 +392,8 @@ export function Studio() {
         setHistory([]);
         setFuture([]);
         setLocalProjectFingerprint(result.fingerprint);
+        setProjectType("application");
+        setProjectSource("local");
         const nextScreen = nextGraph.screens.find((screen) => screen.id === selectedScreen) ?? nextGraph.screens[0];
         setSelectedScreen(nextScreen?.id ?? "");
         setSelectedNodeId(nextScreen?.nodes[0]?.id ?? null);
@@ -482,6 +504,9 @@ export function Studio() {
         else {
           setGraph(nextGraph);
           setBaseline(nextGraph);
+          setProjectType("application");
+          setProjectSource("created");
+          setLocalProjectFingerprint(null);
           setHistory([]);
           setFuture([]);
         }
@@ -575,9 +600,12 @@ export function Studio() {
                   <div ref={projectMenuContent} role="menu" aria-label="IntentForm project" className="menu-pop absolute left-0 top-10 z-[6] w-64 p-1.5">
                     <div className="border-b border-[var(--line)] px-2.5 pb-2 pt-1.5">
                       <strong className="block text-[12px]">{graph.product.name}</strong>
-                      <span className="mt-0.5 block font-mono text-[10px] text-[var(--faint)]">payment-flow.intentform · v{graph.schemaVersion}</span>
+                      <span className="mt-0.5 block font-mono text-[10px] text-[var(--faint)]">{graph.product.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.intentform · v{graph.schemaVersion}</span>
                     </div>
-                    <button type="button" role="menuitem" onClick={openLocalProject} disabled={isPending} className="mt-1 flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)] disabled:cursor-wait disabled:opacity-50">
+                    <a href="/" role="menuitem" onClick={() => setMenuOpen(false)} className="mt-1 flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
+                      <ArrowLeft size={13} /> Back to project launcher
+                    </a>
+                    <button type="button" role="menuitem" onClick={openLocalProject} disabled={isPending} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)] disabled:cursor-wait disabled:opacity-50">
                       <FolderOpen size={13} /> Open local project
                     </button>
                     <button type="button" role="menuitem" onClick={saveLocalProject} disabled={isPending} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)] disabled:cursor-wait disabled:opacity-50">
@@ -598,7 +626,7 @@ export function Studio() {
               <div className="flex items-center gap-1 text-[13px] font-semibold tracking-[-.01em]">
                 <span className="truncate">{graph.product.name}</span><CaretDown size={10} className="text-[var(--muted)]" />
               </div>
-              <span className="block truncate font-mono text-[10px] text-[var(--muted)]">payment-flow.intentform</span>
+              <span className="block truncate font-mono text-[10px] text-[var(--muted)]">{graph.product.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.intentform</span>
             </div>
             <div className="flex items-center gap-1 text-[9px] font-semibold text-[var(--muted)] sm:hidden" aria-label={mode === "live" ? `Live model: ${model}` : `Deterministic replay: ${model}`}>
               <span className={`size-1.5 rounded-full ${mode === "live" ? "bg-[var(--accent)]" : "bg-amber-500"}`} aria-hidden="true" />

@@ -1,23 +1,30 @@
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { demoGraph } from "@intentform/proof-report/demo";
 import { compileReact } from "@intentform/compiler-react";
+import { toolDefinitions } from "./index.ts";
 import {
+  applyMigration,
   applyPatch,
   compileProject,
   describeProject,
   diffAgainstRevision,
   projectRevisions,
+  previewMigration,
   replaceGraph,
   revertProject,
   verifyProject,
 } from "./tools.ts";
 import {
   loadProject,
+  migrateProject,
   ProjectBusyError,
   ProjectConflictError,
+  ProjectMigrationConflictError,
+  ProjectMigrationRequiredError,
+  previewProjectMigration,
   saveProject,
 } from "./store.ts";
 
@@ -32,6 +39,19 @@ afterEach(() => {
 });
 
 describe("IntentForm agent project store", () => {
+  it("publishes migration preview and apply as separate MCP tools", () => {
+    const byName = new Map(toolDefinitions.map((tool) => [tool.name, tool]));
+    expect(byName.get("intentform_preview_migration")?.inputSchema).toEqual({
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    });
+    expect(byName.get("intentform_apply_migration")?.inputSchema).toMatchObject({
+      required: ["expectedSourceFingerprint"],
+      additionalProperties: false,
+    });
+  });
+
   it("seeds a missing project from the verified sample and validates on load", () => {
     const first = loadProject(dir);
     expect(first.seeded).toBe(true);
@@ -39,6 +59,102 @@ describe("IntentForm agent project store", () => {
     const second = loadProject(dir);
     expect(second.seeded).toBe(false);
     expect(second.fingerprint).toBe(first.fingerprint);
+  });
+
+  it("previews an old schema without writing, then checkpoints exact bytes before migration", () => {
+    const legacy = structuredClone(demoGraph) as unknown as Record<string, unknown>;
+    legacy.schemaVersion = "0.0.1";
+    const source = `  ${JSON.stringify(legacy, null, 4)}\n`;
+    writeFileSync(join(dir, "graph.json"), source, "utf8");
+
+    const preview = previewProjectMigration(dir);
+    expect(preview).toMatchObject({
+      status: "migration-required",
+      fromVersion: "0.0.1",
+      toVersion: "0.1.0",
+      sourceFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    expect(readdirSync(dir)).toEqual(["graph.json"]);
+    expect(() => loadProject(dir)).toThrow(ProjectMigrationRequiredError);
+
+    const expected = preview.status === "missing" ? "" : preview.sourceFingerprint;
+    const applied = migrateProject(dir, expected);
+    expect(applied).toMatchObject({
+      status: "current",
+      fromVersion: "0.0.1",
+      toVersion: "0.1.0",
+      fingerprint: expect.stringMatching(/^[a-f0-9]{8}$/),
+    });
+    expect(applied.checkpoint).toMatch(/migration-checkpoints/);
+    expect(readFileSync(applied.checkpoint!, "utf8")).toBe(source);
+    expect(JSON.parse(readFileSync(join(dir, "graph.json"), "utf8"))).toEqual(demoGraph);
+    expect(loadProject(dir).graph).toEqual(demoGraph);
+    expect(compileProject(dir, "react", false).fileCount).toBeGreaterThan(0);
+    expect(compileProject(dir, "swiftui", false).fileCount).toBeGreaterThan(0);
+  });
+
+  it("leaves the old graph untouched when its checkpoint cannot be written", () => {
+    const legacy = structuredClone(demoGraph) as unknown as Record<string, unknown>;
+    legacy.schemaVersion = "0.0.1";
+    const source = JSON.stringify(legacy);
+    writeFileSync(join(dir, "graph.json"), source, "utf8");
+    writeFileSync(join(dir, "migration-checkpoints"), "not-a-directory", "utf8");
+    const preview = previewProjectMigration(dir);
+    const expected = preview.status === "missing" ? "" : preview.sourceFingerprint;
+
+    expect(() => migrateProject(dir, expected)).toThrow();
+    expect(readFileSync(join(dir, "graph.json"), "utf8")).toBe(source);
+  });
+
+  it("rejects malformed and future project files without rewriting them", () => {
+    for (const source of ["{", JSON.stringify({ schemaVersion: "9.0.0" })]) {
+      writeFileSync(join(dir, "graph.json"), source, "utf8");
+      expect(() => previewProjectMigration(dir)).toThrow();
+      expect(() => loadProject(dir)).toThrow();
+      expect(readFileSync(join(dir, "graph.json"), "utf8")).toBe(source);
+      expect(readdirSync(dir)).toEqual(["graph.json"]);
+    }
+  });
+
+  it("rejects a stale migration preview without creating a checkpoint", () => {
+    const legacy = structuredClone(demoGraph) as unknown as Record<string, unknown>;
+    legacy.schemaVersion = "0.0.1";
+    writeFileSync(join(dir, "graph.json"), JSON.stringify(legacy), "utf8");
+    const preview = previewProjectMigration(dir);
+    expect(preview.status).toBe("migration-required");
+
+    writeFileSync(join(dir, "graph.json"), `${JSON.stringify(legacy)}\n`, "utf8");
+    const expected = preview.status === "missing" ? "" : preview.sourceFingerprint;
+    expect(() => migrateProject(dir, expected)).toThrow(ProjectMigrationConflictError);
+    expect(readdirSync(dir)).toEqual(["graph.json"]);
+  });
+
+  it("does not checkpoint or rewrite a current project during an identity migration", () => {
+    const source = JSON.stringify(demoGraph);
+    writeFileSync(join(dir, "graph.json"), source, "utf8");
+    const preview = previewProjectMigration(dir);
+    expect(preview.status).toBe("current");
+    const expected = preview.status === "missing" ? "" : preview.sourceFingerprint;
+    const applied = migrateProject(dir, expected);
+
+    expect(applied.checkpoint).toBeNull();
+    expect(readFileSync(join(dir, "graph.json"), "utf8")).toBe(source);
+    expect(readdirSync(dir)).toEqual(["graph.json"]);
+  });
+
+  it("exposes read-only preview and explicit apply operations to MCP callers", () => {
+    const legacy = structuredClone(demoGraph) as unknown as Record<string, unknown>;
+    legacy.schemaVersion = "0.0.1";
+    writeFileSync(join(dir, "graph.json"), JSON.stringify(legacy), "utf8");
+
+    const preview = previewMigration(dir);
+    expect(preview.status).toBe("migration-required");
+    const expected = preview.status === "missing" ? "" : preview.sourceFingerprint;
+    const applied = applyMigration(dir, expected);
+
+    expect(applied).toMatchObject({ status: "current", checkpoint: expect.any(String) });
+    expect(applied).not.toHaveProperty("graph");
+    expect(previewMigration(dir)).toMatchObject({ status: "current", fromVersion: "0.1.0" });
   });
 
   it("writes atomically and rejects a stale writer without losing the winning graph", () => {
@@ -76,6 +192,11 @@ describe("IntentForm agent project store", () => {
 
   it("describes the project with stable node ids and compiler fingerprints", () => {
     const summary = describeProject(dir);
+    expect(summary.project).toEqual({
+      kind: "local",
+      root: dir,
+      graphFile: join(dir, ".intentform", "graph.json"),
+    });
     expect(summary.product.name).toBe("Verdant Pay");
     expect(summary.screens.map((screen) => screen.id)).toEqual(["home", "payment-request", "receipt"]);
     expect(summary.screens[1]?.nodes.map((node) => node.id)).toContain("payment-request.confirm");

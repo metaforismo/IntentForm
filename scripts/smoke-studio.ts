@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { chromium, type Browser } from "playwright";
+import { demoGraph } from "../packages/proof-report/src/demo.ts";
 import { assertSecurityHeaders, gotoStudio, runSmokeScenario } from "./smoke-studio-support.ts";
 
 const root = process.cwd();
@@ -59,6 +60,113 @@ let browser: Browser | undefined;
 try {
   await waitForServer();
   browser = await launchBrowser();
+  await runSmokeScenario(browser, {
+    name: "project launcher onboarding and recovery",
+    allowConsoleError: (message) => message.text().includes("status of 409 (Conflict)"),
+    run: async (page) => {
+      await page.route("**/api/project**", async (route) => {
+        const request = route.request();
+        const url = new URL(request.url());
+        if (request.method() === "GET" && url.searchParams.get("capability") === "1") {
+          await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ available: true }) });
+          return;
+        }
+        if (request.method() === "GET") {
+          await route.fulfill({
+            status: 409,
+            contentType: "application/json",
+            body: JSON.stringify({
+              error: "Project schema 0.0.1 must be migrated to 0.1.0 before it can be opened.",
+              migration: {
+                status: "migration-required",
+                sourceFingerprint: "a".repeat(64),
+                fromVersion: "0.0.1",
+                toVersion: "0.1.0",
+                diagnostics: [{
+                  severity: "info",
+                  code: "schema.migrated.0.0.1.to.0.1.0",
+                  path: "schemaVersion",
+                  message: "Converted schema 0.0.1 to 0.1.0.",
+                }],
+              },
+            }),
+          });
+          return;
+        }
+        await route.continue();
+      });
+      const rootResponse = await gotoStudio(page, origin, "/");
+      assertSecurityHeaders(rootResponse, "Project launcher");
+      await page.getByRole("heading", { name: "Open intent. Build native interfaces." }).waitFor();
+      await page.getByText("No browser project yet", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Open local project" }).click();
+      await page.getByText("Schema update required", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Checkpoint and update" }).waitFor();
+      await mkdir(join(root, "output/playwright"), { recursive: true });
+      await page.screenshot({ path: join(root, "output/playwright/schema-migration-preview.png"), fullPage: true });
+      await page.getByRole("button", { name: "Not now" }).click();
+      await page.getByText("Schema update required", { exact: true }).waitFor({ state: "detached" });
+      await page.screenshot({ path: join(root, "output/playwright/project-launcher-wide.png"), fullPage: true });
+
+      await page.evaluate(() => localStorage.setItem("intentform-browser-project-v1", "{broken"));
+      await page.reload({ waitUntil: "networkidle" });
+      await page.getByText("Recovery needs attention", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Discard", exact: true }).click();
+      await page.getByText("No browser project yet", { exact: true }).waitFor();
+
+      const importInput = page.getByLabel("Import IntentForm project");
+      await importInput.setInputFiles({
+        name: "invalid.intentform.json",
+        mimeType: "application/json",
+        buffer: Buffer.from(JSON.stringify({ schemaVersion: "0.1.0" })),
+      });
+      await page.getByRole("alert").getByText(/Import failed:/).waitFor();
+      await page.getByRole("button", { name: "Dismiss launcher error" }).click();
+
+      const legacyImport = structuredClone(demoGraph) as unknown as Record<string, unknown>;
+      legacyImport.schemaVersion = "0.0.1";
+      await importInput.setInputFiles({
+        name: "legacy.intentform.json",
+        mimeType: "application/json",
+        buffer: Buffer.from(JSON.stringify(legacyImport)),
+      });
+      await page.waitForURL(`${origin}/studio`);
+      await page.getByText("Verdant Pay", { exact: true }).first().waitFor();
+      await page.getByRole("button", { name: "IntentForm project menu" }).click();
+      await page.getByRole("menuitem", { name: "Back to project launcher" }).click();
+      await page.waitForURL(`${origin}/`);
+      await page.getByText(/Application · saved/).waitFor();
+
+      await page.getByRole("button", { name: "New project" }).click();
+      await page.getByRole("heading", { name: "Begin with product intent, not a sample file." }).waitFor();
+      await page.getByLabel("Project name").fill("Northline Field Notes");
+      await page.getByLabel("Primary audience").fill("Distributed research teams");
+      await page.getByLabel("First outcome").fill("Review and organize field observations");
+      await page.getByLabel("SwiftUI").uncheck();
+      await page.getByRole("button", { name: "Create blank canvas" }).click();
+      await page.waitForURL(`${origin}/studio`);
+      await page.getByText("Northline Field Notes", { exact: true }).first().waitFor();
+      await page.getByTestId("canvas-node-home.start").waitFor();
+
+      await page.getByRole("button", { name: "IntentForm project menu" }).click();
+      await page.getByRole("menuitem", { name: "Back to project launcher" }).click();
+      await page.waitForURL(`${origin}/`);
+      await page.getByText("Northline Field Notes", { exact: true }).waitFor();
+      await page.getByText(/Application · saved/).waitFor();
+
+      await page.setViewportSize({ width: 375, height: 667 });
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      if (overflow > 1) throw new Error(`Compact project launcher has ${overflow}px horizontal overflow`);
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: join(root, "output/playwright/project-launcher-compact.png"), fullPage: true });
+      await page.getByRole("button", { name: /Adaptive payment flow/ }).click();
+      await page.waitForURL(`${origin}/studio`);
+      await page.getByTestId("canvas-node-home.balance").waitFor();
+      await page.getByRole("button", { name: "IntentForm project menu" }).click();
+      await page.getByRole("menu").getByText("Verdant Pay", { exact: true }).waitFor();
+    },
+  });
+
   await runSmokeScenario(browser, {
     name: "desktop editor and active runtime",
     run: async (page) => {
@@ -518,8 +626,14 @@ try {
         throw new Error(`Malformed draft returned ${malformedDraft.status()} instead of 400`);
       }
 
-      const rootResponse = await gotoStudio(routePage, origin);
-      assertSecurityHeaders(rootResponse, "Studio root");
+      const rootResponse = await gotoStudio(routePage, origin, "/");
+      assertSecurityHeaders(rootResponse, "Project launcher");
+      await routePage.getByRole("heading", { name: "Open intent. Build native interfaces." }).waitFor();
+      await routePage.reload({ waitUntil: "networkidle" });
+      await routePage.getByRole("heading", { name: "Open intent. Build native interfaces." }).waitFor();
+
+      const studioResponse = await gotoStudio(routePage, origin, "/studio");
+      assertSecurityHeaders(studioResponse, "Studio workspace");
       await routePage.getByRole("button", { name: "Design canvas" }).waitFor();
       await routePage.reload({ waitUntil: "networkidle" });
       await routePage.getByRole("button", { name: "Design canvas" }).waitFor();

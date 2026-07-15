@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -6,7 +6,7 @@ import { demoGraph } from "../packages/proof-report/src/demo";
 import { applyGraphPatch } from "../packages/semantic-schema/src/index";
 import { verifyGraph } from "../packages/verifier/src/index";
 import { POST as interpret } from "../apps/studio-web/app/api/interpret/route";
-import { GET as getProject, PUT as putProject } from "../apps/studio-web/app/api/project/route";
+import { GET as getProject, POST as migrateProjectRoute, PUT as putProject } from "../apps/studio-web/app/api/project/route";
 import { POST as repair } from "../apps/studio-web/app/api/repair/route";
 import { loadProject, saveProject } from "../packages/mcp-server/src/store";
 import {
@@ -147,10 +147,28 @@ describe("repair verification boundary", () => {
 });
 
 describe("local project trust boundary", () => {
+  it("probes local bridge availability without seeding or reading a project", async () => {
+    delete process.env.VERCEL;
+    delete process.env.VERCEL_ENV;
+    const projectDir = mkdtempSync(join(tmpdir(), "intentform-api-probe-"));
+    process.env.INTENTFORM_PROJECT_DIR = projectDir;
+    try {
+      const response = await getProject(new Request("http://localhost/api/project?capability=1"));
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({ available: true });
+      expect(readdirSync(projectDir)).toEqual([]);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
   it("fails closed on Vercel before accessing the filesystem", async () => {
     process.env.VERCEL = "1";
     const response = await getProject(new Request("https://intentform.example/api/project"));
     expect(response.status).toBe(403);
+    const probe = await getProject(new Request("https://intentform.example/api/project?capability=1"));
+    expect(probe.status).toBe(200);
+    await expect(probe.json()).resolves.toEqual({ available: false });
   });
 
   it("rejects cross-origin browser requests and invalid save bodies", async () => {
@@ -196,6 +214,52 @@ describe("local project trust boundary", () => {
       expect(payload.currentFingerprint).toBe(agentSave.fingerprint);
       expect(payload.error).toMatch(/changed after it was opened/i);
       expect(loadProject(projectDir).graph.tokens.colors["color.accent"]).toBe("#7a4b9e");
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports migration diagnostics on open and migrates only after explicit conflict-safe approval", async () => {
+    delete process.env.VERCEL;
+    delete process.env.VERCEL_ENV;
+    const projectDir = mkdtempSync(join(tmpdir(), "intentform-api-migration-"));
+    process.env.INTENTFORM_PROJECT_DIR = projectDir;
+    try {
+      const legacy = structuredClone(demoGraph) as unknown as Record<string, unknown>;
+      legacy.schemaVersion = "0.0.1";
+      const original = ` ${JSON.stringify(legacy, null, 2)}\n`;
+      writeFileSync(join(projectDir, "graph.json"), original, "utf8");
+
+      const open = await getProject(new Request("http://localhost/api/project"));
+      const blocked = await open.json() as {
+        migration: { sourceFingerprint: string; fromVersion: string; toVersion: string };
+      };
+      expect(open.status).toBe(409);
+      expect(blocked.migration).toMatchObject({ fromVersion: "0.0.1", toVersion: "0.1.0" });
+      expect(readdirSync(projectDir)).toEqual(["graph.json"]);
+
+      const stale = await migrateProjectRoute(jsonRequest(
+        "http://localhost/api/project",
+        { expectedSourceFingerprint: "0".repeat(64) },
+        "POST",
+        { origin: "http://localhost", "sec-fetch-site": "same-origin" },
+      ));
+      expect(stale.status).toBe(409);
+      expect(readFileSync(join(projectDir, "graph.json"), "utf8")).toBe(original);
+
+      const applied = await migrateProjectRoute(jsonRequest(
+        "http://localhost/api/project",
+        { expectedSourceFingerprint: blocked.migration.sourceFingerprint },
+        "POST",
+        { origin: "http://localhost", "sec-fetch-site": "same-origin" },
+      ));
+      const payload = await applied.json() as { graph: typeof demoGraph; migration: { checkpointCreated: boolean } };
+      expect(applied.status).toBe(200);
+      expect(payload.graph).toEqual(demoGraph);
+      expect(payload.migration.checkpointCreated).toBe(true);
+      const checkpoints = readdirSync(join(projectDir, "migration-checkpoints"));
+      expect(checkpoints).toHaveLength(1);
+      expect(readFileSync(join(projectDir, "migration-checkpoints", checkpoints[0]!), "utf8")).toBe(original);
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
     }

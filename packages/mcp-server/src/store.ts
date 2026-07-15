@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   closeSync,
   existsSync,
@@ -18,6 +19,11 @@ import {
   stableSerialize,
   type SemanticInterfaceGraph,
 } from "@intentform/semantic-schema";
+import {
+  GraphMigrationError,
+  previewGraphMigration,
+  type MigrationDiagnostic,
+} from "@intentform/semantic-schema/migrations";
 
 const MAX_REVISIONS = 50;
 let temporaryFileSequence = 0;
@@ -48,15 +54,21 @@ export function graphFingerprint(graph: SemanticInterfaceGraph): string {
 
 const graphPath = (dir: string) => join(dir, "graph.json");
 const revisionsDir = (dir: string) => join(dir, "revisions");
+const migrationCheckpointsDir = (dir: string) => join(dir, "migration-checkpoints");
 const writeLockPath = (dir: string) => join(dir, ".write.lock");
 
 export class ProjectConflictError extends Error {
+  readonly expectedFingerprint: string | null;
+  readonly currentFingerprint: string | null;
+
   constructor(
-    readonly expectedFingerprint: string | null,
-    readonly currentFingerprint: string | null,
+    expectedFingerprint: string | null,
+    currentFingerprint: string | null,
   ) {
     super("The local project changed after it was opened. Reopen it before saving so agent edits are not overwritten.");
     this.name = "ProjectConflictError";
+    this.expectedFingerprint = expectedFingerprint;
+    this.currentFingerprint = currentFingerprint;
   }
 }
 
@@ -64,6 +76,39 @@ export class ProjectBusyError extends Error {
   constructor() {
     super("The local project is being saved by another process. Try again after that write finishes.");
     this.name = "ProjectBusyError";
+  }
+}
+
+export interface ProjectMigrationSummary {
+  status: "current" | "migration-required";
+  sourceFingerprint: string;
+  fromVersion: string;
+  toVersion: string;
+  diagnostics: MigrationDiagnostic[];
+}
+
+export class ProjectMigrationRequiredError extends Error {
+  readonly migration: ProjectMigrationSummary;
+
+  constructor(migration: ProjectMigrationSummary) {
+    super(`Project schema ${migration.fromVersion} must be migrated to ${migration.toVersion} before it can be opened.`);
+    this.name = "ProjectMigrationRequiredError";
+    this.migration = migration;
+  }
+}
+
+export class ProjectMigrationConflictError extends Error {
+  readonly expectedSourceFingerprint: string;
+  readonly currentSourceFingerprint: string;
+
+  constructor(
+    expectedSourceFingerprint: string,
+    currentSourceFingerprint: string,
+  ) {
+    super("The project file changed after migration was previewed. Preview it again before applying a migration.");
+    this.name = "ProjectMigrationConflictError";
+    this.expectedSourceFingerprint = expectedSourceFingerprint;
+    this.currentSourceFingerprint = currentSourceFingerprint;
   }
 }
 
@@ -157,11 +202,98 @@ export interface LoadedProject {
   seeded: boolean;
 }
 
+interface InspectedProjectMigration extends ProjectMigrationSummary {
+  graph: SemanticInterfaceGraph;
+  canonical: string;
+}
+
+function textFingerprint(input: string): string {
+  return createHash("sha256").update(input, "utf8").digest("hex");
+}
+
+function inspectProjectSource(source: string): InspectedProjectMigration {
+  let input: unknown;
+  try {
+    input = JSON.parse(source);
+  } catch {
+    throw new GraphMigrationError([{
+      severity: "error",
+      code: "schema.input.invalid-json",
+      path: "$",
+      message: "The project graph file is not valid JSON.",
+    }]);
+  }
+  const preview = previewGraphMigration(input);
+  return {
+    status: preview.changed ? "migration-required" : "current",
+    sourceFingerprint: textFingerprint(source),
+    fromVersion: preview.fromVersion,
+    toVersion: preview.toVersion,
+    diagnostics: preview.diagnostics,
+    graph: preview.graph,
+    canonical: preview.canonical,
+  };
+}
+
+function requireCurrentProject(source: string): SemanticInterfaceGraph {
+  const inspection = inspectProjectSource(source);
+  if (inspection.status === "migration-required") {
+    const { graph: _graph, canonical: _canonical, ...summary } = inspection;
+    throw new ProjectMigrationRequiredError(summary);
+  }
+  return inspection.graph;
+}
+
+export function previewProjectMigration(dir: string): ProjectMigrationSummary | { status: "missing" } {
+  if (!existsSync(graphPath(dir))) return { status: "missing" };
+  const inspection = inspectProjectSource(readFileSync(graphPath(dir), "utf8"));
+  const { graph: _graph, canonical: _canonical, ...summary } = inspection;
+  return summary;
+}
+
+export interface AppliedProjectMigration extends ProjectMigrationSummary {
+  checkpoint: string | null;
+  graph: SemanticInterfaceGraph;
+  fingerprint: string;
+}
+
+export function migrateProject(
+  dir: string,
+  expectedSourceFingerprint: string,
+): AppliedProjectMigration {
+  return withProjectWriteLock(dir, () => {
+    if (!existsSync(graphPath(dir))) throw new Error("No local graph exists to migrate.");
+    const source = readFileSync(graphPath(dir), "utf8");
+    const inspection = inspectProjectSource(source);
+    if (inspection.sourceFingerprint !== expectedSourceFingerprint) {
+      throw new ProjectMigrationConflictError(expectedSourceFingerprint, inspection.sourceFingerprint);
+    }
+
+    let checkpoint: string | null = null;
+    if (inspection.status === "migration-required") {
+      const at = new Date().toISOString();
+      const id = `${at.replace(/[:.]/g, "-")}-${inspection.sourceFingerprint}`;
+      checkpoint = join(migrationCheckpointsDir(dir), `${id}.json`);
+      writeFileAtomic(checkpoint, source);
+      writeFileAtomic(graphPath(dir), inspection.canonical);
+    }
+
+    const { graph: _graph, canonical: _canonical, ...summary } = inspection;
+    return {
+      ...summary,
+      status: "current",
+      checkpoint,
+      graph: inspection.graph,
+      fingerprint: graphFingerprint(inspection.graph),
+    };
+  });
+}
+
 export function loadProject(dir: string): LoadedProject {
   if (!existsSync(graphPath(dir))) {
     return withProjectWriteLock(dir, () => {
       if (existsSync(graphPath(dir))) {
-        const graph = parseGraph(JSON.parse(readFileSync(graphPath(dir), "utf8")));
+        const graph = requireCurrentProject(readFileSync(graphPath(dir), "utf8"));
         return { graph, fingerprint: graphFingerprint(graph), seeded: false };
       }
       const graph = structuredClone(demoGraph);
@@ -169,7 +301,7 @@ export function loadProject(dir: string): LoadedProject {
       return { graph, fingerprint: graphFingerprint(graph), seeded: true };
     });
   }
-  const graph = parseGraph(JSON.parse(readFileSync(graphPath(dir), "utf8")));
+  const graph = requireCurrentProject(readFileSync(graphPath(dir), "utf8"));
   return { graph, fingerprint: graphFingerprint(graph), seeded: false };
 }
 
@@ -185,7 +317,7 @@ export function saveProject(
   return withProjectWriteLock(dir, () => {
     mkdirSync(revisionsDir(dir), { recursive: true });
     const currentGraph = existsSync(graphPath(dir))
-      ? parseGraph(JSON.parse(readFileSync(graphPath(dir), "utf8")))
+      ? requireCurrentProject(readFileSync(graphPath(dir), "utf8"))
       : null;
     const currentFingerprint = currentGraph ? graphFingerprint(currentGraph) : null;
     if (currentFingerprint !== expectedFingerprint) {

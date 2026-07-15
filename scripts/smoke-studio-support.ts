@@ -98,7 +98,7 @@ export async function runSmokeScenario(browser: Browser, scenario: SmokeScenario
   console.log(`Studio scenario ${scenario.name}: passed`);
 }
 
-export async function gotoStudio(page: Page, origin: string, path = "/") {
+export async function gotoStudio(page: Page, origin: string, path = "/studio") {
   const response = await page.goto(`${origin}${path}`, { waitUntil: "networkidle" });
   if (!response?.ok()) throw new Error(`Navigation to ${path} returned ${response?.status() ?? "no response"}`);
   return response;

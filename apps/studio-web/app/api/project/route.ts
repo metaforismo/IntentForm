@@ -1,14 +1,19 @@
 import {
   loadProject,
+  migrateProject,
   ProjectBusyError,
   ProjectConflictError,
+  ProjectMigrationConflictError,
+  ProjectMigrationRequiredError,
   resolveProjectDir,
   saveProject,
 } from "@intentform/mcp-server/store";
+import { GraphMigrationError } from "@intentform/semantic-schema/migrations";
 import {
   inputErrorResponse,
   isLocalProjectRequestAllowed,
   parseRequestBody,
+  projectMigrationRequestSchema,
   projectSaveRequestSchema,
 } from "../../../lib/api-contracts";
 
@@ -25,6 +30,12 @@ const localOnlyError = () => Response.json(
    and Vercel deployments always fail closed before touching the filesystem. */
 
 export async function GET(request: Request) {
+  if (new URL(request.url).searchParams.get("capability") === "1") {
+    return Response.json(
+      { available: isLocalProjectRequestAllowed(request) },
+      { headers: noStoreHeaders },
+    );
+  }
   if (!isLocalProjectRequestAllowed(request)) return localOnlyError();
   try {
     const project = loadProject(resolveProjectDir());
@@ -32,9 +43,71 @@ export async function GET(request: Request) {
       { graph: project.graph, fingerprint: project.fingerprint, seeded: project.seeded },
       { headers: noStoreHeaders },
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof ProjectMigrationRequiredError) {
+      return Response.json(
+        { error: error.message, migration: error.migration },
+        { status: 409, headers: noStoreHeaders },
+      );
+    }
+    if (error instanceof GraphMigrationError) {
+      return Response.json(
+        { error: error.message, diagnostics: error.diagnostics },
+        { status: 422, headers: noStoreHeaders },
+      );
+    }
     return Response.json(
       { error: "No local .intentform project is available in this deployment." },
+      { status: 503, headers: noStoreHeaders },
+    );
+  }
+}
+
+export async function POST(request: Request) {
+  if (!isLocalProjectRequestAllowed(request)) return localOnlyError();
+  let body;
+  try {
+    body = await parseRequestBody(
+      request,
+      projectMigrationRequestSchema,
+      "The project migration request is invalid.",
+    );
+  } catch (error) {
+    return inputErrorResponse(error)
+      ?? Response.json({ error: "The migration request could not be read." }, { status: 400, headers: noStoreHeaders });
+  }
+
+  try {
+    const migrated = migrateProject(resolveProjectDir(), body.expectedSourceFingerprint);
+    return Response.json({
+      graph: migrated.graph,
+      fingerprint: migrated.fingerprint,
+      migration: {
+        status: migrated.status,
+        fromVersion: migrated.fromVersion,
+        toVersion: migrated.toVersion,
+        diagnostics: migrated.diagnostics,
+        checkpointCreated: migrated.checkpoint !== null,
+      },
+    }, { headers: noStoreHeaders });
+  } catch (error) {
+    if (error instanceof ProjectMigrationConflictError) {
+      return Response.json(
+        { error: error.message, currentSourceFingerprint: error.currentSourceFingerprint },
+        { status: 409, headers: noStoreHeaders },
+      );
+    }
+    if (error instanceof ProjectBusyError) {
+      return Response.json({ error: error.message }, { status: 423, headers: noStoreHeaders });
+    }
+    if (error instanceof GraphMigrationError) {
+      return Response.json(
+        { error: error.message, diagnostics: error.diagnostics },
+        { status: 422, headers: noStoreHeaders },
+      );
+    }
+    return Response.json(
+      { error: "The local project could not be migrated." },
       { status: 503, headers: noStoreHeaders },
     );
   }

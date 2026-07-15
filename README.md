@@ -19,7 +19,8 @@ This repository is the OpenAI Build Week vertical slice. It intentionally proves
 - Compact and regular device profiles; direct manipulation changes the active semantic breakpoint rather than storing coordinates.
 - Fit-to-canvas, trackpad zoom, middle-mouse panning, preview mode and contextual keyboard shortcuts for selection, panels and revision history.
 - Searchable layers and commands, human editing for labels, stack axis, width, spacing tokens, emphasis, ordering, duplication and component insertion, with undo/redo.
-- Validated local draft recovery; an invalid or unavailable browser store never replaces the verified sample.
+- Project launcher with guided blank application/prototype/library starters, validated imports, copy-only examples, browser recovery diagnostics and an optional local-agent workspace bridge.
+- Versioned browser project recovery carrying project type, source, timestamp and local conflict fingerprint; invalid recovery remains inspectable instead of silently replacing a project.
 - Deterministic React and SwiftUI compiler backends.
 - Active React preview embedded in Studio: it validates the current graph, verifies the exact compiler fingerprint, lowers the shared IR into an isolated runtime, and executes typed navigation events without evaluating arbitrary generated source.
 - Playwright screenshot, computed-style and layout-bounds verification for compact and regular viewports.
@@ -55,7 +56,7 @@ cp .env.example .env.local
 pnpm dev
 ```
 
-Open `http://localhost:3000`. Without `OPENAI_API_KEY`, the app clearly reports **Deterministic replay** and exercises the complete sample plus safe typed edits. With a server-side key, it uses the `gpt-5.6` alias; the key is never included in the client bundle. Model traces expose only a request ID, deterministic fingerprint, attempt count and token totals—never prompts, secrets or reasoning chains.
+Open `http://localhost:3000` to choose a blank project, recover browser work, import a graph, copy an example, or open the local `.intentform` workspace. The editor itself lives at `/studio`; direct access remains available for existing links and opens the verified example only when no browser project was selected. Without `OPENAI_API_KEY`, the editor clearly reports **Deterministic replay** and exercises safe typed edits. With a server-side key, it uses the `gpt-5.6` alias; the key is never included in the client bundle. Model traces expose only a request ID, deterministic fingerprint, attempt count and token totals—never prompts, secrets or reasoning chains.
 
 For the replay-first Vercel configuration and the clean-browser remote gate, see [Deployment](docs/DEPLOYMENT.md).
 
@@ -88,10 +89,11 @@ The intended zero-setup judge path is the replay-only deployment at [intentform-
 
 Once public, the shortest product path is:
 
-1. open **Design canvas**, inspect the three-screen semantic flow and switch compact/regular devices;
-2. edit the request action label or compact placement and observe the semantic diff;
-3. open **Native outputs**, confirm the source fingerprint and interact with the active React preview;
-4. inspect **Verification** and **Proof report**, which say `not run` until graph-specific build evidence is actually supplied.
+1. open the **Adaptive payment flow** example as a working copy;
+2. inspect the three-screen semantic flow and switch compact/regular devices;
+3. edit the request action label or compact placement and observe the semantic diff;
+4. open **Native outputs**, confirm the source fingerprint and interact with the active React preview;
+5. inspect **Verification** and **Proof report**, which say `not run` until graph-specific build evidence is actually supplied.
 
 For a local judge run, use the setup above and then `pnpm smoke:studio`. Supported judge platforms are modern Chromium on Node.js 22+; Xcode 16+ on macOS is needed only to reproduce native SwiftUI evidence.
 
@@ -100,6 +102,8 @@ For a local judge run, use the setup above and then `pnpm smoke:studio`. Support
 IntentForm is designed to be **driven by coding agents**, not just humans. The repository ships an MCP server (auto-discovered by Claude Code through [`.mcp.json`](.mcp.json)) that operates on the local project in `.intentform/`:
 
 ```text
+intentform_preview_migration inspect schema status without writing
+intentform_apply_migration   checkpoint and migrate a previewed old graph
 intentform_describe_project   inspect screens, stable node IDs, tokens, flows, findings
 intentform_apply_patch        smallest typed semantic edit, validated and revisioned
 intentform_replace_graph      structural edits with full schema validation

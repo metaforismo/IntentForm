@@ -18,6 +18,8 @@ import {
   listRevisions,
   loadProject,
   loadRevisionGraph,
+  migrateProject,
+  previewProjectMigration,
   saveProject,
   type RevisionEntry,
 } from "./store.ts";
@@ -76,6 +78,11 @@ export function describeProject(dir: string) {
   const { graph, fingerprint, seeded } = loadProject(dir);
   const verification = verificationSummary(graph, "compact");
   return {
+    project: {
+      kind: "local" as const,
+      root: dir,
+      graphFile: join(dir, ".intentform", "graph.json"),
+    },
     product: graph.product,
     schemaVersion: graph.schemaVersion,
     fingerprint,
@@ -117,6 +124,16 @@ export function describeProject(dir: string) {
 
 export function getGraph(dir: string): string {
   return stableSerialize(loadProject(dir).graph);
+}
+
+export function previewMigration(dir: string) {
+  return previewProjectMigration(dir);
+}
+
+export function applyMigration(dir: string, expectedSourceFingerprint: string) {
+  const result = migrateProject(dir, expectedSourceFingerprint);
+  const { graph: _graph, ...summary } = result;
+  return summary;
 }
 
 export interface MutationResult {

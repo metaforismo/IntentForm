@@ -1,12 +1,14 @@
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 import {
+  applyMigration,
   applyPatch,
   compileProject,
   describeProject,
   diffAgainstRevision,
   getGraph,
   projectRevisions,
+  previewMigration,
   replaceGraph,
   revertProject,
   verifyProject,
@@ -33,7 +35,30 @@ const PATCH_CONTRACT = `A GraphPatch is {"id": string, "rationale": string, "ope
 {"op":"set-label","target":nodeId,"label":string} · {"op":"set-placement","target":nodeId,"compact":"inline"|"persistent-bottom","regular":"inline"|"persistent-bottom"} · {"op":"set-purpose","target":nodeId,"purpose":string} · {"op":"set-emphasis","target":nodeId,"emphasis":"quiet"|"normal"|"strong"} · {"op":"set-gap-token","target":nodeId,"token":string} · {"op":"set-padding-token","target":nodeId,"token":string} · {"op":"set-color-token","token":colorTokenName,"value":"#rrggbb"} · {"op":"set-fixture-value","screenId":screenId,"state":"idle"|"loading"|"empty"|"failed"|"completed","field":contractField,"value":string|number|boolean}.
 Node IDs are stable; discover them with intentform_describe_project. The patch is schema-validated and rejected atomically if any operation is invalid.`;
 
-const tools: ToolDefinition[] = [
+export const toolDefinitions: ToolDefinition[] = [
+  {
+    name: "intentform_preview_migration",
+    description: "Inspect the local graph schema without modifying files. Returns whether migration is required, the exact source fingerprint to use for conflict-safe application, and deterministic diagnostics. Call this before intentform_apply_migration.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    run: () => previewMigration(projectDir),
+  },
+  {
+    name: "intentform_apply_migration",
+    description: "Explicitly migrate a previously previewed local graph. Requires the preview's source fingerprint, checkpoints the exact original bytes, and atomically writes canonical current-schema JSON. Fails if the file changed after preview.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        expectedSourceFingerprint: {
+          type: "string",
+          pattern: "^[a-f0-9]{64}$",
+          description: "Source fingerprint returned by intentform_preview_migration",
+        },
+      },
+      required: ["expectedSourceFingerprint"],
+      additionalProperties: false,
+    },
+    run: (args) => applyMigration(projectDir, String(args.expectedSourceFingerprint ?? "")),
+  },
   {
     name: "intentform_describe_project",
     description: "Inspect the IntentForm project: product, screens with stable node IDs, design tokens, flows, contracts, current verification status, and each compiler target's generation status and fingerprint when available. Call this first to discover node IDs before editing.",
@@ -155,13 +180,13 @@ function handle(message: { id?: number | string | null; method?: string; params?
     write({
       jsonrpc: "2.0",
       id: id ?? null,
-      result: { tools: tools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) },
+      result: { tools: toolDefinitions.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) },
     });
     return;
   }
   if (method === "tools/call") {
     const name = typeof params?.name === "string" ? params.name : "";
-    const tool = tools.find((candidate) => candidate.name === name);
+    const tool = toolDefinitions.find((candidate) => candidate.name === name);
     if (!tool) {
       write({ jsonrpc: "2.0", id: id ?? null, error: { code: -32602, message: `Unknown tool: ${name}` } });
       return;

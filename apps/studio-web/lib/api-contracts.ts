@@ -69,6 +69,10 @@ export const projectSaveRequestSchema = z.object({
   expectedFingerprint: z.string().regex(/^[a-f0-9]{8}$/),
 }).strict();
 
+export const projectMigrationRequestSchema = z.object({
+  expectedSourceFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+}).strict();
+
 export class ApiInputError extends Error {
   constructor(
     readonly status: 400 | 413 | 422,
