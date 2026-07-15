@@ -218,7 +218,7 @@ async function runPackagedDesktopSmoke(executable: string): Promise<void> {
           && snapshot.services.find((service) => service.id === "mcp")?.phase === "ready";
         if (ready) break;
         await new Promise((resolve) => setTimeout(resolve, 100));
-        snapshot = await api.snapshot();
+        snapshot = snapshot.git?.repository ? await api.snapshot() : await api.refreshGit();
       }
       return {
         nodeProcess: typeof globalThis.process,

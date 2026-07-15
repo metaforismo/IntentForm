@@ -26,6 +26,7 @@ import {
 import { demoBrief, demoGraph } from "@intentform/proof-report/demo";
 import { applyRepair, type RepairProposal } from "@intentform/repair-planner";
 import {
+  flattenSemanticNodes,
   parseGraph,
   semanticDiff,
   stableSerialize,
@@ -780,6 +781,17 @@ export function Studio() {
     })();
   };
 
+  const inspectVerificationFinding = (finding: VerificationFinding) => {
+    const screen = graph.screens.find((candidate) => candidate.id === finding.screenId) ?? graph.screens[0];
+    if (!screen) return;
+    const nodes = flattenSemanticNodes(screen.nodes);
+    const node = nodes.find((candidate) => candidate.kind === "primary-action") ?? nodes[0];
+    setSelectedScreen(screen.id);
+    setSelectedNodeId(finding.responsibleLayer === "graph" ? node?.id ?? null : null);
+    setStage("canvas");
+    setNotice(`Showing ${finding.id} on ${screen.title}. Return to Verify to keep the evidence context.`);
+  };
+
   const errorCount = verification.findings.filter((finding) => finding.severity === "error" && finding.status !== "suppressed").length;
   const noticeIsError = /failed|could not|invalid|quota|unavailable|rejected/i.test(notice);
 
@@ -972,7 +984,7 @@ export function Studio() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ type: "spring", stiffness: 120, damping: 20 }}
-              className={stage === "canvas" ? "h-full" : "h-full overflow-auto p-5 md:p-8"}
+              className={stage === "canvas" ? "h-full" : stage === "outputs" || stage === "verify" ? "h-full overflow-hidden p-2 md:p-3" : "h-full overflow-auto p-5 md:p-8"}
             >
               {stage === "canvas" ? (
                 <ManualEditor
@@ -1039,6 +1051,7 @@ export function Studio() {
                   graph={graph}
                   selectedScreen={selectedScreen}
                   localPreviews={localPreviews}
+                  scenarioLabel={scenario.label}
                   onLocalProjectChanged={openLocalProject}
                 />
               ) : null}
@@ -1052,6 +1065,8 @@ export function Studio() {
                   setScenarioId={setScenarioId}
                   scenarios={scenarios}
                   repairFinding={repairFinding}
+                  inspectFinding={inspectVerificationFinding}
+                  sourceFingerprint={currentGraphFingerprint}
                   isPending={isPending}
                 />
               ) : null}
