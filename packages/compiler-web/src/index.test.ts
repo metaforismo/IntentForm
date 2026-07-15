@@ -54,6 +54,10 @@ describe("responsive web compiler", () => {
     expect(css).toContain("container-type: inline-size");
     expect(css).toContain("position: sticky");
     expect(css).toContain("inset-block-start: 64px");
+    expect(css).toContain("@media (forced-colors: active)");
+    expect(css).toContain("@media (prefers-reduced-motion: reduce)");
+    expect(css).toContain("min-height: 44px");
+    expect(first.files.find((file) => file.path === "index.html")!.content).toContain('lang="en" dir="auto"');
     const app = first.files.find((file) => file.path === "src/app.tsx")!.content;
     expect(app).toContain("Skip to content");
     expect(app).toContain("window.history.pushState");

@@ -25,6 +25,7 @@ import {
   instantiateProjectComponent,
   listTokenModes,
   projectRevisions,
+  projectHistory,
   projectPreviewStatus,
   previewMigration,
   previewPatch,
@@ -107,7 +108,7 @@ describe("IntentForm agent project store", () => {
       required: ["definitionId", "instanceId", "screenId"],
       additionalProperties: false,
     });
-    expect([...byName.keys()].filter((name) => name.startsWith("intentform_"))).toHaveLength(25);
+    expect([...byName.keys()].filter((name) => name.startsWith("intentform_"))).toHaveLength(39);
     for (const name of [
       "intentform_list_token_modes",
       "intentform_import_dtcg",
@@ -116,9 +117,23 @@ describe("IntentForm agent project store", () => {
       "intentform_import_asset",
       "intentform_asset_gc",
       "intentform_verify_web",
+      "intentform_audit_accessibility",
       "intentform_preview_status",
       "intentform_run_preview",
       "intentform_cancel_preview",
+      "intentform_begin_transaction",
+      "intentform_preview_transaction",
+      "intentform_commit_transaction",
+      "intentform_rollback_transaction",
+      "intentform_list_history",
+      "intentform_create_branch",
+      "intentform_apply_branch_patch",
+      "intentform_preview_branch_merge",
+      "intentform_merge_branch",
+      "intentform_delete_branch",
+      "intentform_preview_history_operation",
+      "intentform_apply_history_operation",
+      "intentform_recover_history",
     ]) {
       expect(byName.get(name)?.inputSchema).toMatchObject({ additionalProperties: false });
     }
@@ -184,6 +199,10 @@ describe("IntentForm agent project store", () => {
     expect(readFileSync(applied.checkpoint!, "utf8")).toBe(source);
     expect(JSON.parse(readFileSync(join(dir, "graph.json"), "utf8"))).toEqual(migratedLegacyDemoGraph());
     expect(loadProject(dir).graph).toEqual(migratedLegacyDemoGraph());
+    expect(projectHistory(dir)).toMatchObject({
+      integrity: "valid",
+      operations: [{ kind: "save", author: "system", sourceId: "0.0.1->0.7.0" }],
+    });
     expect(compileProject(dir, "react", false).fileCount).toBeGreaterThan(0);
     expect(compileProject(dir, "swiftui", false).fileCount).toBeGreaterThan(0);
     expect(compileProject(dir, "expo", false).fileCount).toBeGreaterThan(0);
@@ -315,6 +334,41 @@ describe("IntentForm agent project store", () => {
 
   it("publishes resolved device geometry as a read-only MCP resource", () => {
     expect(resourceDefinitions.map(({ read: _read, ...resource }) => resource)).toEqual([{
+      uri: "intentform://project/summary",
+      name: "IntentForm project summary",
+      description: expect.stringMatching(/current product, targets/i),
+      mimeType: "application/json",
+    }, {
+      uri: "intentform://project/graph",
+      name: "IntentForm canonical graph",
+      description: expect.stringMatching(/complete validated Semantic Interface Graph/i),
+      mimeType: "application/json",
+    }, {
+      uri: "intentform://project/revisions",
+      name: "IntentForm project revisions",
+      description: expect.stringMatching(/newest-first local revision/i),
+      mimeType: "application/json",
+    }, {
+      uri: "intentform://project/history",
+      name: "IntentForm operation history and branches",
+      description: expect.stringMatching(/integrity-checked named operations/i),
+      mimeType: "application/json",
+    }, {
+      uri: "intentform://project/accessibility",
+      name: "IntentForm accessibility audit",
+      description: expect.stringMatching(/WCAG 2.2 AA audits/i),
+      mimeType: "application/json",
+    }, {
+      uri: "intentform://project/previews",
+      name: "IntentForm local preview evidence",
+      description: expect.stringMatching(/freshness-bound/i),
+      mimeType: "application/json",
+    }, {
+      uri: "intentform://agent/activity",
+      name: "IntentForm agent access and activity",
+      description: expect.stringMatching(/arguments, tokens, paths, content and outputs are excluded/i),
+      mimeType: "application/json",
+    }, {
       uri: "intentform://device-profiles",
       name: "IntentForm device profiles",
       description: expect.stringMatching(/checksummed logical device geometry/i),

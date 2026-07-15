@@ -14,6 +14,8 @@ import {
 } from "../runtime-preview-protocol";
 import { PhonePreview } from "./phone-preview";
 import { LocalPreviewPanel } from "../local-preview-panel";
+import { AgentActivityPanel } from "../agent-activity-panel";
+import { HistoryPanel } from "../history-panel";
 import type { LocalPreviewsController } from "../use-local-previews";
 
 type FileRow =
@@ -52,6 +54,7 @@ interface OutputsStageProps {
   graph: SemanticInterfaceGraph;
   selectedScreen: string;
   localPreviews: LocalPreviewsController;
+  onLocalProjectChanged: () => void;
 }
 
 export function OutputsStage({
@@ -68,6 +71,7 @@ export function OutputsStage({
   graph,
   selectedScreen,
   localPreviews,
+  onLocalProjectChanged,
 }: OutputsStageProps) {
   const previewFrame = useRef<HTMLIFrameElement>(null);
   const [previewStatus, setPreviewStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -174,6 +178,8 @@ export function OutputsStage({
           </div>
         )}
         <LocalPreviewPanel previews={localPreviews} />
+        <AgentActivityPanel enabled={localPreviews.enabled} />
+        <HistoryPanel enabled={localPreviews.enabled} onProjectChanged={onLocalProjectChanged} />
       </div>
       <div className="min-w-0 overflow-hidden rounded-[24px] border border-[#303a35] bg-[#1c211f] text-[#dce5df] shadow-[0_24px_50px_-34px_rgba(18,28,23,.8)]">
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">

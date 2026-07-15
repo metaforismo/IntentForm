@@ -1,7 +1,14 @@
 "use client";
 
 import { CheckCircle, Warning, XCircle } from "@phosphor-icons/react";
-import type { VerificationFinding, VerificationResult } from "@intentform/verifier";
+import { useState } from "react";
+import {
+  ACCESSIBILITY_PROFILES,
+  ACCESSIBILITY_RULESET,
+  type AccessibilityProfile,
+  type VerificationFinding,
+  type VerificationResult,
+} from "@intentform/verifier";
 import type { SemanticInterfaceGraph } from "@intentform/semantic-schema";
 import type { ScenarioId } from "../studio";
 
@@ -65,6 +72,15 @@ function evaluateRules(graph: SemanticInterfaceGraph, verification: Verification
     target: "Design tokens",
     status: findingEndsWith(findings, "tokens.contrast.primary-action") ? "failed" : "passed",
   });
+  const accessibilityFindings = findings.filter((finding) => finding.rule?.standard === ACCESSIBILITY_RULESET.standard);
+  rules.push({
+    id: "accessibility.profile-matrix",
+    name: `${ACCESSIBILITY_RULESET.standard} profile matrix`,
+    target: `${ACCESSIBILITY_PROFILES.length} profiles · rules ${ACCESSIBILITY_RULESET.version}`,
+    status: accessibilityFindings.some((finding) => finding.severity === "error" && finding.status !== "suppressed")
+      ? "failed"
+      : accessibilityFindings.length > 0 ? "warning" : "passed",
+  });
   rules.push({
     id: "tokens.body-contrast",
     name: "Body text contrast ≥ 4.5:1",
@@ -91,9 +107,11 @@ export function VerifyStage({
   repairFinding,
   isPending,
 }: VerifyStageProps) {
+  const [accessibilityProfileId, setAccessibilityProfileId] = useState<AccessibilityProfile["id"]>("baseline");
+  const accessibilityProfile = ACCESSIBILITY_PROFILES.find((profile) => profile.id === accessibilityProfileId)!;
   const rules = evaluateRules(graph, verification);
   const hasFindings = verification.findings.length > 0;
-  const hasErrorFindings = verification.findings.some((finding) => finding.severity === "error");
+  const hasErrorFindings = verification.findings.some((finding) => finding.severity === "error" && finding.status !== "suppressed");
   const evidencePending = verification.scenario.buildStatus === "not-run";
   const verdictLabel = verification.passed
     ? "Passed"
@@ -105,7 +123,7 @@ export function VerifyStage({
       : "bg-[var(--danger-soft)] text-[var(--danger)]";
 
   return (
-    <div className="mx-auto grid max-w-[1200px] gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+    <div className="mx-auto grid max-w-[1200px] gap-6 2xl:grid-cols-[minmax(0,1fr)_360px]">
       <div>
         <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--line)] pb-5">
           <div><span className="font-mono text-[10px] text-[var(--accent)]">BUILD VERIFICATION</span><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">Evidence before claims.</h2></div>
@@ -125,6 +143,37 @@ export function VerifyStage({
           </div>
         </div>
 
+        <section className="mt-6 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4" aria-labelledby="accessibility-matrix-heading">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <span className="font-mono text-[9px] text-[var(--accent)]">ACCESSIBILITY MATRIX</span>
+              <h3 id="accessibility-matrix-heading" className="mt-1 text-sm font-semibold text-[var(--t-strong)]">{ACCESSIBILITY_RULESET.standard} · rules {ACCESSIBILITY_RULESET.version}</h3>
+            </div>
+            <span className="font-mono text-[9px] text-[var(--muted)]">No authored copy in evidence</span>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2" role="group" aria-label="Accessibility audit profile">
+            {ACCESSIBILITY_PROFILES.map((profile) => {
+              const selected = profile.id === accessibilityProfileId;
+              const count = verification.findings.filter((finding) => finding.rule?.profileId === profile.id && finding.status !== "suppressed").length;
+              return (
+                <button
+                  key={profile.id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => setAccessibilityProfileId(profile.id)}
+                  className={`min-h-11 rounded-xl border px-3 py-2 text-left ${selected ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--line)] bg-[var(--field)] hover:border-[var(--faint)]"}`}
+                >
+                  <span className="flex items-center justify-between gap-3 text-[11px] font-semibold capitalize text-[var(--t-strong)]"><span>{profile.id.replace("-", " ")}</span><span className="font-mono text-[9px] text-[var(--muted)]">{count === 0 ? "pass" : `${count} finding${count === 1 ? "" : "s"}`}</span></span>
+                  <span className="mt-1 block font-mono text-[9px] text-[var(--muted)]">{profile.locale} · {profile.direction.toUpperCase()} · {Math.round(profile.textScale * 100)}%</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-3 rounded-xl bg-[var(--chip)] p-3 text-[11px] leading-relaxed text-[var(--muted)]" lang={accessibilityProfile.locale} dir={accessibilityProfile.direction}>
+            Active inspection: <strong className="text-[var(--t-strong)]">{accessibilityProfile.locale}</strong>, {accessibilityProfile.direction.toUpperCase()} reading direction, {Math.round(accessibilityProfile.textExpansion * 100)}% text expansion, {Math.round(accessibilityProfile.textScale * 100)}% text scale, {accessibilityProfile.contrast} contrast{accessibilityProfile.reducedMotion ? ", reduced motion" : ""}.
+          </div>
+        </section>
+
         {hasFindings ? (
           <div className="mt-8">
             <span className={`font-mono text-[10px] ${hasErrorFindings ? "text-[var(--danger)]" : "text-[var(--warn)]"}`}>FINDINGS · {verification.findings.length}</span>
@@ -138,7 +187,8 @@ export function VerifyStage({
                   )}
                   <div>
                     <strong className="text-[13px] font-medium text-[var(--t-strong)]">{finding.violatedIntent}</strong>
-                    <p className="mt-1 font-mono text-[10px] text-[var(--muted)]">{finding.id} · layer: {finding.responsibleLayer}</p>
+                    <p className="mt-1 font-mono text-[10px] text-[var(--muted)]">{finding.id} · layer: {finding.responsibleLayer}{finding.rule ? ` · ${finding.rule.standard} ${finding.rule.version}` : ""}</p>
+                    {finding.status === "suppressed" ? <p className="mt-2 rounded-lg bg-[var(--warn-soft)] px-3 py-2 text-[11px] text-[var(--warn)]">Explicit suppression: {finding.suppressionReason}</p> : null}
                     <dl className="mt-3 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-4 gap-y-1.5 rounded-xl border border-[var(--line)] bg-[var(--chip)] p-3">
                       {finding.evidence.flatMap((evidence) => [
                         <dt key={`${evidence.label}-label`} className="text-[11px] text-[var(--muted)]">{evidence.label}</dt>,
@@ -146,7 +196,7 @@ export function VerifyStage({
                       ])}
                     </dl>
                   </div>
-                  {finding.severity === "error" ? <button type="button" onClick={() => repairFinding(finding)} disabled={isPending} className="self-start rounded-xl bg-[var(--accent-deep)] px-4 py-2.5 text-[10px] font-semibold text-white active:translate-y-px disabled:opacity-60">Plan repair</button> : null}
+                  {finding.severity === "error" && !finding.rule ? <button type="button" onClick={() => repairFinding(finding)} disabled={isPending} className="min-h-11 self-start rounded-xl bg-[var(--accent-deep)] px-4 py-2.5 text-[10px] font-semibold text-white active:translate-y-px disabled:opacity-60">Plan repair</button> : null}
                 </div>
               ))}
             </div>
@@ -164,9 +214,9 @@ export function VerifyStage({
 
       <div className="rounded-[24px] border border-[var(--line)] bg-[var(--inset)] p-5">
         <span className="font-mono text-[9px] text-[var(--accent)]">SCENARIO</span>
-        <div className="mt-3 grid grid-flow-col rounded-lg border border-[var(--line)] bg-[var(--field)] p-0.5" role="group" aria-label="Verification scenario">
+        <div className="mt-3 grid grid-cols-3 rounded-lg border border-[var(--line)] bg-[var(--field)] p-0.5" role="group" aria-label="Verification scenario">
           {(Object.entries(scenarios) as Array<[ScenarioId, typeof scenario]>).map(([id, item]) => (
-            <button key={id} type="button" aria-pressed={scenarioId === id} onClick={() => setScenarioId(id)} className={`min-h-8 rounded-md px-2 text-[10px] font-medium ${scenarioId === id ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]" : "text-[var(--muted)] hover:text-[var(--t-strong)]"}`}>
+            <button key={id} type="button" aria-pressed={scenarioId === id} onClick={() => setScenarioId(id)} className={`min-h-8 min-w-0 break-words rounded-md px-1.5 text-[10px] font-medium leading-tight ${scenarioId === id ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]" : "text-[var(--muted)] hover:text-[var(--t-strong)]"}`}>
               {item.label}
             </button>
           ))}
@@ -180,7 +230,7 @@ export function VerifyStage({
               {verification.scenario.buildStatus === "not-run" ? "Not run for this graph" : verification.scenario.buildStatus === "passed" ? "Passed" : "Failed"}
             </dd>
           </div>
-          <div><dt className="text-[11px] text-[var(--muted)]">Rule set</dt><dd className="mt-1 font-mono text-[12px] text-[var(--t-strong)]">intentform/0.1</dd></div>
+          <div><dt className="text-[11px] text-[var(--muted)]">Rule set</dt><dd className="mt-1 font-mono text-[12px] text-[var(--t-strong)]">intentform/0.1 · a11y/{ACCESSIBILITY_RULESET.version}</dd></div>
         </dl>
         <p className="mt-7 border-t border-[var(--line)] pt-5 text-xs leading-relaxed text-[var(--muted)]">Generation is not a build. Verification passes only after current build evidence exists and the same scenario rules run without blocking findings.</p>
       </div>

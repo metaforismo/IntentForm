@@ -12,9 +12,11 @@ import { GET as getProject, POST as migrateProjectRoute, PUT as putProject } fro
 import { GET as getPreviews, POST as mutatePreview } from "../apps/studio-web/app/api/project/previews/route";
 import { GET as getProjectAsset } from "../apps/studio-web/app/api/project/assets/[digest]/route";
 import { GET as listBezelPacks } from "../apps/studio-web/app/api/project/bezel-packs/route";
+import { GET as getAgentActivity } from "../apps/studio-web/app/api/project/agent-activity/route";
 import { GET as getBezelAsset } from "../apps/studio-web/app/api/project/bezel-packs/[packId]/[digest]/route";
 import { POST as repair } from "../apps/studio-web/app/api/repair/route";
 import { loadProject, saveProject } from "../packages/mcp-server/src/store";
+import { recordAgentActivity } from "../packages/mcp-server/src/activity";
 import {
   createPreviewBinding,
   createQueuedManifest,
@@ -220,6 +222,49 @@ describe("repair verification boundary", () => {
 });
 
 describe("local project trust boundary", () => {
+  it("serves metadata-only agent policy locally and fails closed cross-origin", async () => {
+    delete process.env.VERCEL;
+    delete process.env.VERCEL_ENV;
+    const projectDir = mkdtempSync(join(tmpdir(), "intentform-agent-api-"));
+    process.env.INTENTFORM_PROJECT_DIR = projectDir;
+    try {
+      recordAgentActivity(projectDir, {
+        transport: "stdio",
+        tool: "intentform_get_graph",
+        access: "read",
+        outcome: "succeeded",
+        durationMs: 4,
+      });
+      const response = await getAgentActivity(new Request("http://localhost/api/project/agent-activity"));
+      expect(response.status).toBe(200);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      const payload = await response.json() as Record<string, unknown>;
+      expect(payload).toMatchObject({
+        policy: {
+          scope: "current-local-project",
+          arbitraryShell: false,
+          arbitraryFilesystem: false,
+          outboundNetwork: false,
+        },
+        entries: [{
+          transport: "stdio",
+          tool: "intentform_get_graph",
+          access: "read",
+          outcome: "succeeded",
+          durationMs: 4,
+        }],
+      });
+      expect(JSON.stringify(payload)).not.toMatch(/authorization|bearer [a-z0-9]|sourcePath|graph\.json/i);
+
+      const blocked = await getAgentActivity(new Request("http://localhost/api/project/agent-activity", {
+        headers: { origin: "https://attacker.example", "sec-fetch-site": "cross-site" },
+      }));
+      expect(blocked.status).toBe(403);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
   it("probes local preview availability without seeding or reading a project", async () => {
     delete process.env.VERCEL;
     delete process.env.VERCEL_ENV;

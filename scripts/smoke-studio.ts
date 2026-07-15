@@ -5,7 +5,10 @@ import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium, type Browser } from "playwright";
+import AxeBuilder from "@axe-core/playwright";
 import { demoGraph } from "../packages/proof-report/src/demo.ts";
+import { recordAgentActivity } from "../packages/mcp-server/src/activity.ts";
+import { applyHistoryBranchPatch, createHistoryBranch, graphFingerprint } from "../packages/mcp-server/src/history.ts";
 import { assertSecurityHeaders, gotoStudio, runSmokeScenario } from "./smoke-studio-support.ts";
 
 const root = process.cwd();
@@ -21,6 +24,26 @@ if (localTestProjectDir) {
   const packRoot = join(localTestProjectDir, "bezel-packs", packId);
   mkdirSync(packRoot, { recursive: true });
   writeFileSync(join(localTestProjectDir, "graph.json"), JSON.stringify(demoGraph));
+  const localProjectFingerprint = graphFingerprint(demoGraph);
+  createHistoryBranch(localTestProjectDir, "agent-copy", demoGraph, localProjectFingerprint, "agent");
+  applyHistoryBranchPatch(localTestProjectDir, "agent-copy", {
+    id: "smoke-agent-label",
+    rationale: "Review an isolated agent label",
+    operations: [{ op: "set-label", target: "payment-request.confirm", label: "Confirm securely" }],
+  }, localProjectFingerprint, "agent");
+  createHistoryBranch(localTestProjectDir, "conflict-copy", demoGraph, localProjectFingerprint, "agent");
+  applyHistoryBranchPatch(localTestProjectDir, "conflict-copy", {
+    id: "smoke-conflicting-label",
+    rationale: "Exercise path-level conflict review",
+    operations: [{ op: "set-label", target: "payment-request.confirm", label: "Approve with conflict" }],
+  }, localProjectFingerprint, "agent");
+  recordAgentActivity(localTestProjectDir, {
+    transport: "stdio",
+    tool: "intentform_get_graph",
+    access: "read",
+    outcome: "succeeded",
+    durationMs: 4,
+  });
   writeFileSync(join(packRoot, "frame.png"), bytes);
   writeFileSync(join(packRoot, "manifest.json"), JSON.stringify({
     format: "intentform-device-bezel-pack",
@@ -288,6 +311,20 @@ try {
       await page.getByRole("button", { name: "Native outputs" }).click();
       const evidencePanel = page.getByRole("region", { name: "Continuous local evidence" });
       await evidencePanel.getByText("saved graph", { exact: true }).waitFor();
+      const agentPanel = page.getByRole("region", { name: "Agent access" });
+      await agentPanel.getByText("least authority", { exact: true }).waitFor();
+      await agentPanel.getByText("No shell · no network", { exact: true }).waitFor();
+      await agentPanel.getByText("get graph", { exact: true }).waitFor();
+      await agentPanel.getByText("succeeded", { exact: true }).waitFor();
+      const historyPanel = page.getByRole("region", { name: "History & branches" });
+      await historyPanel.getByText("history valid", { exact: true }).waitFor();
+      await historyPanel.getByTestId("history-branch-agent-copy").waitFor();
+      await historyPanel.getByTestId("history-branch-agent-copy").getByRole("button", { name: "Preview", exact: true }).click();
+      await historyPanel.getByRole("button", { name: "Merge 1 changes" }).waitFor();
+      await historyPanel.getByRole("button", { name: "Merge 1 changes" }).click();
+      await historyPanel.getByText("merge branch agent-copy", { exact: true }).waitFor();
+      await historyPanel.getByTestId("history-branch-conflict-copy").getByRole("button", { name: "Preview", exact: true }).click();
+      await historyPanel.getByTestId("history-merge-conflicts").getByText(/both-modified.*intent\.label/).waitFor();
       const browserPreview = evidencePanel.locator('[data-preview-target="browser"]');
       await browserPreview.getByRole("button", { name: "Start" }).click();
       await browserPreview.getByText("fresh · ready", { exact: true }).waitFor({ timeout: 30_000 });
@@ -732,6 +769,66 @@ try {
       await page.locator(".editor-world svg text", { hasText: "onDone" }).waitFor();
       await page.getByRole("button", { name: "Undo" }).click();
       await page.locator(".editor-world svg text", { hasText: "onDone" }).waitFor({ state: "detached" });
+    },
+  });
+
+  await runSmokeScenario(browser, {
+    name: "Studio WCAG, keyboard, RTL and text-scale matrix",
+    context: { viewport: { width: 1280, height: 900 } },
+    run: async (accessibilityPage) => {
+      await gotoStudio(accessibilityPage, origin);
+      const axe = await new AxeBuilder({ page: accessibilityPage })
+        .withTags(["wcag2a", "wcag2aa", "wcag22aa"])
+        .analyze();
+      if (axe.violations.length > 0) {
+        throw new Error(`Studio failed axe: ${axe.violations.map((item) => `${item.id} (${item.nodes.length}) ${item.nodes.map((node) => node.target.join(" ")).join(" | ")}`).join("; ")}`);
+      }
+
+      await accessibilityPage.evaluate(() => {
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      });
+      await accessibilityPage.keyboard.press("Tab");
+      if (await accessibilityPage.evaluate(() => document.activeElement?.textContent?.trim()) !== "Skip to workspace") {
+        throw new Error("Studio skip navigation was not the first keyboard focus target");
+      }
+      await accessibilityPage.keyboard.press("Enter");
+      if (await accessibilityPage.locator("#studio-workspace").evaluate((element) => document.activeElement === element) !== true) {
+        throw new Error("Studio skip navigation did not move focus to the workspace");
+      }
+
+      await accessibilityPage.getByRole("button", { name: "Verification" }).click();
+      await accessibilityPage.getByRole("heading", { name: /WCAG 2.2 AA/ }).waitFor();
+      const rtlProfile = accessibilityPage.getByRole("button", { name: /rtl/i }).filter({ hasText: "RTL" });
+      await rtlProfile.click();
+      const activeInspection = accessibilityPage.getByText(/Active inspection:/);
+      if (await activeInspection.getAttribute("dir") !== "rtl" || await activeInspection.getAttribute("lang") !== "ar") {
+        throw new Error("RTL audit profile did not expose language and reading direction semantics");
+      }
+
+      const undersized = await accessibilityPage.locator("button:visible").evaluateAll((elements) => elements
+        .map((element) => {
+          const rect = element.getBoundingClientRect();
+          return { label: element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "button", width: rect.width, height: rect.height };
+        })
+        .filter((item) => item.width > 0 && item.height > 0 && (item.width < 24 || item.height < 24)));
+      if (undersized.length > 0) throw new Error(`Studio has undersized interactive targets: ${JSON.stringify(undersized.slice(0, 5))}`);
+
+      await accessibilityPage.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
+      const scaledOverflow = await accessibilityPage.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      if (scaledOverflow > 1) throw new Error(`Studio has ${scaledOverflow}px horizontal overflow at 200% text scale`);
+      const clipped = await accessibilityPage.locator("body *:visible").evaluateAll((elements) => elements
+        .map((element) => {
+          const rect = element.getBoundingClientRect();
+          return { label: element.getAttribute("aria-label") ?? element.textContent?.trim().slice(0, 40) ?? element.tagName, left: rect.left, right: rect.right };
+        })
+        .filter((item) => item.right > window.innerWidth + 1 || item.left < -1));
+      if (clipped.length > 0) throw new Error(`Studio clips visible content at 200% text scale: ${JSON.stringify(clipped.slice(0, 5))}`);
+      await mkdir(join(root, "output/playwright"), { recursive: true });
+      await accessibilityPage.screenshot({ path: join(root, "output/playwright/studio-accessibility-text-scale-rtl.png"), fullPage: true });
+      await accessibilityPage.emulateMedia({ reducedMotion: "reduce", forcedColors: "active" });
+      const reducedMotion = await accessibilityPage.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior);
+      if (reducedMotion !== "auto") throw new Error("Studio reduced-motion mode retained smooth scrolling");
+      await accessibilityPage.screenshot({ path: join(root, "output/playwright/studio-accessibility-forced-colors.png"), fullPage: true });
     },
   });
 

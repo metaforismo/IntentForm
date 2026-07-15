@@ -615,13 +615,14 @@ export function Studio() {
     })();
   };
 
-  const errorCount = verification.findings.filter((finding) => finding.severity === "error").length;
+  const errorCount = verification.findings.filter((finding) => finding.severity === "error" && finding.status !== "suppressed").length;
   const noticeIsError = /failed|could not|invalid|quota|unavailable|rejected/i.test(notice);
 
   return (
     <main className="studio-grain min-h-[100dvh] overflow-hidden text-[var(--ink)]">
-      <div className="grid min-h-[100dvh] grid-rows-[56px_minmax(0,1fr)] bg-[var(--surface)]">
-        <header className="studio-topbar relative z-[5] grid grid-cols-[auto_minmax(0,1fr)_auto] items-center border-b border-[var(--line)] bg-[rgba(250,251,248,.92)] px-3 backdrop-blur-xl">
+      <a className="skip-link" href="#studio-workspace">Skip to workspace</a>
+      <div className="grid min-h-[100dvh] grid-rows-[auto_minmax(0,1fr)] bg-[var(--surface)]">
+        <header className="studio-topbar relative z-[5] grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto] items-center overflow-hidden border-b border-[var(--line)] bg-[rgba(250,251,248,.92)] px-3 py-1 backdrop-blur-xl">
           <div className="flex min-w-0 items-center gap-2.5">
             <div className="relative">
               <button
@@ -674,7 +675,7 @@ export function Studio() {
             </div>
           </div>
 
-          <nav aria-label="Workflow" className="mx-auto flex min-w-0 items-center rounded-[10px] border border-[var(--line)] bg-[var(--chip)] p-0.5">
+          <nav aria-label="Workflow" className="mx-auto flex max-w-full min-w-0 items-center overflow-x-auto rounded-[10px] border border-[var(--line)] bg-[var(--chip)] p-0.5 [scrollbar-width:none]">
             {stages.map((item) => {
               const Icon = item.icon;
               const active = stage === item.id;
@@ -689,7 +690,7 @@ export function Studio() {
                   className={`group relative flex min-h-8 items-center justify-center gap-1.5 rounded-lg px-2 text-[12px] font-medium transition-[background,color,box-shadow,transform] duration-200 active:scale-[.97] lg:px-2.5 ${active ? "bg-[var(--seg-active)] text-[var(--ink)] shadow-[0_5px_14px_-10px_var(--shadow-strong),inset_0_0_0_1px_var(--float-inset)]" : "text-[var(--muted)] hover:bg-[var(--seg-hover)] hover:text-[var(--ink)]"}`}
                 >
                   <Icon size={14} weight={active ? "fill" : "regular"} />
-                  <span className="hidden xl:inline">{item.shortLabel}</span>
+                  <span className="hidden min-[1400px]:inline">{item.shortLabel}</span>
                   {item.id === "verify" && errorCount > 0 ? (
                     <span className="absolute -right-0.5 -top-0.5 grid size-3.5 place-items-center rounded-full bg-[var(--danger)] font-mono text-[10px] font-bold text-white">{errorCount}</span>
                   ) : null}
@@ -743,7 +744,7 @@ export function Studio() {
           {isPending ? <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-[var(--line)]"><motion.span className="block h-full w-1/3 bg-[var(--accent)]" initial={{ x: "-100%" }} animate={{ x: "300%" }} transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }} /></div> : null}
         </header>
 
-        <section className="relative min-h-0 min-w-0 overflow-hidden" aria-busy={isPending}>
+        <section id="studio-workspace" tabIndex={-1} className="relative min-h-0 min-w-0 overflow-hidden" aria-busy={isPending} aria-label={`${stages.find((item) => item.id === stage)?.label ?? stage} workspace`}>
           {pendingAction ? (
             <span className="sr-only" role="status" aria-live="polite">Request in progress: {pendingAction}.</span>
           ) : null}
@@ -832,6 +833,7 @@ export function Studio() {
                   graph={graph}
                   selectedScreen={selectedScreen}
                   localPreviews={localPreviews}
+                  onLocalProjectChanged={openLocalProject}
                 />
               ) : null}
 

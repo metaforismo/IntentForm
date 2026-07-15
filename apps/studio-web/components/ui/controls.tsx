@@ -7,7 +7,7 @@ export function IconButton({
   onClick,
   disabled,
   danger,
-  size = 7,
+  size = 8,
   title,
   ariaExpanded,
   children,
@@ -16,12 +16,12 @@ export function IconButton({
   onClick?: () => void;
   disabled?: boolean;
   danger?: boolean;
-  size?: 7 | 8;
+  size?: 7 | 8 | 11;
   title?: string;
   ariaExpanded?: boolean;
   children: ReactNode;
 }) {
-  const sizeClass = size === 8 ? "size-8" : "size-7";
+  const sizeClass = size === 11 ? "size-11" : size === 8 ? "size-8" : "size-7";
   const tone = danger
     ? "hover:bg-[var(--danger-soft)] hover:text-[var(--danger)]"
     : "hover:bg-[var(--hover)] hover:text-[var(--ink)]";

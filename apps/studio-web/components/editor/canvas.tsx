@@ -550,12 +550,12 @@ export function CanvasStage({
                         data-testid={`canvas-node-${node.id}`}
                         data-selected={selected}
                         data-cross-hover={hoveredNodeId === node.id}
-                        role="button"
-                        tabIndex={previewMode ? (flowStep ? 0 : -1) : 0}
+                        role={selected && !previewMode ? undefined : "button"}
+                        tabIndex={selected && !previewMode ? -1 : previewMode ? (flowStep ? 0 : -1) : 0}
                         aria-label={previewMode && flowStep
                           ? `Follow ${node.intent.label} to ${graph.screens.find((item) => item.id === flowStep.to)?.title ?? flowStep.to}`
                           : `Select ${nodeNames[node.kind]}`}
-                        onClick={(event) => {
+                        onClick={selected && !previewMode ? undefined : (event) => {
                           event.stopPropagation();
                           if (panActive) return;
                           if (previewMode) {

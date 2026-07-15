@@ -21,7 +21,7 @@
   --ink: #1c211e;
   --t-strong: #2f3531;
   --muted: #67706b;
-  --faint: #98a19b;
+  --faint: #626c65;
 
   --line: #e0e4e0;
   --line-strong: #cdd3ce;
@@ -70,7 +70,7 @@
   --ink: #e6eae7;
   --t-strong: #dce1dd;
   --muted: #9ca6a0;
-  --faint: #6c7570;
+  --faint: #89938d;
 
   --line: #2a302c;
   --line-strong: #39413c;
@@ -116,6 +116,7 @@ body {
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 
+a:focus-visible,
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
@@ -126,6 +127,20 @@ textarea:focus-visible,
   outline: 2px solid #1769ce;
   outline-offset: 2px;
 }
+
+.skip-link {
+  position: fixed;
+  inset-block-start: 8px;
+  inset-inline-start: 8px;
+  z-index: 100;
+  min-height: 44px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  color: var(--on-accent);
+  background: var(--accent-deep);
+  transform: translateY(-160%);
+}
+.skip-link:focus { transform: translateY(0); }
 
 ::selection { color: #fff; background: var(--accent); }
 
@@ -321,7 +336,26 @@ textarea:focus-visible,
   .runtime-primary.runtime-regular-persistent { position: fixed; right: max(22px, calc((100vw - 396px) / 2)); bottom: max(18px, env(safe-area-inset-bottom)); left: max(22px, calc((100vw - 396px) / 2)); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .runtime-preview-spinner { animation-duration: 1.4s; }
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+  .runtime-preview-spinner { animation: none; border-top-color: currentColor; }
+}
+
+@media (pointer: coarse) {
+  button,
+  [role="button"],
+  a[role="menuitem"] { min-height: 44px; }
+}
+
+@media (forced-colors: active) {
+  :focus-visible { outline: 3px solid Highlight !important; }
+  button, input, select, textarea, [role="button"] { border: 1px solid ButtonText; }
+  .editor-viewport { background-image: none; }
 }
 
 @keyframes menu-in {

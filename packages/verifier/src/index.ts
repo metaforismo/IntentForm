@@ -6,6 +6,21 @@ import {
   type PlatformTarget,
   type SemanticInterfaceGraph,
 } from "@intentform/semantic-schema";
+import {
+  ACCESSIBILITY_PROFILES,
+  ACCESSIBILITY_RULESET,
+  auditAccessibility,
+  type AccessibilityProfile,
+  type AccessibilitySuppression,
+} from "@intentform/accessibility-verifier";
+
+export {
+  ACCESSIBILITY_PROFILES,
+  ACCESSIBILITY_RULESET,
+  auditAccessibility,
+  type AccessibilityProfile,
+  type AccessibilitySuppression,
+} from "@intentform/accessibility-verifier";
 
 export interface Evidence {
   kind: "viewport" | "node" | "build" | "rule" | "screenshot" | "bounds" | "accessibility";
@@ -106,13 +121,24 @@ export interface VerificationFinding {
   violatedIntent: string;
   evidence: Evidence[];
   responsibleLayer: "graph" | "tokens" | "compiler";
-  status: "open" | "repaired" | "verified";
+  status: "open" | "repaired" | "verified" | "suppressed";
+  rule?: {
+    id: string;
+    version: string;
+    standard: string;
+    profileId: string;
+  };
+  suppressionReason?: string;
 }
 
 export interface VerificationScenario {
   target: PlatformTarget;
   viewport: { width: number; height: number };
   buildStatus: "passed" | "failed" | "not-run";
+  accessibility?: {
+    profiles?: readonly AccessibilityProfile[];
+    suppressions?: readonly AccessibilitySuppression[];
+  };
 }
 
 export interface VerificationResult {
@@ -142,7 +168,7 @@ export function contrastRatio(foreground: string, background: string): number | 
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-/* Token-layer rules (WCAG 2.1): the primary action renders white text on
+/* Token-layer rules (WCAG 2.2): the primary action renders white text on
    color.accent (≥ 3:1 for large text / UI components), and body copy renders
    color.ink on color.surface (≥ 4.5:1). */
 function verifyTokenContrast(
@@ -220,6 +246,30 @@ export function verifyGraph(
   }
 
   findings.push(...verifyTokenContrast(graph, scenario.target));
+  const accessibility = auditAccessibility(graph, {
+    target: scenario.target,
+    profiles: scenario.accessibility?.profiles ?? ACCESSIBILITY_PROFILES,
+    ...(scenario.accessibility?.suppressions
+      ? { suppressions: scenario.accessibility.suppressions }
+      : {}),
+  });
+  findings.push(...accessibility.findings.map((item): VerificationFinding => ({
+    id: item.id,
+    target: item.target,
+    screenId: item.screenId,
+    severity: item.severity,
+    violatedIntent: item.message,
+    evidence: item.evidence,
+    responsibleLayer: item.responsibleLayer,
+    status: item.status,
+    rule: {
+      id: item.ruleId,
+      version: item.ruleVersion,
+      standard: item.standard,
+      profileId: item.profileId,
+    },
+    ...(item.suppressionReason ? { suppressionReason: item.suppressionReason } : {}),
+  })));
 
   if (scenario.buildStatus === "failed") {
     findings.push({
@@ -304,7 +354,7 @@ export function verifyGraph(
 
   return {
     passed: scenario.buildStatus === "passed"
-      && findings.every((finding) => finding.severity !== "error"),
+      && findings.every((finding) => finding.severity !== "error" || finding.status === "suppressed"),
     scenario,
     findings,
   };

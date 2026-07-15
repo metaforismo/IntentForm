@@ -24,6 +24,15 @@ import {
   previewGraphMigration,
   type MigrationDiagnostic,
 } from "@intentform/semantic-schema/migrations";
+import {
+  abortPreparedHistoryOperation,
+  finalizeHistoryOperation,
+  prepareHistoryOperation,
+  type HistoryOperation,
+  type HistoryAuthor,
+  type HistoryProvenance,
+} from "./history.ts";
+import { graphFingerprint } from "./fingerprint.ts";
 
 const MAX_REVISIONS = 50;
 let temporaryFileSequence = 0;
@@ -40,16 +49,6 @@ export function resolveProjectDir(explicit?: string): string {
     if (parent === current) return join(process.cwd(), ".intentform");
     current = parent;
   }
-}
-
-export function graphFingerprint(graph: SemanticInterfaceGraph): string {
-  const input = stableSerialize(graph);
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < input.length; index += 1) {
-    hash ^= input.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 const graphPath = (dir: string) => join(dir, "graph.json");
@@ -144,7 +143,7 @@ function acquireProjectWriteLock(dir: string): number {
   throw new ProjectBusyError();
 }
 
-function withProjectWriteLock<T>(dir: string, operation: () => T): T {
+export function withProjectWriteLock<T>(dir: string, operation: () => T): T {
   mkdirSync(dir, { recursive: true });
   const descriptor = acquireProjectWriteLock(dir);
 
@@ -260,6 +259,7 @@ export interface AppliedProjectMigration extends ProjectMigrationSummary {
 export function migrateProject(
   dir: string,
   expectedSourceFingerprint: string,
+  author: HistoryAuthor = "system",
 ): AppliedProjectMigration {
   return withProjectWriteLock(dir, () => {
     if (!existsSync(graphPath(dir))) throw new Error("No local graph exists to migrate.");
@@ -275,7 +275,25 @@ export function migrateProject(
       const id = `${at.replace(/[:.]/g, "-")}-${inspection.sourceFingerprint}`;
       checkpoint = join(migrationCheckpointsDir(dir), `${id}.json`);
       writeFileAtomic(checkpoint, source);
-      writeFileAtomic(graphPath(dir), inspection.canonical);
+      const fingerprint = graphFingerprint(inspection.graph);
+      const preparedHistory = prepareHistoryOperation(
+        dir,
+        null,
+        null,
+        inspection.graph,
+        fingerprint,
+        `migrate schema ${inspection.fromVersion} to ${inspection.toVersion}`,
+        { author, kind: "save", sourceId: `${inspection.fromVersion}->${inspection.toVersion}` },
+      );
+      try {
+        writeFileAtomic(graphPath(dir), inspection.canonical);
+        finalizeHistoryOperation(dir, preparedHistory);
+      } catch (error) {
+        writeFileAtomic(graphPath(dir), source);
+        abortPreparedHistoryOperation(dir, preparedHistory);
+        if (checkpoint) rmSync(checkpoint, { force: true });
+        throw error;
+      }
     }
 
     const { graph: _graph, canonical: _canonical, ...summary } = inspection;
@@ -297,8 +315,25 @@ export function loadProject(dir: string): LoadedProject {
         return { graph, fingerprint: graphFingerprint(graph), seeded: false };
       }
       const graph = structuredClone(demoGraph);
-      writeFileAtomic(graphPath(dir), stableSerialize(graph));
-      return { graph, fingerprint: graphFingerprint(graph), seeded: true };
+      const fingerprint = graphFingerprint(graph);
+      const preparedHistory = prepareHistoryOperation(
+        dir,
+        null,
+        null,
+        graph,
+        fingerprint,
+        "seed verified sample project",
+        { author: "system" },
+      );
+      try {
+        writeFileAtomic(graphPath(dir), stableSerialize(graph));
+        finalizeHistoryOperation(dir, preparedHistory);
+      } catch (error) {
+        rmSync(graphPath(dir), { force: true });
+        abortPreparedHistoryOperation(dir, preparedHistory);
+        throw error;
+      }
+      return { graph, fingerprint, seeded: true };
     });
   }
   const graph = requireCurrentProject(readFileSync(graphPath(dir), "utf8"));
@@ -310,12 +345,12 @@ export function saveProject(
   next: SemanticInterfaceGraph,
   reason: string,
   expectedFingerprint: string | null,
-): { revision: RevisionEntry | null; fingerprint: string } {
+  provenance: HistoryProvenance = { author: "system", kind: "save" },
+): { revision: RevisionEntry | null; fingerprint: string; operation: HistoryOperation | null } {
   const graph = parseGraph(next);
   const nextFingerprint = graphFingerprint(graph);
 
   return withProjectWriteLock(dir, () => {
-    mkdirSync(revisionsDir(dir), { recursive: true });
     const currentGraph = existsSync(graphPath(dir))
       ? requireCurrentProject(readFileSync(graphPath(dir), "utf8"))
       : null;
@@ -324,27 +359,56 @@ export function saveProject(
       throw new ProjectConflictError(expectedFingerprint, currentFingerprint);
     }
     if (currentFingerprint === nextFingerprint) {
-      return { revision: null, fingerprint: nextFingerprint };
+      return { revision: null, fingerprint: nextFingerprint, operation: null };
     }
 
+    const preparedHistory = prepareHistoryOperation(
+      dir,
+      currentGraph,
+      currentFingerprint,
+      graph,
+      nextFingerprint,
+      reason,
+      provenance,
+    );
     let revision: RevisionEntry | null = null;
-    if (currentGraph && currentFingerprint) {
-      const at = new Date().toISOString();
-      const id = `${at.replace(/[:.]/g, "-")}-${currentFingerprint}`;
-      writeFileAtomic(
-        join(revisionsDir(dir), `${id}.json`),
-        JSON.stringify({ at, reason, fingerprint: currentFingerprint, graph: currentGraph }, null, 2),
-      );
-      revision = { id, at, reason, fingerprint: currentFingerprint };
-      pruneRevisions(dir);
+    let revisionPath: string | null = null;
+    let operation: HistoryOperation;
+    let graphWritten = false;
+    try {
+      if (currentGraph && currentFingerprint) {
+        const at = new Date().toISOString();
+        const id = `${at.replace(/[:.]/g, "-")}-${currentFingerprint}`;
+        revisionPath = join(revisionsDir(dir), `${id}.json`);
+        writeFileAtomic(
+          revisionPath,
+          JSON.stringify({ at, reason, fingerprint: currentFingerprint, graph: currentGraph }, null, 2),
+        );
+        revision = { id, at, reason, fingerprint: currentFingerprint };
+      }
+      writeFileAtomic(graphPath(dir), stableSerialize(graph));
+      graphWritten = true;
+      operation = finalizeHistoryOperation(dir, preparedHistory);
+      try {
+        pruneRevisions(dir);
+      } catch {
+        // Retaining an extra rollback snapshot is safe; a later save retries pruning.
+      }
+    } catch (error) {
+      if (graphWritten) {
+        if (currentGraph) writeFileAtomic(graphPath(dir), stableSerialize(currentGraph));
+        else rmSync(graphPath(dir), { force: true });
+      }
+      abortPreparedHistoryOperation(dir, preparedHistory);
+      if (revisionPath) rmSync(revisionPath, { force: true });
+      throw error;
     }
-
-    writeFileAtomic(graphPath(dir), stableSerialize(graph));
-    return { revision, fingerprint: nextFingerprint };
+    return { revision, fingerprint: nextFingerprint, operation };
   });
 }
 
 function pruneRevisions(dir: string): void {
+  if (!existsSync(revisionsDir(dir))) return;
   const entries = readdirSync(revisionsDir(dir)).filter((file) => file.endsWith(".json")).sort();
   for (const stale of entries.slice(0, Math.max(0, entries.length - MAX_REVISIONS))) {
     rmSync(join(revisionsDir(dir), stale), { force: true });
@@ -373,3 +437,5 @@ export function loadRevisionGraph(dir: string, revisionId: string): SemanticInte
   const parsed = JSON.parse(readFileSync(file, "utf8")) as { graph: unknown };
   return parseGraph(parsed.graph);
 }
+
+export { graphFingerprint } from "./fingerprint.ts";

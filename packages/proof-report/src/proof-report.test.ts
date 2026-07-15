@@ -30,6 +30,19 @@ describe("IntentForm proof pipeline", () => {
     expect(compileSwiftUI(demoGraph)).toEqual(compileSwiftUI(demoGraph));
   });
 
+  it("lowers target size, focus, forced-colors, reduced-motion and Dynamic Type safeguards", () => {
+    const react = compileReact(demoGraph);
+    const styles = react.files.find((file) => file.path.endsWith("styles.css"))!.content;
+    expect(styles).toContain("min-width: 24px; min-height: 48px");
+    expect(styles).toContain("@media (prefers-reduced-motion: reduce)");
+    expect(styles).toContain("@media (forced-colors: active)");
+    const swift = compileSwiftUI(demoGraph);
+    expect(swift.files.find((file) => file.path.endsWith("IntentFormApp.swift"))?.content)
+      .toContain(".dynamicTypeSize(.xSmall ... .accessibility5)");
+    expect(swift.files.find((file) => file.path.endsWith("paymentRequest.swift"))?.content)
+      .toContain(".frame(minHeight: 44)");
+  });
+
   it("expands component bindings before both compilers and updates both fingerprints", () => {
     const inserted = parseGraph(instantiateComponent(demoGraph, {
       definitionId: "intent.balance-summary",

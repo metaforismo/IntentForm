@@ -380,8 +380,8 @@ ${spacingClasses}
 .recipient span:last-child { display: grid; gap: 3px; }
 .recipient small { color: color-mix(in oklab, var(--if-ink) 58%, #ffffff); }
 .avatar { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--if-accent-soft); color: var(--if-accent-deep); font-weight: 700; }
-button { min-height: 48px; border: 0; border-radius: var(--if-control-radius); font: inherit; font-weight: 700; cursor: pointer; }
-button:focus-visible, input:focus-visible { outline: 3px solid color-mix(in oklab, var(--if-accent) 55%, #ffffff); outline-offset: 3px; }
+button { min-width: 24px; min-height: 48px; border: 0; border-radius: var(--if-control-radius); font: inherit; font-weight: 700; cursor: pointer; touch-action: manipulation; }
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid color-mix(in oklab, var(--if-accent) 55%, #ffffff); outline-offset: 3px; }
 .primary { padding: 16px 20px; color: white; background: var(--if-accent); }
 .primary.placement-compact-persistent { position: fixed; right: max(22px, calc((100vw - 396px) / 2)); bottom: max(18px, env(safe-area-inset-bottom)); left: max(22px, calc((100vw - 396px) / 2)); }
 .secondary { color: var(--if-accent-deep); background: var(--if-accent-soft); }
@@ -402,6 +402,14 @@ button:focus-visible, input:focus-visible { outline: 3px solid color-mix(in okla
   .if-mode-regular-split > .if-node:not(:first-child) { flex: calc(1 - var(--if-split-ratio)); }
   .primary.placement-compact-persistent { position: static; }
   .primary.placement-regular-persistent { position: fixed; right: max(22px, calc((100vw - 396px) / 2)); bottom: max(18px, env(safe-area-inset-bottom)); left: max(22px, calc((100vw - 396px) / 2)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+@media (forced-colors: active) {
+  :focus-visible { outline: 3px solid Highlight !important; }
+  button, input, select, textarea { border: 1px solid ButtonText; }
 }
 `;
 }

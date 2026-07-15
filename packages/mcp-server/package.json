@@ -5,27 +5,38 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./activity": "./src/activity.ts",
+    "./fingerprint": "./src/fingerprint.ts",
+    "./http": "./src/http.ts",
+    "./history": "./src/history.ts",
+    "./semantic-merge": "./src/semantic-merge.ts",
     "./store": "./src/store.ts",
-    "./tools": "./src/tools.ts"
+    "./tools": "./src/tools.ts",
+    "./transactions": "./src/transactions.ts"
   },
-  "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" },
+  "scripts": {
+    "http": "node --import tsx src/http.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
   "dependencies": {
-    "@intentform/device-bezels": "workspace:*",
-    "@intentform/device-registry": "workspace:*",
     "@intentform/compiler-expo": "workspace:*",
     "@intentform/compiler-react": "workspace:*",
     "@intentform/compiler-swiftui": "workspace:*",
     "@intentform/compiler-web": "workspace:*",
-    "@intentform/proof-report": "workspace:*",
+    "@intentform/device-bezels": "workspace:*",
+    "@intentform/device-registry": "workspace:*",
     "@intentform/preview-daemon": "workspace:*",
+    "@intentform/proof-report": "workspace:*",
     "@intentform/semantic-schema": "workspace:*",
     "@intentform/token-assets": "workspace:*",
     "@intentform/verifier": "workspace:*",
     "@intentform/web-verifier": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^25.0.0",
+    "tsx": "^4.23.1",
     "typescript": "^5.9.3"
   }
 }

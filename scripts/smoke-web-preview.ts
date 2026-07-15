@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { chromium, type Browser } from "playwright";
+import AxeBuilder from "@axe-core/playwright";
 
 const root = process.cwd();
 const previewRoot = join(root, "apps/web-preview");
@@ -82,6 +83,10 @@ try {
 
   await page.goto(`${origin}/request?state=failed`, { waitUntil: "networkidle" });
   await page.getByRole("status").filter({ hasText: "Payment could not be sent" }).waitFor();
+  const failedStateAxe = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag22aa"]).analyze();
+  if (failedStateAxe.violations.length > 0) {
+    throw new Error(`Generated web failed axe: ${failedStateAxe.violations.map((item) => `${item.id} (${item.nodes.length})`).join(", ")}`);
+  }
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${origin}/layout-lab`, { waitUntil: "networkidle" });
@@ -100,12 +105,23 @@ try {
   if (await page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior) !== "auto") {
     throw new Error("Reduced-motion mode did not disable smooth scrolling");
   }
+  await page.evaluate(() => {
+    document.documentElement.dir = "rtl";
+    document.documentElement.lang = "ar";
+    document.documentElement.style.fontSize = "200%";
+  });
+  const scaledOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  if (scaledOverflow > 1) throw new Error(`Generated responsive-web preview has ${scaledOverflow}px overflow at 200% text scale in RTL`);
+  const accessibilityMatrix = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag22aa"]).analyze();
+  if (accessibilityMatrix.violations.length > 0) {
+    throw new Error(`Generated RTL/text-scale view failed axe: ${accessibilityMatrix.violations.map((item) => `${item.id} (${item.nodes.length})`).join(", ")}`);
+  }
   if (failures.length > 0) throw new Error(failures.join("\n"));
 
   await mkdir(join(root, "output/playwright"), { recursive: true });
   await page.screenshot({ path: join(root, "output/playwright/responsive-web-runtime.png"), fullPage: true });
   await context.close();
-  console.log("Responsive-web runtime scenarios: keyboard, history, fixtures, compact, desktop, reduced motion passed");
+  console.log("Responsive-web runtime scenarios: keyboard, axe, fixtures, compact, desktop, RTL, 200% text, reduced motion passed");
 } finally {
   await browser?.close();
   await stopServer(server);

@@ -107,28 +107,28 @@ function universalNodeSource(node: PlatformIRNode, renderChild: (child: Platform
   let content: string;
   switch (node.kind) {
     case "primary-action":
-      content = `<Pressable testID=${JSON.stringify(`action-${node.id}`)}${accessibility(node, "button")}${callback ? ` onPress={${callback}}` : ""} style={({ pressed }) => [styles.primaryAction, pressed && styles.pressed]}><Text selectable style={styles.primaryActionLabel}>{${label}}</Text></Pressable>`;
+      content = `<Pressable testID=${JSON.stringify(`action-${node.id}`)}${accessibility(node, "button")}${callback ? ` onPress={${callback}}` : ""} style={({ pressed }) => [styles.primaryAction, pressed && styles.pressed]}><Text selectable allowFontScaling style={styles.primaryActionLabel}>{${label}}</Text></Pressable>`;
       break;
     case "secondary-action":
-      content = `<Pressable${accessibility(node, "button")}${callback ? ` onPress={${callback}}` : ""} style={({ pressed }) => [styles.secondaryAction, pressed && styles.pressed]}><Text selectable style={styles.secondaryActionLabel}>{${label}}</Text></Pressable>`;
+      content = `<Pressable${accessibility(node, "button")}${callback ? ` onPress={${callback}}` : ""} style={({ pressed }) => [styles.secondaryAction, pressed && styles.pressed]}><Text selectable allowFontScaling style={styles.secondaryActionLabel}>{${label}}</Text></Pressable>`;
       break;
     case "money-input":
-      content = `<View style={styles.field}><Text selectable style={styles.fieldLabel}>{${label}}</Text><TextInput${accessibility(node)} keyboardType="decimal-pad" defaultValue={${value ?? '""'}} style={styles.input} /></View>`;
+      content = `<View style={styles.field}><Text selectable allowFontScaling style={styles.fieldLabel}>{${label}}</Text><TextInput allowFontScaling${accessibility(node)} keyboardType="decimal-pad" defaultValue={${value ?? '""'}} style={styles.input} /></View>`;
       break;
     case "balance-summary":
-      content = `<View${accessibility(node, "summary")} style={styles.card}><Text selectable style={styles.eyebrow}>{${label}}</Text>${value ? `<Text selectable style={styles.heroValue}>{${value}}</Text>` : ""}</View>`;
+      content = `<View${accessibility(node, "summary")} style={styles.card}><Text selectable allowFontScaling style={styles.eyebrow}>{${label}}</Text>${value ? `<Text selectable allowFontScaling style={styles.heroValue}>{${value}}</Text>` : ""}</View>`;
       break;
     case "transaction-list":
-      content = `<View${accessibility(node, "list")} style={styles.card}><Text selectable style={styles.sectionTitle}>{${label}}</Text>${value ? `<Text selectable style={styles.body}>{${value}}</Text>` : ""}</View>`;
+      content = `<View${accessibility(node, "list")} style={styles.card}><Text selectable allowFontScaling style={styles.sectionTitle}>{${label}}</Text>${value ? `<Text selectable allowFontScaling style={styles.body}>{${value}}</Text>` : ""}</View>`;
       break;
     case "recipient-identity":
-      content = `<View${accessibility(node, "summary")} style={styles.card}><Text selectable style={styles.sectionTitle}>{${value ?? label}}</Text>${detail ? `<Text selectable style={styles.body}>{${detail}}</Text>` : ""}</View>`;
+      content = `<View${accessibility(node, "summary")} style={styles.card}><Text selectable allowFontScaling style={styles.sectionTitle}>{${value ?? label}}</Text>${detail ? `<Text selectable allowFontScaling style={styles.body}>{${detail}}</Text>` : ""}</View>`;
       break;
     case "status-message":
-      content = `<View${accessibility(node)} style={styles.status}><Text selectable style={styles.body}>{${label}}</Text></View>`;
+      content = `<View${accessibility(node)} style={styles.status}><Text selectable allowFontScaling style={styles.body}>{${label}}</Text></View>`;
       break;
     case "receipt-summary":
-      content = `<View${accessibility(node, "summary")} style={styles.card}><Text selectable style={styles.sectionTitle}>{${label}}</Text>${detail ? `<Text selectable style={styles.heroValue}>{${detail}}</Text>` : ""}${value ? `<Text selectable style={styles.body}>{${value}}</Text>` : ""}</View>`;
+      content = `<View${accessibility(node, "summary")} style={styles.card}><Text selectable allowFontScaling style={styles.sectionTitle}>{${label}}</Text>${detail ? `<Text selectable allowFontScaling style={styles.heroValue}>{${detail}}</Text>` : ""}${value ? `<Text selectable allowFontScaling style={styles.body}>{${value}}</Text>` : ""}</View>`;
       break;
     default:
       content = `<View${accessibility(node)} style={containerStyle(${layoutLiteral(node)}, compact)}>${children}</View>`;
@@ -224,9 +224,9 @@ export function ${name}({ data, events }: ${name}Props) {
         contentContainerStyle={[styles.scrollContent, { paddingBottom: persistent ? 24 : Math.max(insets.bottom, 24) }]}
       >
         <View style={styles.header}>
-          <Text selectable style={styles.eyebrow}>{${JSON.stringify(productName)}}</Text>
-          <Text selectable accessibilityRole="header" style={styles.title}>{${JSON.stringify(screen.title)}}</Text>
-          <Text selectable style={styles.body}>{${JSON.stringify(screen.purpose)}}</Text>
+          <Text selectable allowFontScaling style={styles.eyebrow}>{${JSON.stringify(productName)}}</Text>
+          <Text selectable allowFontScaling accessibilityRole="header" style={styles.title}>{${JSON.stringify(screen.title)}}</Text>
+          <Text selectable allowFontScaling style={styles.body}>{${JSON.stringify(screen.purpose)}}</Text>
         </View>
         <View style={styles.content}>
           ${screen.nodes.map((node) => nodeSource(node)).join("\n          ")}
@@ -417,10 +417,10 @@ export interface NativeAdapterProps {
 
 export function NativeAdapter({ kind, label, value, onPress, fallback }: NativeAdapterProps) {
   if (kind === "primary-action" || kind === "secondary-action") {
-    return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={{ minHeight: 52, alignItems: "center", justifyContent: "center", paddingHorizontal: 20, borderRadius: ${platform === "ios" ? 16 : 14}, backgroundColor: ${platform === "ios" ? '"#397461"' : '"#2f6f5b"'}, borderCurve: "continuous" }}><Text selectable style={{ color: "#fff", fontSize: 16, fontWeight: "700" }}>{label}</Text></Pressable>;
+    return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={{ minHeight: 52, alignItems: "center", justifyContent: "center", paddingHorizontal: 20, borderRadius: ${platform === "ios" ? 16 : 14}, backgroundColor: ${platform === "ios" ? '"#397461"' : '"#2f6f5b"'}, borderCurve: "continuous" }}><Text selectable allowFontScaling style={{ color: "#fff", fontSize: 16, fontWeight: "700" }}>{label}</Text></Pressable>;
   }
   if (kind === "money-input") {
-    return <View style={{ gap: 8 }}><Text selectable style={{ fontSize: 13, fontWeight: "600" }}>{label}</Text><TextInput accessibilityLabel={label} keyboardType="decimal-pad" defaultValue={value} style={{ minHeight: 52, borderWidth: 1, borderColor: "rgba(24,28,26,.18)", borderRadius: ${platform === "ios" ? 16 : 12}, paddingHorizontal: 16, fontSize: 18, borderCurve: "continuous" }} /></View>;
+    return <View style={{ gap: 8 }}><Text selectable allowFontScaling style={{ fontSize: 13, fontWeight: "600" }}>{label}</Text><TextInput allowFontScaling accessibilityLabel={label} keyboardType="decimal-pad" defaultValue={value} style={{ minHeight: 52, borderWidth: 1, borderColor: "rgba(24,28,26,.18)", borderRadius: ${platform === "ios" ? 16 : 12}, paddingHorizontal: 16, fontSize: 18, borderCurve: "continuous" }} /></View>;
   }
   return fallback;
 }
@@ -494,7 +494,7 @@ export default function RootLayout() {
 import { ScrollView, Text } from "react-native";
 
 export default function NotFoundRoute() {
-  return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ flexGrow: 1, justifyContent: "center", gap: 16, padding: 24 }}><Text selectable accessibilityRole="header" style={{ fontSize: 28, fontWeight: "700" }}>Page not found</Text><Link href="/">Return home</Link></ScrollView>;
+  return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ flexGrow: 1, justifyContent: "center", gap: 16, padding: 24 }}><Text selectable allowFontScaling accessibilityRole="header" style={{ fontSize: 28, fontWeight: "700" }}>Page not found</Text><Link href="/">Return home</Link></ScrollView>;
 }
 ` },
     { path: "src/runtime/layout.ts", content: layoutRuntimeSource() },

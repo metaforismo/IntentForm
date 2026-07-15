@@ -317,7 +317,7 @@ body { margin: 0; color: var(--if-ink); background: var(--if-canvas); }
 button, input { font: inherit; }
 button, a { touch-action: manipulation; }
 :focus-visible { outline: 3px solid color-mix(in oklab, var(--if-accent) 58%, white); outline-offset: 3px; }
-.if-skip-link { position: fixed; inset: 12px auto auto 12px; z-index: 100; padding: 10px 14px; color: white; background: var(--if-ink); transform: translateY(-180%); }
+.if-skip-link { position: fixed; inset-block-start: 12px; inset-inline-start: 12px; z-index: 100; min-height: 44px; padding: 12px 14px; color: white; background: var(--if-ink); transform: translateY(-180%); }
 .if-skip-link:focus { transform: translateY(0); }
 .if-site-nav { position: sticky; inset-block-start: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 64px; padding-inline: max(var(${padding}), calc((100vw - var(--if-content-max)) / 2)); border-bottom: 1px solid color-mix(in oklab, var(--if-ink) 12%, transparent); background: color-mix(in oklab, var(--if-surface) 92%, transparent); backdrop-filter: blur(16px); }
 .if-site-nav div { display: flex; flex-wrap: wrap; gap: 16px; }
@@ -353,13 +353,18 @@ ${breakpointRules}
   html { scroll-behavior: auto; }
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+@media (forced-colors: active) {
+  :focus-visible { outline: 3px solid Highlight !important; }
+  button, input, select, textarea { border: 1px solid ButtonText; }
+  .if-site-nav { backdrop-filter: none; }
+}
 `;
 }
 
 function generatedPackageFiles(): GeneratedFile[] {
   return [
     { path: "package.json", content: `${JSON.stringify({ name: "intentform-responsive-web", private: true, version: "0.0.0", type: "module", scripts: { build: "vite build", dev: "vite", typecheck: "tsc --noEmit" }, dependencies: { react: "19.2.4", "react-dom": "19.2.4" }, devDependencies: { "@types/react": "19.2.14", "@types/react-dom": "19.2.3", typescript: "5.9.3", vite: "8.1.4" } }, null, 2)}\n` },
-    { path: "index.html", content: "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"UTF-8\" /><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\" /><link rel=\"icon\" href=\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23397461'/%3E%3C/svg%3E\" /><title>IntentForm responsive web</title></head><body><div id=\"root\"></div><script type=\"module\" src=\"/src/main.tsx\"></script></body></html>\n" },
+    { path: "index.html", content: "<!doctype html>\n<html lang=\"en\" dir=\"auto\"><head><meta charset=\"UTF-8\" /><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\" /><link rel=\"icon\" href=\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23397461'/%3E%3C/svg%3E\" /><title>IntentForm responsive web</title></head><body><div id=\"root\"></div><script type=\"module\" src=\"/src/main.tsx\"></script></body></html>\n" },
     { path: "tsconfig.json", content: `${JSON.stringify({ compilerOptions: { target: "ES2022", useDefineForClassFields: true, lib: ["ES2022", "DOM", "DOM.Iterable"], allowJs: false, skipLibCheck: true, esModuleInterop: true, allowSyntheticDefaultImports: true, strict: true, forceConsistentCasingInFileNames: true, module: "ESNext", moduleResolution: "Bundler", resolveJsonModule: true, isolatedModules: true, noEmit: true, jsx: "react-jsx" }, include: ["src"] }, null, 2)}\n` },
     { path: "vite.config.ts", content: "import { defineConfig } from \"vite\";\nexport default defineConfig({ esbuild: { jsx: \"automatic\" }, build: { outDir: \"dist\", emptyOutDir: true } });\n" },
     { path: "src/main.tsx", content: "import { StrictMode } from \"react\";\nimport { createRoot } from \"react-dom/client\";\nimport { App } from \"./app\";\nconst root = document.getElementById(\"root\");\nif (!root) throw new Error(\"Missing application root\");\ncreateRoot(root).render(<StrictMode><App /></StrictMode>);\n" },

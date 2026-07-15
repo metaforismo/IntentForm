@@ -78,7 +78,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const migrated = migrateProject(resolveProjectDir(), body.expectedSourceFingerprint);
+    const migrated = migrateProject(resolveProjectDir(), body.expectedSourceFingerprint, "human");
     return Response.json({
       graph: migrated.graph,
       fingerprint: migrated.fingerprint,
@@ -133,6 +133,7 @@ export async function PUT(request: Request) {
       body.graph,
       body.reason ?? "studio save",
       body.expectedFingerprint,
+      { author: "human", kind: "save" },
     );
     return Response.json({ fingerprint: saved.fingerprint }, { headers: noStoreHeaders });
   } catch (error) {

@@ -1,15 +1,35 @@
-import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
+import { InMemoryTaskStore } from "@modelcontextprotocol/sdk/experimental/tasks/stores/in-memory.js";
+import {
+  CallToolRequestSchema,
+  ErrorCode,
+  LATEST_PROTOCOL_VERSION,
+  ListResourcesRequestSchema,
+  ListToolsRequestSchema,
+  McpError,
+  ReadResourceRequestSchema,
+  SubscribeRequestSchema,
+  UnsubscribeRequestSchema,
+  type CallToolResult,
+} from "@modelcontextprotocol/sdk/types.js";
 import {
   applyMigration,
   applyPatch,
+  auditProjectAccessibility,
+  applyProjectBranchPatch,
+  applyProjectHistoryOperation,
   collectProjectAssets,
   cancelProjectPreview,
   compileProject,
   componentSchema,
+  createProjectBranch,
   describeProject,
   deviceProfileResource,
   deviceBezelResource,
+  deleteProjectBranch,
   diffAgainstRevision,
   exportProjectTokens,
   getGraph,
@@ -17,11 +37,17 @@ import {
   importProjectTokens,
   instantiateProjectComponent,
   listTokenModes,
+  mergeProjectBranch,
+  previewProjectBranchMerge,
+  previewProjectHistoryOperation,
+  projectHistory,
+  projectAccessibilityResource,
   projectRevisions,
   projectPreviewStatus,
   previewMigration,
   previewPatch,
   replaceGraph,
+  recoverProjectHistory,
   runProjectPreview,
   revertProject,
   searchComponents,
@@ -32,25 +58,74 @@ import {
 } from "./tools.ts";
 import { resolveProjectDir } from "./store.ts";
 import type { PreviewTarget } from "@intentform/preview-daemon";
+import type { AccessibilitySuppression } from "@intentform/verifier";
+import { SemanticTransactionService } from "./transactions.ts";
+import { agentAccessForTool, readAgentActivity, recordAgentActivity, type AgentActivityOutcome } from "./activity.ts";
 
-/* A minimal MCP stdio server (JSON-RPC 2.0, newline-delimited) with no
-   transport dependencies. It exposes the IntentForm project in `.intentform/`
-   to coding agents: inspect the semantic graph, apply typed patches, compile
-   every enabled platform and verify the result — the same operations the Studio uses. */
+/* The MCP 2025-11-25 server exposes the same validated project operations as
+   Studio over frame-clean stdio or authenticated loopback Streamable HTTP. */
 
-const PROTOCOL_VERSION = "2024-11-05";
+export const PROTOCOL_VERSION = LATEST_PROTOCOL_VERSION;
 const projectDir = resolveProjectDir();
+const semanticTransactions = new SemanticTransactionService();
 
-interface ToolDefinition {
+export interface ToolContext {
+  ownerId: string;
+  signal: AbortSignal;
+}
+
+export interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  run(args: Record<string, unknown>): unknown;
+  run(args: Record<string, unknown>, context: ToolContext): unknown | Promise<unknown>;
 }
 
 const DEVICE_PROFILES_URI = "intentform://device-profiles";
 
 export const resourceDefinitions = [{
+  uri: "intentform://project/summary",
+  name: "IntentForm project summary",
+  description: "Current product, targets, screens, components, token modes, verification and compiler status without the full graph payload.",
+  mimeType: "application/json",
+  read: () => describeProject(projectDir),
+}, {
+  uri: "intentform://project/graph",
+  name: "IntentForm canonical graph",
+  description: "The complete validated Semantic Interface Graph as canonical deterministic JSON.",
+  mimeType: "application/json",
+  read: () => getGraph(projectDir),
+}, {
+  uri: "intentform://project/revisions",
+  name: "IntentForm project revisions",
+  description: "Newest-first local revision checkpoints with reasons and fingerprints.",
+  mimeType: "application/json",
+  read: () => projectRevisions(projectDir),
+}, {
+  uri: "intentform://project/history",
+  name: "IntentForm operation history and branches",
+  description: "Integrity-checked named operations, branch heads, compaction boundary and current semantic history state without checkpoint graph payloads.",
+  mimeType: "application/json",
+  read: () => projectHistory(projectDir),
+}, {
+  uri: "intentform://project/accessibility",
+  name: "IntentForm accessibility audit",
+  description: "Versioned WCAG 2.2 AA audits for enabled output targets across baseline, long-text, RTL and increased-contrast profiles. Authored copy is excluded from evidence.",
+  mimeType: "application/json",
+  read: () => projectAccessibilityResource(projectDir),
+}, {
+  uri: "intentform://project/previews",
+  name: "IntentForm local preview evidence",
+  description: "Freshness-bound browser, Expo iOS, Expo Android and SwiftUI local build evidence.",
+  mimeType: "application/json",
+  read: () => projectPreviewStatus(projectDir),
+}, {
+  uri: "intentform://agent/activity",
+  name: "IntentForm agent access and activity",
+  description: "Metadata-only local MCP access policy and recent tool outcomes. Arguments, tokens, paths, content and outputs are excluded.",
+  mimeType: "application/json",
+  read: () => readAgentActivity(projectDir),
+}, {
   uri: DEVICE_PROFILES_URI,
   name: "IntentForm device profiles",
   description: "Resolved, checksummed logical device geometry, safe areas, inputs and capabilities for the active project.",
@@ -286,6 +361,38 @@ export const toolDefinitions: ToolDefinition[] = [
     run: (args) => verifyProject(projectDir, (args.scenario === "regular" ? "regular" : "compact") as ScenarioId),
   },
   {
+    name: "intentform_audit_accessibility",
+    description: "Run the versioned WCAG 2.2 AA audit matrix for one generated target. Findings include deterministic evidence, a repair direction, long-text/RTL/text-scale profiles, and any explicit reasoned suppressions. Audit evidence never includes authored labels or fixture values.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        target: { type: "string", enum: ["react", "swiftui", "expo", "compose", "web"], description: "Defaults to react" },
+        suppressions: {
+          type: "array",
+          maxItems: 100,
+          items: {
+            type: "object",
+            properties: {
+              ruleId: { type: "string", enum: ["accessible-name", "label-in-name", "live-region-role", "assertive-live-region", "target-size", "text-resize", "rtl-logical-order", "drag-alternative"] },
+              reason: { type: "string", minLength: 8, maxLength: 500 },
+              screenId: { type: "string", pattern: "^[a-z][a-z0-9.-]*$" },
+              nodeId: { type: "string", pattern: "^[a-z][a-z0-9.-]*$" },
+              profileId: { type: "string", enum: ["baseline", "long-text", "rtl", "high-contrast"] },
+            },
+            required: ["ruleId", "reason"],
+            additionalProperties: false,
+          },
+        },
+      },
+      additionalProperties: false,
+    },
+    run: (args) => auditProjectAccessibility(
+      projectDir,
+      (["react", "swiftui", "expo", "compose", "web"].includes(String(args.target)) ? args.target : "react") as "react" | "swiftui" | "expo" | "compose" | "web",
+      Array.isArray(args.suppressions) ? args.suppressions as AccessibilitySuppression[] : [],
+    ),
+  },
+  {
     name: "intentform_verify_web",
     description: "Verify the responsive-web profile, frame-to-breakpoint coverage, fixed/live-region risks, compiler diagnostics, semantic landmarks, and intrinsic CSS output. Returns the generated web fingerprint when compilation succeeds.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
@@ -381,107 +488,565 @@ export const toolDefinitions: ToolDefinition[] = [
     },
     run: (args) => revertProject(projectDir, String(args.revision)),
   },
+  {
+    name: "intentform_list_history",
+    description: "List integrity-checked named operations and branch heads. Checkpoint graph payloads and filesystem paths are not returned.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    run: () => projectHistory(projectDir),
+  },
+  {
+    name: "intentform_create_branch",
+    description: "Create an isolated semantic branch from the exact current main graph. The branch stores an immutable checkpoint and does not change graph.json.",
+    inputSchema: {
+      type: "object",
+      properties: { name: { type: "string", pattern: "^[a-z][a-z0-9-]{0,62}$" } },
+      required: ["name"],
+      additionalProperties: false,
+    },
+    run: (args) => createProjectBranch(projectDir, String(args.name ?? "")),
+  },
+  {
+    name: "intentform_apply_branch_patch",
+    description: `Apply a typed GraphPatch to an isolated branch head. Main remains unchanged. Requires the branch head fingerprint for conflict safety. ${PATCH_CONTRACT}`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", pattern: "^[a-z][a-z0-9-]{0,62}$" },
+        expectedFingerprint: { type: "string", pattern: "^[a-f0-9]{8}$" },
+        patch: PATCH_INPUT_SCHEMA.properties.patch,
+      },
+      required: ["name", "expectedFingerprint", "patch"],
+      additionalProperties: false,
+    },
+    run: (args) => applyProjectBranchPatch(
+      projectDir,
+      String(args.name ?? ""),
+      args.patch,
+      String(args.expectedFingerprint ?? ""),
+    ),
+  },
+  {
+    name: "intentform_preview_branch_merge",
+    description: "Preview a three-way semantic merge from a branch into main without writing. Independent stable properties auto-merge; same-property and competing reorder changes return explicit conflicts.",
+    inputSchema: {
+      type: "object",
+      properties: { name: { type: "string", pattern: "^[a-z][a-z0-9-]{0,62}$" } },
+      required: ["name"],
+      additionalProperties: false,
+    },
+    run: (args) => previewProjectBranchMerge(projectDir, String(args.name ?? "")),
+  },
+  {
+    name: "intentform_merge_branch",
+    description: "Commit a previously reviewable clean branch merge as one named main operation. Requires the exact main fingerprint and refuses every unresolved semantic conflict.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", pattern: "^[a-z][a-z0-9-]{0,62}$" },
+        expectedFingerprint: { type: "string", pattern: "^[a-f0-9]{8}$" },
+      },
+      required: ["name", "expectedFingerprint"],
+      additionalProperties: false,
+    },
+    run: (args) => mergeProjectBranch(projectDir, String(args.name ?? ""), String(args.expectedFingerprint ?? "")),
+  },
+  {
+    name: "intentform_delete_branch",
+    description: "Delete one isolated non-main branch pointer. Main and immutable operations remain unchanged; unreachable checkpoints are reclaimed by bounded compaction.",
+    inputSchema: {
+      type: "object",
+      properties: { name: { type: "string", pattern: "^[a-z][a-z0-9-]{0,62}$" } },
+      required: ["name"],
+      additionalProperties: false,
+    },
+    run: (args) => deleteProjectBranch(projectDir, String(args.name ?? "")),
+  },
+  {
+    name: "intentform_preview_history_operation",
+    description: "Preview cherry-picking or reverting one immutable operation against current main using the same semantic three-way merge and conflict rules. Does not write.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        operationId: { type: "string", format: "uuid" },
+        direction: { type: "string", enum: ["cherry-pick", "revert"] },
+      },
+      required: ["operationId", "direction"],
+      additionalProperties: false,
+    },
+    run: (args) => previewProjectHistoryOperation(
+      projectDir,
+      String(args.operationId ?? ""),
+      args.direction === "revert" ? "revert" : "cherry-pick",
+    ),
+  },
+  {
+    name: "intentform_apply_history_operation",
+    description: "Commit a clean cherry-pick or inverse revert as one new named operation. Requires the exact current main fingerprint and refuses unresolved conflicts.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        operationId: { type: "string", format: "uuid" },
+        direction: { type: "string", enum: ["cherry-pick", "revert"] },
+        expectedFingerprint: { type: "string", pattern: "^[a-f0-9]{8}$" },
+      },
+      required: ["operationId", "direction", "expectedFingerprint"],
+      additionalProperties: false,
+    },
+    run: (args) => applyProjectHistoryOperation(
+      projectDir,
+      String(args.operationId ?? ""),
+      args.direction === "revert" ? "revert" : "cherry-pick",
+      String(args.expectedFingerprint ?? ""),
+    ),
+  },
+  {
+    name: "intentform_recover_history",
+    description: "Explicitly rebuild a damaged history manifest from valid immutable operation/checkpoint evidence and the current graph. The old manifest is preserved under history/recovery.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    run: () => recoverProjectHistory(projectDir),
+  },
+  {
+    name: "intentform_begin_transaction",
+    description: "Open an isolated, expiring semantic transaction against an exact project fingerprint. This does not mutate the graph; preview and commit remain separate explicit operations.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        expectedFingerprint: { type: "string", pattern: "^[a-f0-9]{8}$" },
+        rationale: { type: "string", minLength: 1, maxLength: 160 },
+      },
+      required: ["expectedFingerprint", "rationale"],
+      additionalProperties: false,
+    },
+    run: (args, context) => semanticTransactions.begin(
+      projectDir,
+      context.ownerId,
+      String(args.expectedFingerprint ?? ""),
+      String(args.rationale ?? ""),
+    ),
+  },
+  {
+    name: "intentform_preview_transaction",
+    description: `Validate and retain one typed patch inside an open semantic transaction. Returns the exact candidate fingerprint, semantic diff and verification without writing the project. ${PATCH_CONTRACT}`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        transactionId: { type: "string", format: "uuid" },
+        patch: PATCH_INPUT_SCHEMA.properties.patch,
+      },
+      required: ["transactionId", "patch"],
+      additionalProperties: false,
+    },
+    run: (args, context) => semanticTransactions.preview(
+      projectDir,
+      context.ownerId,
+      String(args.transactionId ?? ""),
+      args.patch,
+    ),
+  },
+  {
+    name: "intentform_commit_transaction",
+    description: "Commit the exact previously previewed semantic transaction. Fails closed if the graph changed, creates one normal revision, and guarantees the committed fingerprint matches the reviewed preview.",
+    inputSchema: {
+      type: "object",
+      properties: { transactionId: { type: "string", format: "uuid" } },
+      required: ["transactionId"],
+      additionalProperties: false,
+    },
+    run: (args, context) => semanticTransactions.commit(
+      projectDir,
+      context.ownerId,
+      String(args.transactionId ?? ""),
+    ),
+  },
+  {
+    name: "intentform_rollback_transaction",
+    description: "Discard an open semantic transaction without changing the graph or creating a revision.",
+    inputSchema: {
+      type: "object",
+      properties: { transactionId: { type: "string", format: "uuid" } },
+      required: ["transactionId"],
+      additionalProperties: false,
+    },
+    run: (args, context) => semanticTransactions.rollback(
+      projectDir,
+      context.ownerId,
+      String(args.transactionId ?? ""),
+    ),
+  },
 ];
 
-function write(message: Record<string, unknown>): void {
-  process.stdout.write(`${JSON.stringify(message)}\n`);
+const OUTPUT_SCHEMA = {
+  type: "object",
+  properties: { result: {} },
+  required: ["result"],
+  additionalProperties: false,
+} as const;
+
+const READ_ONLY_TOOLS = new Set([
+  "intentform_preview_migration",
+  "intentform_describe_project",
+  "intentform_list_token_modes",
+  "intentform_export_dtcg",
+  "intentform_search_assets",
+  "intentform_get_graph",
+  "intentform_search_components",
+  "intentform_component_schema",
+  "intentform_preview_patch",
+  "intentform_verify",
+  "intentform_audit_accessibility",
+  "intentform_verify_web",
+  "intentform_preview_status",
+  "intentform_list_revisions",
+  "intentform_diff",
+  "intentform_list_history",
+  "intentform_preview_branch_merge",
+  "intentform_preview_history_operation",
+  "intentform_preview_transaction",
+]);
+
+const DESTRUCTIVE_TOOLS = new Set([
+  "intentform_replace_graph",
+  "intentform_revert",
+  "intentform_asset_gc",
+  "intentform_delete_branch",
+  "intentform_apply_history_operation",
+  "intentform_recover_history",
+]);
+
+const GRAPH_MUTATION_TOOLS = new Set([
+  "intentform_apply_migration",
+  "intentform_import_dtcg",
+  "intentform_import_asset",
+  "intentform_instantiate_component",
+  "intentform_apply_patch",
+  "intentform_replace_graph",
+  "intentform_revert",
+  "intentform_merge_branch",
+  "intentform_apply_history_operation",
+  "intentform_commit_transaction",
+]);
+
+const HISTORY_MUTATION_TOOLS = new Set([
+  "intentform_create_branch",
+  "intentform_apply_branch_patch",
+  "intentform_delete_branch",
+  "intentform_recover_history",
+]);
+
+const PREVIEW_MUTATION_TOOLS = new Set([
+  "intentform_run_preview",
+  "intentform_cancel_preview",
+]);
+
+const validatorProvider = new AjvJsonSchemaValidator();
+const argumentValidators = new Map(toolDefinitions.map((tool) => [
+  tool.name,
+  validatorProvider.getValidator<Record<string, unknown>>(tool.inputSchema),
+]));
+
+function safeError(error: unknown): string {
+  return (error instanceof Error ? error.message : "The operation failed.")
+    .replace(/\b(?:sk|rk|pk)_[A-Za-z0-9_-]{12,}\b/g, "[redacted]")
+    .replace(/\b(api[-_]?key|authorization|token|secret|password)\s*[:=]\s*[^\s,;]+/gi, "$1=[redacted]")
+    .slice(0, 1_000);
 }
 
-function handle(message: { id?: number | string | null; method?: string; params?: Record<string, unknown> }): void {
-  const { id, method, params } = message;
-  if (method === "initialize") {
-    write({
-      jsonrpc: "2.0",
-      id: id ?? null,
-      result: {
-        protocolVersion: typeof params?.protocolVersion === "string" ? params.protocolVersion : PROTOCOL_VERSION,
-        capabilities: { tools: {}, resources: {} },
-        serverInfo: { name: "intentform", version: "0.1.0" },
+function callToolResult(result: unknown, taskId?: string): CallToolResult {
+  const value = result ?? null;
+  return {
+    content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value, null, 2) }],
+    structuredContent: { result: value },
+    ...(taskId ? { _meta: { "io.modelcontextprotocol/related-task": { taskId } } } : {}),
+  };
+}
+
+function toolErrorResult(error: unknown, taskId?: string): CallToolResult {
+  return {
+    content: [{ type: "text", text: safeError(error) }],
+    isError: true,
+    ...(taskId ? { _meta: { "io.modelcontextprotocol/related-task": { taskId } } } : {}),
+  };
+}
+
+function publicToolDefinition(tool: ToolDefinition) {
+  const readOnly = READ_ONLY_TOOLS.has(tool.name);
+  return {
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+    outputSchema: OUTPUT_SCHEMA,
+    annotations: {
+      title: tool.name.replace(/^intentform_/, "").replaceAll("_", " "),
+      readOnlyHint: readOnly,
+      destructiveHint: DESTRUCTIVE_TOOLS.has(tool.name),
+      idempotentHint: readOnly,
+      openWorldHint: false,
+    },
+    execution: { taskSupport: tool.name === "intentform_run_preview" ? "optional" as const : "forbidden" as const },
+  };
+}
+
+function affectedResourceUris(toolName: string): string[] {
+  const resources = ["intentform://agent/activity"];
+  if (GRAPH_MUTATION_TOOLS.has(toolName)) {
+    return [...new Set([...resources, ...resourceDefinitions.map((resource) => resource.uri)])];
+  }
+  if (HISTORY_MUTATION_TOOLS.has(toolName)) resources.push("intentform://project/history");
+  if (PREVIEW_MUTATION_TOOLS.has(toolName)) resources.push("intentform://project/previews");
+  return resources;
+}
+
+function terminalPreviewPhase(phase: string): boolean {
+  return ["ready", "failed", "cancelled", "toolchain-missing"].includes(phase);
+}
+
+const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+export interface IntentFormMcpRuntime {
+  server: Server;
+  close(): Promise<void>;
+}
+
+export function createIntentFormMcpServer(ownerId = "stdio"): IntentFormMcpRuntime {
+  const subscriptions = new Set<string>();
+  const transactionOwners = new Set([ownerId]);
+  const taskStore = new InMemoryTaskStore();
+  const transport = ownerId.startsWith("http") ? "http" as const : "stdio" as const;
+  const recordToolActivity = (toolName: string, startedAt: number, outcome: AgentActivityOutcome) => {
+    recordAgentActivity(projectDir, {
+      transport,
+      tool: toolName,
+      access: agentAccessForTool(toolName, READ_ONLY_TOOLS.has(toolName)),
+      outcome,
+      durationMs: performance.now() - startedAt,
+    });
+  };
+  const server = new Server(
+    {
+      name: "intentform",
+      title: "IntentForm local design system",
+      version: "0.1.0",
+      description: "Validated semantic design transactions, deterministic compilers and fingerprint-bound local previews.",
+    },
+    {
+      capabilities: {
+        tools: { listChanged: false },
+        resources: { subscribe: true, listChanged: false },
+        logging: {},
+        tasks: { list: {}, cancel: {}, requests: { tools: { call: {} } } },
       },
-    });
-    return;
-  }
-  if (method === "ping") {
-    write({ jsonrpc: "2.0", id: id ?? null, result: {} });
-    return;
-  }
-  if (method === "tools/list") {
-    write({
-      jsonrpc: "2.0",
-      id: id ?? null,
-      result: { tools: toolDefinitions.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) },
-    });
-    return;
-  }
-  if (method === "resources/list") {
-    write({
-      jsonrpc: "2.0",
-      id: id ?? null,
-      result: { resources: resourceDefinitions.map(({ read: _read, ...resource }) => resource) },
-    });
-    return;
-  }
-  if (method === "resources/read") {
-    const uri = typeof params?.uri === "string" ? params.uri : "";
-    const resource = resourceDefinitions.find((candidate) => candidate.uri === uri);
-    if (!resource) {
-      write({ jsonrpc: "2.0", id: id ?? null, error: { code: -32602, message: `Unknown resource: ${uri}` } });
-      return;
-    }
-    try {
-      write({
-        jsonrpc: "2.0",
-        id: id ?? null,
-        result: { contents: [{ uri: resource.uri, mimeType: resource.mimeType, text: JSON.stringify(resource.read(), null, 2) }] },
-      });
-    } catch (error) {
-      write({ jsonrpc: "2.0", id: id ?? null, error: { code: -32603, message: error instanceof Error ? error.message : "Resource read failed." } });
-    }
-    return;
-  }
-  if (method === "tools/call") {
-    const name = typeof params?.name === "string" ? params.name : "";
-    const tool = toolDefinitions.find((candidate) => candidate.name === name);
-    if (!tool) {
-      write({ jsonrpc: "2.0", id: id ?? null, error: { code: -32602, message: `Unknown tool: ${name}` } });
-      return;
-    }
-    try {
-      const args = (params?.arguments ?? {}) as Record<string, unknown>;
-      const result = tool.run(args);
-      const text = typeof result === "string" ? result : JSON.stringify(result, null, 2);
-      write({ jsonrpc: "2.0", id: id ?? null, result: { content: [{ type: "text", text }] } });
-    } catch (error) {
-      write({
-        jsonrpc: "2.0",
-        id: id ?? null,
-        result: {
-          content: [{ type: "text", text: error instanceof Error ? error.message : "The operation failed." }],
-          isError: true,
-        },
-      });
-    }
-    return;
-  }
-  if (typeof method === "string" && method.startsWith("notifications/")) return;
-  if (id !== undefined && id !== null) {
-    write({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method ?? "unknown"}` } });
-  }
-}
+      instructions: "Inspect project resources or call intentform_describe_project first. Prefer begin, preview and commit transaction for edits. Generated files are outputs, never the semantic source of truth.",
+      taskStore,
+    },
+  );
 
-export function startServer(): void {
-  const reader = createInterface({ input: process.stdin, terminal: false });
-  reader.on("line", (line) => {
-    const trimmed = line.trim();
-    if (!trimmed) return;
+  const notifyResources = async (toolName: string) => {
+    for (const uri of affectedResourceUris(toolName)) {
+      if (subscriptions.has(uri)) await server.sendResourceUpdated({ uri }).catch(() => undefined);
+    }
+  };
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: toolDefinitions.map(publicToolDefinition),
+  }));
+
+  server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+    resources: resourceDefinitions.map(({ read: _read, ...resource }) => ({ ...resource })),
+  }));
+
+  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    const resource = resourceDefinitions.find((candidate) => candidate.uri === request.params.uri);
+    if (!resource) throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${request.params.uri}`);
+    const value = await resource.read();
+    return {
+      contents: [{
+        uri: resource.uri,
+        mimeType: resource.mimeType,
+        text: typeof value === "string" ? value : JSON.stringify(value, null, 2),
+      }],
+    };
+  });
+
+  server.setRequestHandler(SubscribeRequestSchema, async (request) => {
+    if (!resourceDefinitions.some((resource) => resource.uri === request.params.uri)) {
+      throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${request.params.uri}`);
+    }
+    subscriptions.add(request.params.uri);
+    return {};
+  });
+
+  server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
+    subscriptions.delete(request.params.uri);
+    return {};
+  });
+
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    const startedAt = performance.now();
+    const tool = toolDefinitions.find((candidate) => candidate.name === request.params.name);
+    if (!tool) throw new McpError(ErrorCode.InvalidParams, `Unknown tool: ${request.params.name}`);
+    const validation = argumentValidators.get(tool.name)!((request.params.arguments ?? {}) as unknown);
+    if (!validation.valid) {
+      recordToolActivity(tool.name, startedAt, "rejected");
+      throw new McpError(ErrorCode.InvalidParams, `Invalid ${tool.name} arguments: ${validation.errorMessage}`);
+    }
+    const context: ToolContext = {
+      ownerId: extra.sessionId ?? ownerId,
+      signal: extra.signal,
+    };
+    transactionOwners.add(context.ownerId);
+
+    if (request.params.task) {
+      if (tool.name !== "intentform_run_preview" || !extra.taskStore) {
+        throw new McpError(ErrorCode.MethodNotFound, `${tool.name} does not support task execution.`);
+      }
+      const requestedTtl = extra.taskRequestedTtl ?? 5 * 60_000;
+      const task = await extra.taskStore.createTask({
+        ttl: Math.max(30_000, Math.min(requestedTtl, 10 * 60_000)),
+        pollInterval: 500,
+      });
+      const taskId = task.taskId;
+      const progressToken = request.params._meta?.progressToken;
+      void (async () => {
+        let progress = 0;
+        let priorPhase = "";
+        const sendProgress = async (message: string) => {
+          if (progressToken === undefined) return;
+          progress += 1;
+          await extra.sendNotification({
+            method: "notifications/progress",
+            params: {
+              progressToken,
+              progress,
+              total: 8,
+              message,
+              _meta: { "io.modelcontextprotocol/related-task": { taskId } },
+            },
+          }).catch(() => undefined);
+        };
+        try {
+          await sendProgress("Starting fingerprint-bound local preview.");
+          await tool.run(validation.data, context);
+          while (true) {
+            const currentTask = await extra.taskStore!.getTask(taskId);
+            if (currentTask.status === "cancelled") {
+              cancelProjectPreview(
+                projectDir,
+                String(validation.data.target) as PreviewTarget,
+                String(validation.data.expectedFingerprint),
+                typeof validation.data.profileId === "string" ? validation.data.profileId : undefined,
+              );
+              recordToolActivity(tool.name, startedAt, "cancelled");
+              await notifyResources(tool.name);
+              return;
+            }
+            const status = projectPreviewStatus(
+              projectDir,
+              typeof validation.data.profileId === "string" ? validation.data.profileId : undefined,
+            );
+            const target = status.targets.find((entry) => entry.target === validation.data.target);
+            if (!target || "unavailable" in target) throw new Error(target?.message ?? "Preview target is unavailable.");
+            if (target.phase !== priorPhase) {
+              priorPhase = target.phase;
+              await sendProgress(`Preview phase: ${target.phase}.`);
+            }
+            if (terminalPreviewPhase(target.phase)) {
+              const result = callToolResult({ fingerprint: status.fingerprint, target }, taskId);
+              const failed = target.phase !== "ready" || target.buildStatus !== "passed";
+              if (failed) result.isError = true;
+              await extra.taskStore!.storeTaskResult(taskId, failed ? "failed" : "completed", result);
+              const finalTask = await extra.taskStore!.getTask(taskId);
+              await extra.sendNotification({
+                method: "notifications/tasks/status",
+                params: {
+                  ...finalTask,
+                  _meta: { "io.modelcontextprotocol/related-task": { taskId } },
+                },
+              }).catch(() => undefined);
+              recordToolActivity(tool.name, startedAt, failed ? "failed" : "succeeded");
+              await notifyResources(tool.name);
+              return;
+            }
+            await wait(200);
+          }
+        } catch (error) {
+          const result = toolErrorResult(error, taskId);
+          try {
+            await extra.taskStore!.storeTaskResult(taskId, "failed", result);
+            const failedTask = await extra.taskStore!.getTask(taskId);
+            await extra.sendNotification({
+              method: "notifications/tasks/status",
+              params: {
+                ...failedTask,
+                statusMessage: safeError(error),
+                _meta: { "io.modelcontextprotocol/related-task": { taskId } },
+              },
+            }).catch(() => undefined);
+          } catch {
+            // The task can legitimately expire while its local process is winding down.
+          }
+          recordToolActivity(tool.name, startedAt, "failed");
+          await notifyResources(tool.name).catch(() => undefined);
+        }
+      })();
+      return {
+        task,
+        _meta: {
+          "io.modelcontextprotocol/model-immediate-response": "The local preview is running. Poll tasks/get and retrieve tasks/result after completion.",
+        },
+      };
+    }
+
     try {
-      handle(JSON.parse(trimmed));
-    } catch {
-      write({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
+      if (extra.signal.aborted) throw new Error("The MCP request was cancelled before execution.");
+      const progressToken = request.params._meta?.progressToken;
+      if (progressToken !== undefined) {
+        await extra.sendNotification({
+          method: "notifications/progress",
+          params: { progressToken, progress: 1, total: 2, message: `Running ${tool.name}.` },
+        }).catch(() => undefined);
+      }
+      const result = await tool.run(validation.data, context);
+      if (extra.signal.aborted) throw new Error("The MCP request was cancelled.");
+      recordToolActivity(tool.name, startedAt, "succeeded");
+      await notifyResources(tool.name);
+      if (progressToken !== undefined) {
+        await extra.sendNotification({
+          method: "notifications/progress",
+          params: { progressToken, progress: 2, total: 2, message: `${tool.name} completed.` },
+        }).catch(() => undefined);
+      }
+      return callToolResult(result);
+    } catch (error) {
+      recordToolActivity(tool.name, startedAt, extra.signal.aborted ? "cancelled" : "failed");
+      await notifyResources(tool.name).catch(() => undefined);
+      return toolErrorResult(error);
     }
   });
+
+  return {
+    server,
+    async close() {
+      for (const transactionOwner of transactionOwners) semanticTransactions.clearOwner(transactionOwner);
+      taskStore.cleanup();
+      await server.close();
+    },
+  };
+}
+
+export async function startServer(): Promise<void> {
+  const runtime = createIntentFormMcpServer("stdio");
+  const transport = new StdioServerTransport();
+  const shutdown = async () => {
+    await runtime.close();
+  };
+  process.once("SIGINT", () => void shutdown());
+  process.once("SIGTERM", () => void shutdown());
+  await runtime.server.connect(transport);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  startServer();
+  startServer().catch((error) => {
+    process.stderr.write(`IntentForm MCP failed: ${safeError(error)}\n`);
+    process.exitCode = 1;
+  });
 }

@@ -45,6 +45,8 @@ describe("Expo Adaptive compiler", () => {
     expect(screen).toContain('contentInsetAdjustmentBehavior="automatic"');
     expect(screen).toContain("useSafeAreaInsets");
     expect(screen).toContain("useWindowDimensions");
+    expect(screen).toContain("allowFontScaling");
+    expect(first.files.find((file) => file.path === "src/theme/styles.ts")!.content).toContain("minHeight: 52");
     expect(screen).not.toContain("persistent-bottom");
     expect(screen).toContain("const persistent = (compact ? false : false)");
     const route = first.files.find((file) => file.path === "app/request.tsx")!.content;

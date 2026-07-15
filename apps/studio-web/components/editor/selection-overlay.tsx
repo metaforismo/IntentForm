@@ -455,9 +455,9 @@ export function SelectionOverlay({
           className="pointer-events-auto absolute inset-0 cursor-move rounded-[14px] bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-[var(--select)] focus-visible:ring-offset-2"
         />
         {normalizedIds.length === 1 ? ([
-          ["east", "right-[-5px] top-1/2 cursor-ew-resize", `translateY(-50%) scale(${inverseScale})`],
-          ["south", "bottom-[-5px] left-1/2 cursor-ns-resize", `translateX(-50%) scale(${inverseScale})`],
-          ["southeast", "bottom-[-5px] right-[-5px] cursor-nwse-resize", `scale(${inverseScale})`],
+          ["east", "right-[-12px] top-1/2 cursor-ew-resize", `translateY(-50%) scale(${inverseScale})`],
+          ["south", "bottom-[-12px] left-1/2 cursor-ns-resize", `translateX(-50%) scale(${inverseScale})`],
+          ["southeast", "bottom-[-12px] right-[-12px] cursor-nwse-resize", `scale(${inverseScale})`],
         ] as const).map(([handle, position, transform]) => (
           <button
             key={handle}
@@ -467,7 +467,7 @@ export function SelectionOverlay({
             onPointerMove={moveResize}
             onPointerUp={finishResize}
             onPointerCancel={finishResize}
-            className={`pointer-events-auto absolute size-[10px] rounded-[3px] border border-[var(--select-deep)] bg-white shadow-sm ${position}`}
+            className={`pointer-events-auto absolute size-6 rounded-md border-2 border-[var(--select-deep)] bg-white shadow-sm ${position}`}
             style={{ transform }}
           />
         )) : null}

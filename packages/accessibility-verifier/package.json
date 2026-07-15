@@ -1,12 +1,9 @@
 {
-  "name": "@intentform/verifier",
+  "name": "@intentform/accessibility-verifier",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "exports": { ".": "./src/index.ts" },
   "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" },
-  "dependencies": {
-    "@intentform/accessibility-verifier": "workspace:*",
-    "@intentform/semantic-schema": "workspace:*"
-  }
+  "dependencies": { "@intentform/semantic-schema": "workspace:*" }
 }

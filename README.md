@@ -35,6 +35,9 @@ This repository began as an OpenAI Build Week vertical slice and now continues t
 - Responsive, keyboard-accessible Studio coverage at phone, tablet, adaptive desktop, wide desktop and short-landscape sizes.
 - Release browser gates for console/page/request failures, direct routes, refresh, invalid input, request recovery and reduced motion.
 - Production CSP and browser security headers that preserve the same-origin preview sandbox while blocking external framing.
+- MCP 2025-11-25 over clean stdio or authenticated localhost Streamable HTTP, with typed structured outputs, subscribable project resources, semantic transactions, bounded preview tasks, and metadata-only access activity in Studio.
+- Checksummed named operation history with isolated human/agent branches, stable-property three-way merge, path-level conflict review, cherry-pick, inverse revert, bounded compaction and checkpoint recovery.
+- Versioned WCAG 2.2 AA audits shared by Studio and MCP across baseline, long-text, RTL and increased-contrast profiles, plus axe-rendered browser gates, explicit suppressions and copy-free evidence.
 
 ## The proof
 
@@ -112,6 +115,13 @@ IntentForm is designed to be **driven by coding agents**, not just humans. The r
 intentform_preview_migration inspect schema status without writing
 intentform_apply_migration   checkpoint and migrate a previewed old graph
 intentform_describe_project   inspect screens, stable node IDs, tokens, flows, findings
+intentform://project/summary  read compact current graph/compiler/verification state
+intentform://project/graph    read the complete canonical graph
+intentform://project/revisions / project/history / project/previews
+                              read snapshots, named operations/branches and local evidence
+intentform://project/accessibility
+                              read versioned audits for every enabled output target
+intentform://agent/activity   read least-authority policy and metadata-only outcomes
 intentform://device-profiles  read checksummed geometry, safe areas, inputs and capabilities
 intentform://device-bezel-packs inspect local-only pack capability and byte-free metadata
 intentform_list_token_modes   inspect resolved modes, aliases and deprecation
@@ -123,14 +133,21 @@ intentform_component_schema  inspect props, slots, variants, states and template
 intentform_instantiate_component add a validated, revisioned component instance
 intentform_preview_patch      validate and inspect a typed semantic edit without writing
 intentform_apply_patch        smallest typed semantic or hierarchy edit, validated and revisioned
+intentform_begin_transaction / preview_transaction / commit_transaction / rollback_transaction
+                              review and commit an exact fingerprint-bound semantic change
 intentform_replace_graph      structural edits with full schema validation
 intentform_verify             deterministic intent rules per device scenario
+intentform_audit_accessibility WCAG 2.2 AA profiles, evidence and repair direction
 intentform_verify_web         responsive frames, breakpoint coverage and web compiler diagnostics
 intentform_compile            byte-stable React, SwiftUI, Expo or web plus permitted assets into output/
 intentform_diff / revert      semantic history — every agent edit is reversible
+intentform_create_branch / apply_branch_patch / preview_branch_merge / merge_branch
+                              isolate agent work and approve only a clean semantic merge
+intentform_preview_history_operation / apply_history_operation
+                              preview and cherry-pick or inversely revert named operations
 ```
 
-In the intended MCP workflow an agent edits validated intent rather than generated UI files, and deterministic compilers produce the target code. The Studio opens and saves the same `.intentform/graph.json` (project menu → *Open/Save local project*), so agent edits land on the design board and human edits are visible to agents. Writes use atomic replacement and expected fingerprints; if an agent changes the graph after Studio opens it, Studio refuses the stale save and asks you to reopen instead of overwriting the agent revision. See [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md) for the full loop, and [CLAUDE.md](CLAUDE.md) for in-repo agent conventions.
+In the intended MCP workflow an agent edits validated intent rather than generated UI files, and deterministic compilers produce the target code. The Studio opens and saves the same `.intentform/graph.json` (project menu → *Open/Save local project*), so agent edits land on the design board and human edits are visible to agents. Writes use atomic replacement and expected fingerprints; if an agent changes the graph after Studio opens it, Studio refuses the stale save and asks you to reopen instead of overwriting the agent revision. Stdio remains the default; authenticated Streamable HTTP binds only to `127.0.0.1` when explicitly started. See [Accessibility verification](docs/ACCESSIBILITY.md), [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md) for setup and compatibility, and [CLAUDE.md](CLAUDE.md) for in-repo agent conventions.
 
 ## How Codex and GPT-5.6 shaped the build
 
@@ -192,7 +209,7 @@ Submission closes **July 21, 2026 at 5:00 PM PT**. IntentForm is entered in Deve
 
 ## Product direction
 
-The full product is local-first and Expo Adaptive-first, with SwiftUI as the reference native renderer. Expo iOS/Android, responsive web, direct semantic manipulation, MCP and fingerprint-bound local preview builds are implemented; planned layers include standalone Compose, operation-log-based Git workflows, repository adoption through managed zones, and optional collaboration cloud. No production app requires an IntentForm runtime.
+The full product is local-first and Expo Adaptive-first, with SwiftUI as the reference native renderer. Expo iOS/Android, responsive web, direct semantic manipulation, MCP, operation-log-based branch/merge workflows and fingerprint-bound local preview builds are implemented; planned layers include standalone Compose, repository adoption through managed zones, the desktop toolchain shell, and optional collaboration cloud. No production app requires an IntentForm runtime.
 
 ## License
 

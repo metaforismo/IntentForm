@@ -109,10 +109,10 @@ function swiftNode(node: PlatformIRNode, guardedPrimaryId?: string): string {
       source = `RecipientIdentity(label: "${label}", value: ${value}, detail: ${node.bindings.detail && node.bindings.detail.name !== node.bindings.value?.name ? detail : "nil"})`;
       break;
     case "primary-action":
-      source = `Button("${label}") { ${eventCall} }\n                        .buttonStyle(.borderedProminent)\n                        .controlSize(.large)\n                        .frame(maxWidth: .infinity)`;
+      source = `Button("${label}") { ${eventCall} }\n                        .buttonStyle(.borderedProminent)\n                        .controlSize(.large)\n                        .frame(minHeight: 44)\n                        .frame(maxWidth: .infinity)`;
       break;
     case "secondary-action":
-      source = `Button("${label}") { ${eventCall} }\n                    .buttonStyle(.bordered)`;
+      source = `Button("${label}") { ${eventCall} }\n                    .buttonStyle(.bordered)\n                    .frame(minWidth: 44, minHeight: 44)`;
       break;
     case "status-message":
       source = `StatusMessage(text: "${label}")`;
@@ -320,6 +320,7 @@ ${branches}
                 )
             }
         }
+        .dynamicTypeSize(.xSmall ... .accessibility5)
     }
 }
 `;

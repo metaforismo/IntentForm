@@ -254,8 +254,8 @@ export function LayersPanel({
       aria-label="Pages and layers"
       className={`${visible ? "grid" : "hidden"} ${desktopVisible ? "xl:grid" : "xl:hidden"} absolute inset-y-0 left-0 z-[3] w-[268px] min-h-0 grid-rows-[auto_1fr] border-r border-[var(--line)] bg-[var(--chrome)] shadow-[24px_0_52px_-32px_var(--shadow-strong)] xl:relative xl:z-[1] xl:w-auto xl:shadow-none`}
     >
-      <div className="flex items-center justify-between border-b border-[var(--line)] px-2 pt-1">
-        <div className="flex gap-0.5" role="tablist" aria-label="Left panel sections">
+      <div className="grid grid-cols-[minmax(0,1fr)_44px] items-center border-b border-[var(--line)] px-2 pt-1">
+        <div className="grid min-w-0 grid-cols-4 gap-px" role="tablist" aria-label="Left panel sections">
           {([["layers", "Layers"], ["components", "Library"], ["assets", "Assets"], ["tokens", "Tokens"]] as const).map(([tab, label], tabIndex, tabs) => (
             <button
               key={tab}
@@ -274,13 +274,13 @@ export function LayersPanel({
                 onRailTab(next);
                 requestAnimationFrame(() => document.getElementById(`editor-${next}-tab`)?.focus());
               }}
-              className={`min-h-9 border-b-2 px-2 text-[11px] font-medium transition-colors ${railTab === tab ? "border-[var(--accent)] text-[var(--ink)]" : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"}`}
+              className={`min-h-9 min-w-0 border-b-2 px-1 text-[11px] font-medium transition-colors ${railTab === tab ? "border-[var(--accent)] text-[var(--ink)]" : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"}`}
             >
               {label}
             </button>
           ))}
         </div>
-        <IconButton ariaLabel="Close pages and layers" onClick={onClose}><X size={13} /></IconButton>
+        <IconButton ariaLabel="Close pages and layers" onClick={onClose} size={11}><X size={13} /></IconButton>
       </div>
 
       {railTab === "layers" ? (

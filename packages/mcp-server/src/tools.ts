@@ -18,6 +18,7 @@ import {
   type SemanticChange,
   type SemanticInterfaceGraph,
   type SemanticNode,
+  type PlatformTarget,
 } from "@intentform/semantic-schema";
 import { instantiateComponent as instantiateGraphComponent } from "@intentform/semantic-schema/component-library";
 import {
@@ -32,7 +33,13 @@ import {
   inspectProjectAssets,
   type ImportProjectAssetInput,
 } from "@intentform/token-assets/assets";
-import { verifyGraph, type VerificationFinding } from "@intentform/verifier";
+import {
+  ACCESSIBILITY_PROFILES,
+  auditAccessibility,
+  verifyGraph,
+  type AccessibilitySuppression,
+  type VerificationFinding,
+} from "@intentform/verifier";
 import { verifyResponsiveWeb } from "@intentform/web-verifier";
 import {
   PREVIEW_TARGETS,
@@ -52,8 +59,22 @@ import {
   migrateProject,
   previewProjectMigration,
   saveProject,
+  withProjectWriteLock,
   type RevisionEntry,
 } from "./store.ts";
+import {
+  HistoryConflictError,
+  applyHistoryBranchPatch,
+  createHistoryBranch,
+  deleteHistoryBranch,
+  inspectOperationHistory,
+  previewHistoryBranchMerge,
+  previewHistoryOperationTransform,
+  recoverOperationHistory,
+  type HistoryAuthor,
+  type HistoryOperation,
+  type HistoryProvenance,
+} from "./history.ts";
 
 export type ScenarioId = "compact" | "regular";
 
@@ -351,7 +372,7 @@ export function previewMigration(dir: string) {
 }
 
 export function applyMigration(dir: string, expectedSourceFingerprint: string) {
-  const result = migrateProject(dir, expectedSourceFingerprint);
+  const result = migrateProject(dir, expectedSourceFingerprint, "agent");
   const { graph: _graph, ...summary } = result;
   return summary;
 }
@@ -360,6 +381,7 @@ export interface MutationResult {
   changes: SemanticChange[];
   fingerprint: string;
   revision: RevisionEntry | null;
+  operation: HistoryOperation | null;
   verification: {
     buildStatus: "passed" | "failed" | "not-run";
     passed: boolean;
@@ -373,13 +395,15 @@ function commit(
   after: SemanticInterfaceGraph,
   reason: string,
   expectedFingerprint: string,
+  provenance: HistoryProvenance = { author: "agent", kind: "save" },
 ): MutationResult {
-  const saved = saveProject(dir, after, reason, expectedFingerprint);
+  const saved = saveProject(dir, after, reason, expectedFingerprint, provenance);
   const verification = verificationSummary(after, "compact");
   return {
     changes: semanticDiff(before, after),
     fingerprint: saved.fingerprint,
     revision: saved.revision,
+    operation: saved.operation,
     verification: {
       buildStatus: verification.buildStatus,
       passed: verification.passed,
@@ -388,9 +412,16 @@ function commit(
   };
 }
 
-export function applyPatch(dir: string, patchInput: unknown): MutationResult {
+export function applyPatch(
+  dir: string,
+  patchInput: unknown,
+  expectedFingerprint?: string,
+): MutationResult {
   const patch = graphPatchSchema.parse(patchInput);
   const { graph, fingerprint } = loadProject(dir);
+  if (expectedFingerprint !== undefined && fingerprint !== expectedFingerprint) {
+    throw new Error(`Project fingerprint conflict: expected ${expectedFingerprint}, current ${fingerprint}.`);
+  }
   const after = applyGraphPatch(graph, patch);
   return commit(dir, graph, after, patch.rationale || `patch ${patch.id}`, fingerprint);
 }
@@ -553,9 +584,12 @@ export function collectProjectAssets(dir: string, apply = false) {
   };
 }
 
-export function previewPatch(dir: string, patchInput: unknown) {
+export function previewPatch(dir: string, patchInput: unknown, expectedFingerprint?: string) {
   const patch = graphPatchSchema.parse(patchInput);
   const { graph, fingerprint } = loadProject(dir);
+  if (expectedFingerprint !== undefined && fingerprint !== expectedFingerprint) {
+    throw new Error(`Project fingerprint conflict: expected ${expectedFingerprint}, current ${fingerprint}.`);
+  }
   const after = applyGraphPatch(graph, patch);
   const verification = verificationSummary(after, "compact");
   return {
@@ -580,6 +614,31 @@ export function replaceGraph(dir: string, graphInput: unknown, reason: string): 
 export function verifyProject(dir: string, scenario: ScenarioId) {
   const { graph } = loadProject(dir);
   return verificationSummary(graph, scenario);
+}
+
+export function auditProjectAccessibility(
+  dir: string,
+  target: PlatformTarget = "react",
+  suppressions: readonly AccessibilitySuppression[] = [],
+) {
+  const { graph, fingerprint } = loadProject(dir);
+  return {
+    fingerprint,
+    ...auditAccessibility(graph, { target, profiles: ACCESSIBILITY_PROFILES, suppressions }),
+  };
+}
+
+export function projectAccessibilityResource(dir: string) {
+  const { graph, fingerprint } = loadProject(dir);
+  const targets = (["react", "swiftui", "expo", "web"] as const)
+    .filter((target) => graph.platforms.some((platform) => platform.target === target && platform.enabled));
+  return {
+    fingerprint,
+    audits: Object.fromEntries(targets.map((target) => [target, auditAccessibility(graph, {
+      target,
+      profiles: ACCESSIBILITY_PROFILES,
+    })])),
+  };
 }
 
 export function verifyWebProject(dir: string) {
@@ -622,7 +681,7 @@ export function projectRevisions(dir: string) {
 export function revertProject(dir: string, revisionId: string): MutationResult {
   const { graph, fingerprint } = loadProject(dir);
   const restored = loadRevisionGraph(dir, revisionId);
-  return commit(dir, graph, restored, `revert to ${revisionId}`, fingerprint);
+  return commit(dir, graph, restored, `revert to ${revisionId}`, fingerprint, { author: "agent", kind: "revert", sourceId: revisionId });
 }
 
 export function diffAgainstRevision(dir: string, revisionId?: string) {
@@ -636,6 +695,121 @@ export function diffAgainstRevision(dir: string, revisionId?: string) {
     current: fingerprint,
     changes: semanticDiff(baseline, graph),
   };
+}
+
+export function projectHistory(dir: string) {
+  const { fingerprint } = loadProject(dir);
+  return inspectOperationHistory(dir, fingerprint);
+}
+
+export function createProjectBranch(dir: string, name: string, author: HistoryAuthor = "agent") {
+  loadProject(dir);
+  return withProjectWriteLock(dir, () => {
+    const { graph, fingerprint } = loadProject(dir);
+    const operation = createHistoryBranch(dir, name, graph, fingerprint, author);
+    return { branch: name, fingerprint, operation, history: inspectOperationHistory(dir, fingerprint) };
+  });
+}
+
+export function applyProjectBranchPatch(
+  dir: string,
+  name: string,
+  patchInput: unknown,
+  expectedFingerprint: string,
+  author: HistoryAuthor = "agent",
+) {
+  loadProject(dir);
+  return withProjectWriteLock(dir, () => {
+    const result = applyHistoryBranchPatch(dir, name, patchInput, expectedFingerprint, author);
+    const { graph: _graph, ...publicResult } = result;
+    return publicResult;
+  });
+}
+
+export function previewProjectBranchMerge(dir: string, name: string) {
+  const { graph, fingerprint } = loadProject(dir);
+  const preview = previewHistoryBranchMerge(dir, graph, fingerprint, name);
+  const { graph: _graph, ...publicPreview } = preview;
+  return publicPreview;
+}
+
+export function mergeProjectBranch(
+  dir: string,
+  name: string,
+  expectedFingerprint: string,
+  author: HistoryAuthor = "agent",
+): MutationResult & { branch: string } {
+  const { graph, fingerprint } = loadProject(dir);
+  if (fingerprint !== expectedFingerprint) {
+    throw new Error(`Project fingerprint conflict: expected ${expectedFingerprint}, current ${fingerprint}.`);
+  }
+  const preview = previewHistoryBranchMerge(dir, graph, fingerprint, name);
+  if (preview.conflicts.length > 0) throw new HistoryConflictError(preview.conflicts);
+  return {
+    ...commit(
+      dir,
+      graph,
+      preview.graph,
+      `merge branch ${name}`,
+      fingerprint,
+      { author, kind: "merge", sourceId: name },
+    ),
+    branch: name,
+  };
+}
+
+export function deleteProjectBranch(dir: string, name: string) {
+  loadProject(dir);
+  return withProjectWriteLock(dir, () => {
+    const manifest = deleteHistoryBranch(dir, name);
+    return { deleted: name, branches: Object.values(manifest.branches).map((branch) => branch.name).sort() };
+  });
+}
+
+export function previewProjectHistoryOperation(
+  dir: string,
+  operationId: string,
+  direction: "cherry-pick" | "revert",
+) {
+  const { graph, fingerprint } = loadProject(dir);
+  const preview = previewHistoryOperationTransform(dir, graph, fingerprint, operationId, direction);
+  const { graph: _graph, ...publicPreview } = preview;
+  return publicPreview;
+}
+
+export function applyProjectHistoryOperation(
+  dir: string,
+  operationId: string,
+  direction: "cherry-pick" | "revert",
+  expectedFingerprint: string,
+  author: HistoryAuthor = "agent",
+): MutationResult & { sourceOperationId: string; direction: "cherry-pick" | "revert" } {
+  const { graph, fingerprint } = loadProject(dir);
+  if (fingerprint !== expectedFingerprint) {
+    throw new Error(`Project fingerprint conflict: expected ${expectedFingerprint}, current ${fingerprint}.`);
+  }
+  const preview = previewHistoryOperationTransform(dir, graph, fingerprint, operationId, direction);
+  if (preview.conflicts.length > 0) throw new HistoryConflictError(preview.conflicts);
+  return {
+    ...commit(
+      dir,
+      graph,
+      preview.graph,
+      `${direction} operation ${operationId}`,
+      fingerprint,
+      { author, kind: direction, sourceId: operationId },
+    ),
+    sourceOperationId: operationId,
+    direction,
+  };
+}
+
+export function recoverProjectHistory(dir: string) {
+  loadProject(dir);
+  return withProjectWriteLock(dir, () => {
+    const { graph, fingerprint } = loadProject(dir);
+    return recoverOperationHistory(dir, graph, fingerprint);
+  });
 }
 
 export { graphFingerprint };

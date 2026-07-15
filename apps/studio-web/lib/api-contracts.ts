@@ -5,6 +5,7 @@ export const API_BODY_LIMIT_BYTES = 512_000;
 
 const boundedText = (maximum: number) => z.string().trim().min(1).max(maximum);
 const identifier = z.string().min(1).max(160).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
+const platformTarget = z.enum(["react", "swiftui", "expo", "compose", "web"]);
 
 export const interpretRequestSchema = z.discriminatedUnion("operation", [
   z.object({
@@ -27,13 +28,20 @@ const verificationEvidenceSchema = z.object({
 
 export const verificationFindingSchema = z.object({
   id: identifier,
-  target: z.enum(["react", "swiftui"]),
+  target: platformTarget,
   screenId: identifier,
   severity: z.enum(["info", "warning", "error"]),
   violatedIntent: boundedText(1_000),
   evidence: z.array(verificationEvidenceSchema).max(32),
   responsibleLayer: z.enum(["graph", "tokens", "compiler"]),
-  status: z.enum(["open", "repaired", "verified"]),
+  status: z.enum(["open", "repaired", "verified", "suppressed"]),
+  rule: z.object({
+    id: identifier,
+    version: z.string().min(1).max(40),
+    standard: boundedText(80),
+    profileId: identifier,
+  }).strict().optional(),
+  suppressionReason: boundedText(500).optional(),
 }).strict();
 
 const repairEvidenceSchema = z.object({
@@ -54,7 +62,7 @@ export const repairRequestSchema = z.object({
   graph: semanticInterfaceGraphSchema,
   finding: verificationFindingSchema,
   scenario: z.object({
-    target: z.enum(["react", "swiftui"]),
+    target: platformTarget,
     viewport: z.object({
       width: z.number().int().positive().max(10_000),
       height: z.number().int().positive().max(10_000),
@@ -72,6 +80,21 @@ export const projectSaveRequestSchema = z.object({
 export const projectMigrationRequestSchema = z.object({
   expectedSourceFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
 }).strict();
+
+const historyBranchName = z.string().min(1).max(63).regex(/^[a-z][a-z0-9-]{0,62}$/).refine((name) => name !== "main");
+const historyOperationId = z.string().uuid();
+const historyDirection = z.enum(["cherry-pick", "revert"]);
+const graphFingerprintSchema = z.string().regex(/^[a-f0-9]{8}$/);
+
+export const historyMutationRequestSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("create-branch"), name: historyBranchName }).strict(),
+  z.object({ action: z.literal("preview-merge"), name: historyBranchName }).strict(),
+  z.object({ action: z.literal("merge-branch"), name: historyBranchName, expectedFingerprint: graphFingerprintSchema }).strict(),
+  z.object({ action: z.literal("delete-branch"), name: historyBranchName }).strict(),
+  z.object({ action: z.literal("preview-operation"), operationId: historyOperationId, direction: historyDirection }).strict(),
+  z.object({ action: z.literal("apply-operation"), operationId: historyOperationId, direction: historyDirection, expectedFingerprint: graphFingerprintSchema }).strict(),
+  z.object({ action: z.literal("recover-history") }).strict(),
+]);
 
 const previewTargetSchema = z.enum(["browser", "expo-ios", "expo-android", "swiftui"]);
 const previewMutationFields = {
