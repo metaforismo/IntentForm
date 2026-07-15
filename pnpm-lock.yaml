@@ -248,6 +248,28 @@ importers:
         specifier: workspace:*
         version: link:../semantic-schema
 
+  packages/collaboration-relay:
+    dependencies:
+      '@intentform/ecosystem':
+        specifier: workspace:*
+        version: link:../ecosystem
+      '@intentform/semantic-schema':
+        specifier: workspace:*
+        version: link:../semantic-schema
+      zod:
+        specifier: ^4.3.6
+        version: 4.4.3
+    devDependencies:
+      '@intentform/proof-report':
+        specifier: workspace:*
+        version: link:../proof-report
+      '@types/node':
+        specifier: ^25.0.0
+        version: 25.9.5
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/compiler-core:
     dependencies:
       '@intentform/device-registry':
@@ -339,6 +361,31 @@ importers:
         specifier: ^4.3.6
         version: 4.4.3
 
+  packages/ecosystem:
+    dependencies:
+      '@intentform/preview-daemon':
+        specifier: workspace:*
+        version: link:../preview-daemon
+      '@intentform/semantic-schema':
+        specifier: workspace:*
+        version: link:../semantic-schema
+      zod:
+        specifier: ^4.3.6
+        version: 4.4.3
+    devDependencies:
+      '@intentform/compiler-react':
+        specifier: workspace:*
+        version: link:../compiler-react
+      '@intentform/proof-report':
+        specifier: workspace:*
+        version: link:../proof-report
+      '@types/node':
+        specifier: ^25.0.0
+        version: 25.9.5
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/graph-runtime:
     dependencies:
       '@intentform/semantic-schema':
@@ -387,6 +434,9 @@ importers:
       '@intentform/device-registry':
         specifier: workspace:*
         version: link:../device-registry
+      '@intentform/ecosystem':
+        specifier: workspace:*
+        version: link:../ecosystem
       '@intentform/preview-daemon':
         specifier: workspace:*
         version: link:../preview-daemon
@@ -6116,9 +6166,7 @@ snapshots:
       metro-runtime: 0.84.4
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.86.0': {}
 

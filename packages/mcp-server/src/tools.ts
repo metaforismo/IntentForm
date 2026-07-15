@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { compileExpo } from "@intentform/compiler-expo";
@@ -42,6 +43,16 @@ import {
 } from "@intentform/verifier";
 import { verifyResponsiveWeb } from "@intentform/web-verifier";
 import {
+  assertFreshReviewSequence,
+  decryptReviewBundle,
+  encryptReviewBundle,
+  pluginGrantSchema,
+  sha256,
+  verifyRemoteEvidence,
+  type EncryptedReviewBundle,
+  type PluginPermission,
+} from "@intentform/ecosystem";
+import {
   PREVIEW_TARGETS,
   PreviewBindingCache,
   PreviewSupervisor,
@@ -75,6 +86,17 @@ import {
   type HistoryOperation,
   type HistoryProvenance,
 } from "./history.ts";
+import { semanticThreeWayMerge } from "./semantic-merge.ts";
+import {
+  inspectEcosystem,
+  previewStoredPackageUpdate,
+  readPackageArtifact,
+  readReviewHighWaterMarks,
+  readEcosystemTrust,
+  recordReviewSequence,
+  writePackageArtifact,
+  writePluginGrant,
+} from "./ecosystem-store.ts";
 
 export type ScenarioId = "compact" | "regular";
 
@@ -409,6 +431,206 @@ function commit(
       passed: verification.passed,
       findings: verification.findings,
     },
+  };
+}
+
+export function projectEcosystemResource(dir: string) {
+  const { graph, fingerprint } = loadProject(dir);
+  return { fingerprint, ...inspectEcosystem(dir, graph) };
+}
+
+export function previewProjectPackageUpdate(dir: string, signed: unknown, artifact: unknown) {
+  const { graph, fingerprint } = loadProject(dir);
+  const preview = previewStoredPackageUpdate(dir, graph, signed, artifact);
+  return {
+    fingerprint,
+    previewFingerprint: graphFingerprint(preview.graph),
+    dependency: preview.dependency,
+    changes: preview.changes,
+  };
+}
+
+export function applyProjectPackageUpdate(
+  dir: string,
+  signed: unknown,
+  artifact: unknown,
+  expectedFingerprint: string,
+): MutationResult & { dependency: ReturnType<typeof previewStoredPackageUpdate>["dependency"]; cacheStatus: "verified" } {
+  const { graph, fingerprint } = loadProject(dir);
+  if (fingerprint !== expectedFingerprint) throw new Error(`Project fingerprint conflict: expected ${expectedFingerprint}, current ${fingerprint}.`);
+  const preview = previewStoredPackageUpdate(dir, graph, signed, artifact);
+  writePackageArtifact(dir, preview.dependency.artifactDigest, preview.artifactCanonical);
+  return {
+    ...commit(
+      dir,
+      graph,
+      preview.graph,
+      `install ${preview.dependency.id}@${preview.dependency.version}`,
+      fingerprint,
+      { author: "agent", kind: "save", sourceId: preview.dependency.manifestDigest },
+    ),
+    dependency: preview.dependency,
+    cacheStatus: "verified",
+  };
+}
+
+export function setProjectPluginPermissions(
+  dir: string,
+  input: {
+    pluginId: string;
+    manifestDigest: string;
+    permissions: PluginPermission[];
+    grantedBy: string;
+    expectedFingerprint: string;
+  },
+) {
+  loadProject(dir);
+  return withProjectWriteLock(dir, () => {
+    const { graph, fingerprint } = loadProject(dir);
+    if (fingerprint !== input.expectedFingerprint) throw new Error(`Project fingerprint conflict: expected ${input.expectedFingerprint}, current ${fingerprint}.`);
+    const dependency = graph.dependencies.find((entry) => entry.id === input.pluginId && entry.kind === "plugin");
+    if (!dependency) throw new Error(`Unknown installed plugin: ${input.pluginId}.`);
+    if (dependency.manifestDigest !== input.manifestDigest) throw new Error("Plugin manifest changed after permission review.");
+    const artifact = readPackageArtifact(dir, dependency.artifactDigest);
+    if (artifact.kind !== "plugin" || artifact.plugin.id !== input.pluginId) throw new Error("Installed plugin cache failed identity validation.");
+    const requested = new Set(artifact.plugin.permissions);
+    for (const permission of input.permissions) {
+      if (!requested.has(permission)) throw new Error(`Plugin did not request permission ${permission}.`);
+    }
+    const grant = pluginGrantSchema.parse({
+      pluginId: input.pluginId,
+      manifestDigest: input.manifestDigest,
+      permissions: [...new Set(input.permissions)].sort(),
+      grantedAt: new Date().toISOString(),
+      grantedBy: input.grantedBy,
+    });
+    writePluginGrant(dir, grant);
+    return { fingerprint, pluginId: input.pluginId, requestedPermissions: artifact.plugin.permissions, grantedPermissions: grant.permissions };
+  });
+}
+
+function reviewKey(value: string): Buffer {
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value)) throw new Error("Review key must be canonical base64.");
+  const key = Buffer.from(value, "base64");
+  if (key.byteLength !== 32 || key.toString("base64") !== value) throw new Error("Review key must be canonical base64 for exactly 32 bytes.");
+  return key;
+}
+
+export function exportProjectReviewBundle(
+  dir: string,
+  input: {
+    branch: string;
+    projectId: string;
+    tenantId: string;
+    actorId: string;
+    sequence: number;
+    expiresAt: string;
+    keyId: string;
+    keyBase64: string;
+  },
+) {
+  const { graph, fingerprint } = loadProject(dir);
+  const branch = previewHistoryBranchMerge(dir, graph, fingerprint, input.branch);
+  if (branch.conflicts.length > 0) throw new HistoryConflictError(branch.conflicts);
+  const createdAt = new Date().toISOString();
+  const payload = {
+    version: "1.0.0" as const,
+    bundleId: randomUUID(),
+    projectId: input.projectId,
+    tenantId: input.tenantId,
+    actorId: input.actorId,
+    sequence: input.sequence,
+    createdAt,
+    expiresAt: input.expiresAt,
+    baseGraphDigest: sha256(stableSerialize(graph)),
+    proposedGraphDigest: sha256(stableSerialize(branch.graph)),
+    baseGraph: graph,
+    proposedGraph: branch.graph,
+  };
+  return {
+    fingerprint,
+    branch: input.branch,
+    changes: branch.changes,
+    envelope: encryptReviewBundle(payload, reviewKey(input.keyBase64), input.keyId),
+  };
+}
+
+function reviewBundlePreview(
+  dir: string,
+  envelope: EncryptedReviewBundle,
+  keyBase64: string,
+  expectedFingerprint: string,
+  expectedProjectId: string,
+  expectedTenantId: string,
+) {
+  const { graph, fingerprint } = loadProject(dir);
+  if (fingerprint !== expectedFingerprint) throw new Error(`Project fingerprint conflict: expected ${expectedFingerprint}, current ${fingerprint}.`);
+  const payload = decryptReviewBundle(envelope, reviewKey(keyBase64));
+  if (payload.projectId !== expectedProjectId) throw new Error("Review bundle belongs to another project.");
+  if (payload.tenantId !== expectedTenantId) throw new Error("Review bundle belongs to another tenant.");
+  assertFreshReviewSequence(payload, readReviewHighWaterMarks(dir));
+  const merge = semanticThreeWayMerge(payload.baseGraph, graph, payload.proposedGraph);
+  return { graph, fingerprint, payload, merge, previewFingerprint: graphFingerprint(merge.graph) };
+}
+
+export function previewProjectReviewBundle(
+  dir: string,
+  envelope: EncryptedReviewBundle,
+  keyBase64: string,
+  expectedFingerprint: string,
+  expectedProjectId: string,
+  expectedTenantId: string,
+) {
+  const preview = reviewBundlePreview(dir, envelope, keyBase64, expectedFingerprint, expectedProjectId, expectedTenantId);
+  return {
+    fingerprint: preview.fingerprint,
+    previewFingerprint: preview.previewFingerprint,
+    bundleId: preview.payload.bundleId,
+    actorId: preview.payload.actorId,
+    sequence: preview.payload.sequence,
+    conflicts: preview.merge.conflicts,
+    changes: preview.merge.changes,
+  };
+}
+
+export function applyProjectReviewBundle(
+  dir: string,
+  envelope: EncryptedReviewBundle,
+  keyBase64: string,
+  expectedFingerprint: string,
+  expectedProjectId: string,
+  expectedTenantId: string,
+): MutationResult & { bundleId: string; actorId: string; sequence: number } {
+  const preview = reviewBundlePreview(dir, envelope, keyBase64, expectedFingerprint, expectedProjectId, expectedTenantId);
+  if (preview.merge.conflicts.length > 0) throw new HistoryConflictError(preview.merge.conflicts);
+  const result = commit(
+    dir,
+    preview.graph,
+    preview.merge.graph,
+    `apply encrypted review ${preview.payload.bundleId}`,
+    preview.fingerprint,
+    { author: "agent", kind: "merge", sourceId: preview.payload.bundleId },
+  );
+  recordReviewSequence(dir, preview.payload.actorId, preview.payload.sequence);
+  return { ...result, bundleId: preview.payload.bundleId, actorId: preview.payload.actorId, sequence: preview.payload.sequence };
+}
+
+export function verifyProjectRemoteEvidence(
+  dir: string,
+  target: PreviewTarget,
+  signed: unknown,
+  expectedTenantId: string,
+  profileId?: string,
+) {
+  const { graph, fingerprint } = loadProject(dir);
+  const binding = previewBindingCache.resolve(graph, fingerprint, target, profileId);
+  const statement = verifyRemoteEvidence(signed, readEcosystemTrust(dir), binding, expectedTenantId);
+  return {
+    accepted: true as const,
+    source: "remote" as const,
+    localEvidenceChanged: false as const,
+    fingerprint,
+    statement,
   };
 }
 

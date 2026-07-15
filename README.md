@@ -40,6 +40,7 @@ This repository began as an OpenAI Build Week vertical slice and now continues t
 - Versioned WCAG 2.2 AA audits shared by Studio and MCP across baseline, long-text, RTL and increased-contrast profiles, plus axe-rendered browser gates, explicit suppressions and copy-free evidence.
 - A measured 10,000-node runtime with reusable graph indexes, viewport canvas virtualization, bounded worker analysis, on-demand compiler caching, atomic chunked recovery and a CI performance budget.
 - A hardened macOS-first Electron shell with explicit project grants, sandboxed/context-isolated renderers, named IPC, local Studio/MCP supervision, installed-toolchain status, read-only Git context, ASAR integrity, a Developer ID Hardened Runtime signing path and a real ad-hoc packaged-app smoke gate.
+- A signed data-only ecosystem with exact graph dependency locks, content-addressed package cache, declarative default-deny plugins, AES-256-GCM branch review, a tenant-isolated opaque relay core and signature-bound remote evidence that never replaces local build proof.
 
 ## The proof
 
@@ -127,6 +128,7 @@ intentform://project/accessibility
 intentform://agent/activity   read least-authority policy and metadata-only outcomes
 intentform://device-profiles  read checksummed geometry, safe areas, inputs and capabilities
 intentform://device-bezel-packs inspect local-only pack capability and byte-free metadata
+intentform://project/ecosystem inspect signed locks, cache integrity, plugin grants and optional sync policy
 intentform_list_token_modes   inspect resolved modes, aliases and deprecation
 intentform_import_dtcg / intentform_export_dtcg  DTCG 2025.10 interchange
 intentform_search_assets / intentform_import_asset  licensed local media
@@ -148,11 +150,17 @@ intentform_create_branch / apply_branch_patch / preview_branch_merge / merge_bra
                               isolate agent work and approve only a clean semantic merge
 intentform_preview_history_operation / apply_history_operation
                               preview and cherry-pick or inversely revert named operations
+intentform_preview_package_update / apply_package_update
+                              verify signatures, exact locks and typed exports before one revision
+intentform_set_plugin_permissions bind default-deny grants to an exact declarative plugin digest
+intentform_export_review_bundle / preview_review_bundle / apply_review_bundle
+                              exchange AES-256-GCM branch reviews through semantic merge
+intentform_verify_remote_evidence verify a signed exact preview binding without changing local evidence
 ```
 
 In the intended MCP workflow an agent edits validated intent rather than generated UI files, and deterministic compilers produce the target code. The Studio opens and saves the same `.intentform/graph.json` (project menu → *Open/Save local project*), so agent edits land on the design board and human edits are visible to agents. Writes use atomic replacement and expected fingerprints; if an agent changes the graph after Studio opens it, Studio refuses the stale save and asks you to reopen instead of overwriting the agent revision. Stdio remains the default; authenticated Streamable HTTP binds only to `127.0.0.1` when explicitly started. See [Accessibility verification](docs/ACCESSIBILITY.md), [large-document performance](docs/PERFORMANCE.md), [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md) for setup and compatibility, and [CLAUDE.md](CLAUDE.md) for in-repo agent conventions.
 
-The desktop application can start that authenticated endpoint and copy a complete client configuration without exposing its bearer token to the renderer. See [Desktop application](docs/DESKTOP.md) and [Desktop security](docs/DESKTOP_SECURITY.md).
+The desktop application can start that authenticated endpoint and copy a complete client configuration without exposing its bearer token to the renderer. See [Desktop application](docs/DESKTOP.md), [Desktop security](docs/DESKTOP_SECURITY.md), [Ecosystem](docs/ECOSYSTEM.md) and [Ecosystem security](docs/ECOSYSTEM_SECURITY.md).
 
 ## How Codex and GPT-5.6 shaped the build
 
@@ -190,6 +198,8 @@ apps/web-preview/           Vite harness compiling generated responsive-web outp
 apps/expo-preview/          generated Expo Router iOS/Android verification harness
 packages/semantic-schema/   graph, validation, canonical serialization, patches
 packages/desktop-bridge/    named desktop protocol, grants, probes, Git and supervisor
+packages/ecosystem/         signed packages, plugin grants, encrypted review and remote evidence
+packages/collaboration-relay/ opaque tenant-scoped optional sync service core
 packages/device-registry/   neutral versioned geometry, capabilities and checksums
 packages/device-bezels/     kill-switched local manifests, containment and integrity checks
 packages/layout-engine/     deterministic recursive indexing and neutral layout
@@ -216,7 +226,7 @@ Submission closes **July 21, 2026 at 5:00 PM PT**. IntentForm is entered in Deve
 
 ## Product direction
 
-The full product is local-first and Expo Adaptive-first, with SwiftUI as the reference native renderer. Expo iOS/Android, responsive web, direct semantic manipulation, MCP, operation-log-based branch/merge workflows and fingerprint-bound local preview builds are implemented; planned layers include standalone Compose, repository adoption through managed zones, the desktop toolchain shell, and optional collaboration cloud. No production app requires an IntentForm runtime.
+The full product is local-first and Expo Adaptive-first, with SwiftUI as the reference native renderer. Expo iOS/Android, responsive web, direct semantic manipulation, MCP, operation-log-based branch/merge workflows, fingerprint-bound local previews, the desktop toolchain shell, signed libraries, encrypted review and an optional opaque collaboration service boundary are implemented. Standalone Compose and repository adoption through managed zones remain future product layers. No generated application requires an IntentForm runtime, and no account or hosted relay is required for authoring.
 
 ## License
 

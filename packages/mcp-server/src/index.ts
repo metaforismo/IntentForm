@@ -18,6 +18,8 @@ import {
 import {
   applyMigration,
   applyPatch,
+  applyProjectPackageUpdate,
+  applyProjectReviewBundle,
   auditProjectAccessibility,
   applyProjectBranchPatch,
   applyProjectHistoryOperation,
@@ -32,6 +34,7 @@ import {
   deleteProjectBranch,
   diffAgainstRevision,
   exportProjectTokens,
+  exportProjectReviewBundle,
   getGraph,
   importProjectAssetFromInbox,
   importProjectTokens,
@@ -40,10 +43,13 @@ import {
   mergeProjectBranch,
   previewProjectBranchMerge,
   previewProjectHistoryOperation,
+  previewProjectPackageUpdate,
+  previewProjectReviewBundle,
   projectHistory,
   projectAccessibilityResource,
   projectRevisions,
   projectPreviewStatus,
+  projectEcosystemResource,
   previewMigration,
   previewPatch,
   replaceGraph,
@@ -52,13 +58,16 @@ import {
   revertProject,
   searchComponents,
   searchProjectAssets,
+  setProjectPluginPermissions,
   verifyProject,
   verifyWebProject,
+  verifyProjectRemoteEvidence,
   type ScenarioId,
 } from "./tools.ts";
 import { resolveProjectDir } from "./store.ts";
 import type { PreviewTarget } from "@intentform/preview-daemon";
 import type { AccessibilitySuppression } from "@intentform/verifier";
+import type { EncryptedReviewBundle, PluginPermission } from "@intentform/ecosystem";
 import { SemanticTransactionService } from "./transactions.ts";
 import { agentAccessForTool, readAgentActivity, recordAgentActivity, type AgentActivityOutcome } from "./activity.ts";
 
@@ -119,6 +128,12 @@ export const resourceDefinitions = [{
   description: "Freshness-bound browser, Expo iOS, Expo Android and SwiftUI local build evidence.",
   mimeType: "application/json",
   read: () => projectPreviewStatus(projectDir),
+}, {
+  uri: "intentform://project/ecosystem",
+  name: "IntentForm local ecosystem and collaboration policy",
+  description: "Locked signed packages, declarative plugin grants, local cache integrity, and optional encrypted sync configuration without secret material.",
+  mimeType: "application/json",
+  read: () => projectEcosystemResource(projectDir),
 }, {
   uri: "intentform://agent/activity",
   name: "IntentForm agent access and activity",
@@ -340,7 +355,7 @@ export const toolDefinitions: ToolDefinition[] = [
   },
   {
     name: "intentform_replace_graph",
-    description: "Replace the entire Semantic Interface Graph (current schemaVersion 0.7.0). Use for structural edits a typed operation cannot express. Recursive hierarchy, components, token modes, licensed assets, logical device profiles, responsive-web and Expo profiles, node-count and layout constraints are fully validated; invalid graphs are rejected without side effects. Returns the semantic diff and fresh verification findings.",
+    description: "Replace the entire Semantic Interface Graph (current schemaVersion 0.8.0). Use for structural edits a typed operation cannot express. Recursive hierarchy, components, token modes, licensed assets, locked ecosystem dependencies, logical device profiles, responsive-web and Expo profiles, node-count and layout constraints are fully validated; invalid graphs are rejected without side effects. Returns the semantic diff and fresh verification findings.",
     inputSchema: {
       type: "object",
       properties: {
@@ -606,6 +621,167 @@ export const toolDefinitions: ToolDefinition[] = [
     run: () => recoverProjectHistory(projectDir),
   },
   {
+    name: "intentform_preview_package_update",
+    description: "Verify a typed data-only package against the project's explicit Ed25519 trust roots, exact dependency locks, artifact digest and declared exports. Returns the graph diff without writing package bytes or changing the graph.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        signedManifest: { type: "object", description: "Signed IntentForm package manifest" },
+        artifact: { type: "object", description: "Typed component, token, or declarative plugin package artifact" },
+      },
+      required: ["signedManifest", "artifact"],
+      additionalProperties: false,
+    },
+    run: (args) => previewProjectPackageUpdate(projectDir, args.signedManifest, args.artifact),
+  },
+  {
+    name: "intentform_apply_package_update",
+    description: "Apply an already-reviewable signed package candidate. Re-verifies trust and integrity, writes canonical bytes to the content-addressed local cache, embeds exact provenance in the graph and creates one fingerprint-checked revision.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        signedManifest: { type: "object" },
+        artifact: { type: "object" },
+        expectedFingerprint: { type: "string", pattern: "^[a-f0-9]{8}$" },
+      },
+      required: ["signedManifest", "artifact", "expectedFingerprint"],
+      additionalProperties: false,
+    },
+    run: (args) => applyProjectPackageUpdate(
+      projectDir,
+      args.signedManifest,
+      args.artifact,
+      String(args.expectedFingerprint ?? ""),
+    ),
+  },
+  {
+    name: "intentform_set_plugin_permissions",
+    description: "Replace the local permission grant for one installed declarative plugin. The grant is bound to the exact signed manifest digest; undeclared permissions and stale plugin versions fail closed. No plugin code is executed.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pluginId: { type: "string", pattern: "^@[a-z0-9][a-z0-9.-]*/[a-z0-9][a-z0-9.-]*$" },
+        manifestDigest: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        permissions: {
+          type: "array",
+          maxItems: 16,
+          uniqueItems: true,
+          items: { enum: ["project.read", "project.write", "history.read", "compile.run", "preview.run", "review.export"] },
+        },
+        grantedBy: { type: "string", minLength: 1, maxLength: 160 },
+        expectedFingerprint: { type: "string", pattern: "^[a-f0-9]{8}$" },
+      },
+      required: ["pluginId", "manifestDigest", "permissions", "grantedBy", "expectedFingerprint"],
+      additionalProperties: false,
+    },
+    run: (args) => setProjectPluginPermissions(projectDir, {
+      pluginId: String(args.pluginId ?? ""),
+      manifestDigest: String(args.manifestDigest ?? ""),
+      permissions: args.permissions as PluginPermission[],
+      grantedBy: String(args.grantedBy ?? ""),
+      expectedFingerprint: String(args.expectedFingerprint ?? ""),
+    }),
+  },
+  {
+    name: "intentform_export_review_bundle",
+    description: "Export one conflict-free local branch as an AES-256-GCM encrypted review bundle. The 32-byte key is used in memory only and is never persisted, returned, or included in agent activity records.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        branch: { type: "string", minLength: 1, maxLength: 64 },
+        projectId: { type: "string", pattern: "^[a-z][a-z0-9.-]*$" },
+        tenantId: { type: "string", minLength: 1, maxLength: 160 },
+        actorId: { type: "string", minLength: 1, maxLength: 160 },
+        sequence: { type: "integer", minimum: 1 },
+        expiresAt: { type: "string", format: "date-time" },
+        keyId: { type: "string", minLength: 1, maxLength: 160 },
+        keyBase64: { type: "string", minLength: 44, maxLength: 44, description: "Out-of-band 32-byte review key encoded as canonical base64" },
+      },
+      required: ["branch", "projectId", "tenantId", "actorId", "sequence", "expiresAt", "keyId", "keyBase64"],
+      additionalProperties: false,
+    },
+    run: (args) => exportProjectReviewBundle(projectDir, {
+      branch: String(args.branch ?? ""),
+      projectId: String(args.projectId ?? ""),
+      tenantId: String(args.tenantId ?? ""),
+      actorId: String(args.actorId ?? ""),
+      sequence: Number(args.sequence),
+      expiresAt: String(args.expiresAt ?? ""),
+      keyId: String(args.keyId ?? ""),
+      keyBase64: String(args.keyBase64 ?? ""),
+    }),
+  },
+  {
+    name: "intentform_preview_review_bundle",
+    description: "Decrypt and preview a review bundle using semantic three-way merge. Exact project, tenant, current fingerprint, expiry and actor sequence are checked; no graph or replay state is written.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        envelope: { type: "object" },
+        keyBase64: { type: "string", minLength: 44, maxLength: 44 },
+        expectedFingerprint: { type: "string", pattern: "^[a-f0-9]{8}$" },
+        expectedProjectId: { type: "string", pattern: "^[a-z][a-z0-9.-]*$" },
+        expectedTenantId: { type: "string", minLength: 1, maxLength: 160 },
+      },
+      required: ["envelope", "keyBase64", "expectedFingerprint", "expectedProjectId", "expectedTenantId"],
+      additionalProperties: false,
+    },
+    run: (args) => previewProjectReviewBundle(
+      projectDir,
+      args.envelope as EncryptedReviewBundle,
+      String(args.keyBase64 ?? ""),
+      String(args.expectedFingerprint ?? ""),
+      String(args.expectedProjectId ?? ""),
+      String(args.expectedTenantId ?? ""),
+    ),
+  },
+  {
+    name: "intentform_apply_review_bundle",
+    description: "Apply a previously reviewable encrypted bundle as one local merge revision. Every conflict is refused; the actor sequence is recorded only after a fingerprint-checked commit so replayed bundles fail closed.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        envelope: { type: "object" },
+        keyBase64: { type: "string", minLength: 44, maxLength: 44 },
+        expectedFingerprint: { type: "string", pattern: "^[a-f0-9]{8}$" },
+        expectedProjectId: { type: "string", pattern: "^[a-z][a-z0-9.-]*$" },
+        expectedTenantId: { type: "string", minLength: 1, maxLength: 160 },
+      },
+      required: ["envelope", "keyBase64", "expectedFingerprint", "expectedProjectId", "expectedTenantId"],
+      additionalProperties: false,
+    },
+    run: (args) => applyProjectReviewBundle(
+      projectDir,
+      args.envelope as EncryptedReviewBundle,
+      String(args.keyBase64 ?? ""),
+      String(args.expectedFingerprint ?? ""),
+      String(args.expectedProjectId ?? ""),
+      String(args.expectedTenantId ?? ""),
+    ),
+  },
+  {
+    name: "intentform_verify_remote_evidence",
+    description: "Verify an externally produced Ed25519-signed build statement against an explicit remote-evidence trust root and the exact current graph/compiler/target/device binding. Accepted remote evidence remains separate and never overwrites local preview evidence.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        target: { enum: ["browser", "expo-ios", "expo-android", "swiftui"] },
+        signedEvidence: { type: "object" },
+        expectedTenantId: { type: "string", minLength: 1, maxLength: 160 },
+        profileId: { type: "string", minLength: 1, maxLength: 160 },
+      },
+      required: ["target", "signedEvidence", "expectedTenantId"],
+      additionalProperties: false,
+    },
+    run: (args) => verifyProjectRemoteEvidence(
+      projectDir,
+      String(args.target ?? "") as PreviewTarget,
+      args.signedEvidence,
+      String(args.expectedTenantId ?? ""),
+      typeof args.profileId === "string" ? args.profileId : undefined,
+    ),
+  },
+  {
     name: "intentform_begin_transaction",
     description: "Open an isolated, expiring semantic transaction against an exact project fingerprint. This does not mutate the graph; preview and commit remain separate explicit operations.",
     inputSchema: {
@@ -702,6 +878,14 @@ const READ_ONLY_TOOLS = new Set([
   "intentform_preview_branch_merge",
   "intentform_preview_history_operation",
   "intentform_preview_transaction",
+  "intentform_preview_package_update",
+  "intentform_export_review_bundle",
+  "intentform_preview_review_bundle",
+  "intentform_verify_remote_evidence",
+]);
+
+const NON_IDEMPOTENT_READ_ONLY_TOOLS = new Set([
+  "intentform_export_review_bundle",
 ]);
 
 const DESTRUCTIVE_TOOLS = new Set([
@@ -724,6 +908,8 @@ const GRAPH_MUTATION_TOOLS = new Set([
   "intentform_merge_branch",
   "intentform_apply_history_operation",
   "intentform_commit_transaction",
+  "intentform_apply_package_update",
+  "intentform_apply_review_bundle",
 ]);
 
 const HISTORY_MUTATION_TOOLS = new Set([
@@ -736,6 +922,10 @@ const HISTORY_MUTATION_TOOLS = new Set([
 const PREVIEW_MUTATION_TOOLS = new Set([
   "intentform_run_preview",
   "intentform_cancel_preview",
+]);
+
+const ECOSYSTEM_MUTATION_TOOLS = new Set([
+  "intentform_set_plugin_permissions",
 ]);
 
 const validatorProvider = new AjvJsonSchemaValidator();
@@ -779,7 +969,7 @@ function publicToolDefinition(tool: ToolDefinition) {
       title: tool.name.replace(/^intentform_/, "").replaceAll("_", " "),
       readOnlyHint: readOnly,
       destructiveHint: DESTRUCTIVE_TOOLS.has(tool.name),
-      idempotentHint: readOnly,
+      idempotentHint: readOnly && !NON_IDEMPOTENT_READ_ONLY_TOOLS.has(tool.name),
       openWorldHint: false,
     },
     execution: { taskSupport: tool.name === "intentform_run_preview" ? "optional" as const : "forbidden" as const },
@@ -793,6 +983,7 @@ function affectedResourceUris(toolName: string): string[] {
   }
   if (HISTORY_MUTATION_TOOLS.has(toolName)) resources.push("intentform://project/history");
   if (PREVIEW_MUTATION_TOOLS.has(toolName)) resources.push("intentform://project/previews");
+  if (ECOSYSTEM_MUTATION_TOOLS.has(toolName)) resources.push("intentform://project/ecosystem");
   return resources;
 }
 

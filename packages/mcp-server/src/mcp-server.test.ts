@@ -108,7 +108,7 @@ describe("IntentForm agent project store", () => {
       required: ["definitionId", "instanceId", "screenId"],
       additionalProperties: false,
     });
-    expect([...byName.keys()].filter((name) => name.startsWith("intentform_"))).toHaveLength(39);
+    expect([...byName.keys()].filter((name) => name.startsWith("intentform_"))).toHaveLength(46);
     for (const name of [
       "intentform_list_token_modes",
       "intentform_import_dtcg",
@@ -134,6 +134,13 @@ describe("IntentForm agent project store", () => {
       "intentform_preview_history_operation",
       "intentform_apply_history_operation",
       "intentform_recover_history",
+      "intentform_preview_package_update",
+      "intentform_apply_package_update",
+      "intentform_set_plugin_permissions",
+      "intentform_export_review_bundle",
+      "intentform_preview_review_bundle",
+      "intentform_apply_review_bundle",
+      "intentform_verify_remote_evidence",
     ]) {
       expect(byName.get(name)?.inputSchema).toMatchObject({ additionalProperties: false });
     }
@@ -181,7 +188,7 @@ describe("IntentForm agent project store", () => {
     expect(preview).toMatchObject({
       status: "migration-required",
       fromVersion: "0.0.1",
-      toVersion: "0.7.0",
+      toVersion: "0.8.0",
       sourceFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
     expect(readdirSync(dir)).toEqual(["graph.json"]);
@@ -192,7 +199,7 @@ describe("IntentForm agent project store", () => {
     expect(applied).toMatchObject({
       status: "current",
       fromVersion: "0.0.1",
-      toVersion: "0.7.0",
+      toVersion: "0.8.0",
       fingerprint: expect.stringMatching(/^[a-f0-9]{8}$/),
     });
     expect(applied.checkpoint).toMatch(/migration-checkpoints/);
@@ -201,7 +208,7 @@ describe("IntentForm agent project store", () => {
     expect(loadProject(dir).graph).toEqual(migratedLegacyDemoGraph());
     expect(projectHistory(dir)).toMatchObject({
       integrity: "valid",
-      operations: [{ kind: "save", author: "system", sourceId: "0.0.1->0.7.0" }],
+      operations: [{ kind: "save", author: "system", sourceId: "0.0.1->0.8.0" }],
     });
     expect(compileProject(dir, "react", false).fileCount).toBeGreaterThan(0);
     expect(compileProject(dir, "swiftui", false).fileCount).toBeGreaterThan(0);
@@ -266,7 +273,7 @@ describe("IntentForm agent project store", () => {
 
     expect(applied).toMatchObject({ status: "current", checkpoint: expect.any(String) });
     expect(applied).not.toHaveProperty("graph");
-    expect(previewMigration(dir)).toMatchObject({ status: "current", fromVersion: "0.7.0" });
+    expect(previewMigration(dir)).toMatchObject({ status: "current", fromVersion: "0.8.0" });
   });
 
   it("writes atomically and rejects a stale writer without losing the winning graph", () => {
@@ -364,6 +371,11 @@ describe("IntentForm agent project store", () => {
       description: expect.stringMatching(/freshness-bound/i),
       mimeType: "application/json",
     }, {
+      uri: "intentform://project/ecosystem",
+      name: "IntentForm local ecosystem and collaboration policy",
+      description: expect.stringMatching(/locked signed packages/i),
+      mimeType: "application/json",
+    }, {
       uri: "intentform://agent/activity",
       name: "IntentForm agent access and activity",
       description: expect.stringMatching(/arguments, tokens, paths, content and outputs are excluded/i),
@@ -419,7 +431,7 @@ describe("IntentForm agent project store", () => {
     });
     expect(componentSchema(dir, "intent.balance-summary")).toMatchObject({
       abiVersion: "1.0.0",
-      schemaVersion: "0.7.0",
+      schemaVersion: "0.8.0",
       definitions: [{ id: "intent.balance-summary", version: "1.0.0" }],
     });
 

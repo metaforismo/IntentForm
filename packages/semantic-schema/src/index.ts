@@ -56,6 +56,8 @@ export const GRAPH_LIMITS = {
   maxWebBreakpoints: 12,
   maxWebBreakpointOverrides: 12,
   maxExpressionDepth: 12,
+  maxDependencies: 128,
+  maxDependencyExports: 512,
 } as const;
 
 // Block line separators and bidirectional controls as well as ASCII controls;
@@ -98,6 +100,11 @@ const radiusTokenKeySchema = tokenKeySchema.refine(
 );
 const colorValueSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
+const exactSemverSchema = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
+const packageIdSchema = z.string()
+  .min(3)
+  .max(160)
+  .regex(/^@[a-z0-9][a-z0-9.-]*\/[a-z0-9][a-z0-9.-]*$/);
 const assetStorageKeySchema = z.string()
   .min(72)
   .max(112)
@@ -849,6 +856,41 @@ export const fixtureSetSchema = z.strictObject({
   ),
 });
 
+/**
+ * Immutable package provenance embedded in the graph. Package bytes remain in
+ * the local content-addressed cache; compilers consume only the validated,
+ * vendored definitions in this graph and never fetch from a registry.
+ */
+export const ecosystemDependencySchema = z.strictObject({
+  id: packageIdSchema,
+  version: exactSemverSchema,
+  kind: z.enum(["component-library", "token-library", "plugin"]),
+  manifestDigest: sha256Schema,
+  artifactDigest: sha256Schema,
+  publisherKeyId: z.string().min(1).max(160).regex(/^[a-zA-Z0-9._:-]+$/),
+  visibility: z.enum(["public", "private", "local"]),
+  registry: z.string().url().max(2_048).superRefine((value, context) => {
+    const url = new URL(value);
+    const loopback = url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    if (url.protocol !== "https:" && !loopback) {
+      context.addIssue({ code: "custom", message: "Registry origins must use HTTPS or loopback HTTP" });
+    }
+    if (url.username || url.password) {
+      context.addIssue({ code: "custom", message: "Registry URLs cannot contain credentials" });
+    }
+    if (url.hash) {
+      context.addIssue({ code: "custom", message: "Registry URLs cannot contain fragments" });
+    }
+  }).nullable(),
+  publishedAt: z.string().datetime({ offset: true }),
+  sourceRevision: z.string().min(1).max(200),
+  license: z.string().min(1).max(160),
+  exports: z.array(
+    z.string().min(1).max(200).regex(/^[a-z][a-z0-9.:/-]*$/),
+  ).max(GRAPH_LIMITS.maxDependencyExports),
+});
+export type EcosystemDependency = z.infer<typeof ecosystemDependencySchema>;
+
 export function isTransactionalScreen(
   screen: ScreenDefinition,
   contract?: UIContract,
@@ -859,7 +901,7 @@ export function isTransactionalScreen(
 
 export const semanticInterfaceGraphSchema = z
   .strictObject({
-    schemaVersion: z.literal("0.7.0"),
+    schemaVersion: z.literal("0.8.0"),
     product: z.strictObject({
       name: safeTextSchema(120),
       audience: z.array(safeTextSchema(240)).min(1).max(20),
@@ -867,6 +909,7 @@ export const semanticInterfaceGraphSchema = z
     }),
     tokens: tokenCollectionSchema,
     assets: z.array(assetDefinitionSchema).max(GRAPH_LIMITS.maxAssets).default([]),
+    dependencies: z.array(ecosystemDependencySchema).max(GRAPH_LIMITS.maxDependencies).default([]),
     devices: deviceConfigurationSchema,
     web: webProjectProfileSchema.optional(),
     expo: expoProjectProfileSchema.optional(),
@@ -916,6 +959,7 @@ export const semanticInterfaceGraphSchema = z
     checkUnique(graph.contracts.map((contract) => contract.screenId), "contract screen", ["contracts"]);
     checkUnique(graph.fixtures.map((fixture) => fixture.id), "fixture id", ["fixtures"]);
     checkUnique(graph.assets.map((asset) => asset.id), "asset id", ["assets"]);
+    checkUnique(graph.dependencies.map((dependency) => dependency.id), "dependency id", ["dependencies"]);
     try {
       resolveDeviceConfiguration(graph.devices);
     } catch (error) {
@@ -1871,6 +1915,15 @@ export function semanticDiff(
     const next = afterAssets.get(id);
     if (JSON.stringify(previous) !== JSON.stringify(next)) {
       changes.push({ path: `assets.${id}`, before: previous, after: next });
+    }
+  }
+  const beforeDependencies = new Map(before.dependencies.map((dependency) => [dependency.id, dependency]));
+  const afterDependencies = new Map(after.dependencies.map((dependency) => [dependency.id, dependency]));
+  for (const id of new Set([...beforeDependencies.keys(), ...afterDependencies.keys()])) {
+    const previous = beforeDependencies.get(id);
+    const next = afterDependencies.get(id);
+    if (JSON.stringify(previous) !== JSON.stringify(next)) {
+      changes.push({ path: `dependencies.${id}`, before: previous, after: next });
     }
   }
   if (JSON.stringify(before.web) !== JSON.stringify(after.web)) {

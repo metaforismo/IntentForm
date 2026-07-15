@@ -65,7 +65,7 @@ describe("MCP 2025-11-25 protocol surface", () => {
       });
 
       const tools = await client.listTools();
-      expect(tools.tools).toHaveLength(39);
+      expect(tools.tools).toHaveLength(46);
       expect(tools.tools.find((tool) => tool.name === "intentform_describe_project")).toMatchObject({
         outputSchema: { type: "object", required: ["result"] },
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
@@ -82,6 +82,7 @@ describe("MCP 2025-11-25 protocol surface", () => {
         "intentform://project/history",
         "intentform://project/accessibility",
         "intentform://project/previews",
+        "intentform://project/ecosystem",
         "intentform://agent/activity",
         "intentform://device-profiles",
         "intentform://device-bezel-packs",
@@ -174,7 +175,7 @@ describe("MCP 2025-11-25 protocol surface", () => {
       expect(graph.contents[0]).toMatchObject({
         uri: "intentform://project/graph",
         mimeType: "application/json",
-        text: expect.stringContaining('"schemaVersion": "0.7.0"'),
+        text: expect.stringContaining('"schemaVersion": "0.8.0"'),
       });
       await expect(client.callTool({ name: "intentform_verify", arguments: { scenario: "wide" } }))
         .rejects.toThrow(/invalid.*arguments/i);
@@ -260,8 +261,8 @@ describe("MCP 2025-11-25 protocol surface", () => {
       await client.connect(transport as unknown as Transport);
       expect(transport.protocolVersion).toBe(PROTOCOL_VERSION);
       expect(transport.sessionId).toMatch(/^[a-f0-9-]{36}$/);
-      expect((await client.listTools()).tools).toHaveLength(39);
-      expect((await client.listResources()).resources).toHaveLength(9);
+      expect((await client.listTools()).tools).toHaveLength(46);
+      expect((await client.listResources()).resources).toHaveLength(10);
       await client.ping();
       await transport.terminateSession();
     } finally {

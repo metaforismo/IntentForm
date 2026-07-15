@@ -142,12 +142,12 @@ try {
             status: 409,
             contentType: "application/json",
             body: JSON.stringify({
-              error: "Project schema 0.0.1 must be migrated to 0.7.0 before it can be opened.",
+              error: "Project schema 0.0.1 must be migrated to 0.8.0 before it can be opened.",
               migration: {
                 status: "migration-required",
                 sourceFingerprint: "a".repeat(64),
                 fromVersion: "0.0.1",
-                toVersion: "0.7.0",
+                toVersion: "0.8.0",
                 diagnostics: [{
                   severity: "info",
                   code: "schema.migrated.0.0.1.to.0.1.0",
@@ -183,6 +183,11 @@ try {
                   code: "schema.migrated.0.6.0.to.0.7.0",
                   path: "schemaVersion",
                   message: "Converted schema 0.6.0 to 0.7.0.",
+                }, {
+                  severity: "info",
+                  code: "schema.migrated.0.7.0.to.0.8.0",
+                  path: "schemaVersion",
+                  message: "Converted schema 0.7.0 to 0.8.0.",
                 }],
               },
             }),
@@ -442,6 +447,17 @@ try {
       await workspaceStatus.click();
       await page.getByRole("status").waitFor();
       await workspaceStatus.click();
+
+      const ecosystemTrigger = page.getByRole("button", { name: "Open ecosystem status" });
+      await ecosystemTrigger.click();
+      const ecosystemDialog = page.getByRole("dialog", { name: "Packages and collaboration" });
+      await ecosystemDialog.getByText("Sync disabled", { exact: true }).waitFor();
+      await ecosystemDialog.getByText("0 locked packages", { exact: true }).waitFor();
+      await page.keyboard.press("Escape");
+      await ecosystemDialog.waitFor({ state: "detached" });
+      if (!await ecosystemTrigger.evaluate((element) => element === document.activeElement)) {
+        throw new Error("Ecosystem dialog did not restore focus to its trigger");
+      }
 
       await page.keyboard.press("Control+k");
       await page.getByRole("dialog", { name: "Command menu" }).waitFor();

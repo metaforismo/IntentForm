@@ -24,7 +24,8 @@ function makeValidGraph() {
   };
 
   return {
-    schemaVersion: "0.7.0",
+    schemaVersion: "0.8.0",
+    dependencies: [],
     product: {
       name: "Invariant test",
       audience: ["product teams"],
@@ -144,7 +145,7 @@ describe("semantic graph invariants", () => {
 
   it("migrates flat roots into recursive nodes with deterministic layout defaults", () => {
     const parsed = parseGraph(makeValidGraph());
-    expect(parsed.schemaVersion).toBe("0.7.0");
+    expect(parsed.schemaVersion).toBe("0.8.0");
     expect(parsed.screens[0]?.nodes[0]).toMatchObject({
       children: [],
       layout: {
@@ -178,6 +179,32 @@ describe("semantic graph invariants", () => {
     expect(parseGraph(graph).devices.defaultProfile).toBe("custom.review");
     custom.profile.viewport.width += 1;
     expect(() => parseGraph(graph)).toThrow(/checksum mismatch/i);
+  });
+
+  it("rejects insecure or credential-bearing ecosystem registry provenance", () => {
+    const dependency = {
+      id: "@verdant/auditor",
+      version: "1.0.0",
+      kind: "plugin",
+      manifestDigest: "a".repeat(64),
+      artifactDigest: "b".repeat(64),
+      publisherKeyId: "publisher.integration",
+      visibility: "private",
+      registry: "https://packages.example.test/intentform",
+      publishedAt: "2026-07-14T08:00:00.000Z",
+      sourceRevision: "git:integration",
+      license: "Proprietary",
+      exports: ["command:audit.run"],
+    };
+    expect(parseGraph({ ...makeValidGraph(), dependencies: [dependency] }).dependencies).toHaveLength(1);
+    expect(() => parseGraph({
+      ...makeValidGraph(),
+      dependencies: [{ ...dependency, registry: "https://user:pass@packages.example.test/intentform" }],
+    })).toThrow(/credentials/i);
+    expect(() => parseGraph({
+      ...makeValidGraph(),
+      dependencies: [{ ...dependency, registry: "http://packages.example.test/intentform" }],
+    })).toThrow(/HTTPS/i);
   });
 
   it("accepts nested semantic containers and patches descendant nodes by stable id", () => {

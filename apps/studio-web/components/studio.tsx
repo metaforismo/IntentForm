@@ -51,6 +51,7 @@ import { VerifyStage } from "./stages/verify-stage";
 import { useLocalPreviews, type LocalPreviewTarget } from "./use-local-previews";
 import { useBackgroundVerification } from "./use-background-verification";
 import { DesktopControl } from "./desktop-control";
+import { EcosystemControl } from "./ecosystem-control";
 
 type Stage = "canvas" | WorkflowStage;
 export type OutputTarget = "react" | "swiftui" | "expo" | "web";
@@ -728,6 +729,7 @@ export function Studio() {
 
           <div className="flex items-center justify-end gap-2">
             <DesktopControl />
+            <EcosystemControl />
             <button
               type="button"
               aria-label="Toggle color theme"

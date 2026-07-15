@@ -19,6 +19,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@intentform/ecosystem": "workspace:*",
     "@intentform/compiler-expo": "workspace:*",
     "@intentform/compiler-react": "workspace:*",
     "@intentform/compiler-swiftui": "workspace:*",
