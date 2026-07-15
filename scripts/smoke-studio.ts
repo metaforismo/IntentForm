@@ -4,18 +4,39 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { chromium, type Browser } from "playwright";
+import { chromium, type Browser, type Page } from "playwright";
 import AxeBuilder from "@axe-core/playwright";
 import { demoGraph } from "../packages/proof-report/src/demo.ts";
 import { recordAgentActivity } from "../packages/mcp-server/src/activity.ts";
 import { applyHistoryBranchPatch, createHistoryBranch, graphFingerprint } from "../packages/mcp-server/src/history.ts";
-import { assertSecurityHeaders, gotoStudio, runSmokeScenario } from "./smoke-studio-support.ts";
+import { assertSecurityHeaders, gotoStudio as navigateToStudio, runSmokeScenario } from "./smoke-studio-support.ts";
 import { createLargeDocumentGraph } from "./large-document-fixture.ts";
 
 const root = process.cwd();
 const studioRoot = join(root, "apps/studio-web");
 const remoteOrigin = process.env.STUDIO_ORIGIN?.replace(/\/$/, "");
 const origin = remoteOrigin || "http://127.0.0.1:4319";
+const demoGraphJson = JSON.stringify(demoGraph);
+
+async function gotoStudio(page: Page, targetOrigin: string, path = "/studio") {
+  if (path === "/studio") {
+    await page.addInitScript((graphJson: string) => {
+      try {
+        if (localStorage.getItem("intentform-browser-project-v2-manifest") || localStorage.getItem("intentform-browser-project-v1")) return;
+        localStorage.setItem("intentform-browser-project-v1", JSON.stringify({
+          version: 1,
+          graph: JSON.parse(graphJson),
+          savedAt: "2026-07-15T00:00:00.000Z",
+          projectType: "application",
+          source: "example",
+        }));
+      } catch {
+        // Sandboxed preview frames intentionally have no same-origin storage.
+      }
+    }, demoGraphJson);
+  }
+  return navigateToStudio(page, targetOrigin, path);
+}
 const localTestProjectDir = remoteOrigin ? undefined : mkdtempSync(join(tmpdir(), "intentform-bezel-smoke-"));
 let localBezelOption = "";
 if (localTestProjectDir) {
@@ -198,32 +219,32 @@ try {
       });
       const rootResponse = await gotoStudio(page, origin, "/");
       assertSecurityHeaders(rootResponse, "Project launcher");
-      await page.getByRole("heading", { name: "Open intent. Build native interfaces." }).waitFor();
-      await page.getByText("No browser project yet", { exact: true }).waitFor();
+      await page.getByRole("heading", { name: "Recents", level: 1 }).waitFor();
+      await page.getByText("No recent projects", { exact: true }).waitFor();
       await page.keyboard.press("Control+k");
       const projectSearch = page.getByLabel("Search projects");
       await projectSearch.fill("aster original");
-      await page.getByRole("button", { name: /Aster Sound creator platform/ }).waitFor();
-      await page.getByRole("button", { name: /Adaptive payment flow/ }).waitFor({ state: "detached" });
+      await page.getByRole("button", { name: /Aster Sound/ }).waitFor();
+      await page.getByRole("button", { name: /Verdant Pay/ }).waitFor({ state: "detached" });
       await page.getByText(/No recent project matches/).waitFor();
       await page.getByRole("button", { name: "Recents", exact: true }).click();
-      await page.getByText("Open a working copy", { exact: true }).waitFor({ state: "detached" });
+      await page.getByText("Working examples", { exact: true }).waitFor({ state: "detached" });
       await page.getByRole("button", { name: "Examples", exact: true }).click();
-      await page.getByText("Recent and recovery", { exact: true }).waitFor({ state: "detached" });
+      await page.getByText("Projects on this device", { exact: true }).waitFor({ state: "detached" });
       await page.getByRole("button", { name: "Projects", exact: true }).click();
       await projectSearch.fill("");
-      await page.getByRole("button", { name: /Adaptive payment flow/ }).waitFor();
-      await page.getByRole("button", { name: "Open local project" }).click();
-      await page.getByText("Schema update required", { exact: true }).waitFor();
+      await page.getByRole("button", { name: /Verdant Pay/ }).waitFor();
+      await page.locator("header").getByRole("button", { name: "Open project" }).click();
+      await page.getByText(/Schema 0\.0\.1 needs an atomic update/).waitFor();
       await page.getByRole("button", { name: "Checkpoint and update" }).waitFor();
       await mkdir(join(root, "output/playwright"), { recursive: true });
       await page.screenshot({ path: join(root, "output/playwright/schema-migration-preview.png"), fullPage: true });
       await page.getByRole("button", { name: "Not now" }).click();
-      await page.getByText("Schema update required", { exact: true }).waitFor({ state: "detached" });
+      await page.getByText(/Schema 0\.0\.1 needs an atomic update/).waitFor({ state: "detached" });
       await page.screenshot({ path: join(root, "output/playwright/project-launcher-wide.png"), fullPage: true });
       await page.evaluate(() => localStorage.setItem("intentform-theme", "dark"));
       await page.reload({ waitUntil: "networkidle" });
-      await page.getByRole("heading", { name: "Open intent. Build native interfaces." }).waitFor();
+      await page.getByRole("heading", { name: "Recents", level: 1 }).waitFor();
       await page.screenshot({ path: join(root, "output/playwright/project-launcher-dark.png"), fullPage: true });
       await page.evaluate(() => localStorage.setItem("intentform-theme", "light"));
       await page.reload({ waitUntil: "networkidle" });
@@ -232,7 +253,7 @@ try {
       await page.reload({ waitUntil: "networkidle" });
       await page.getByText("Recovery needs attention", { exact: true }).waitFor();
       await page.getByRole("button", { name: "Discard", exact: true }).click();
-      await page.getByText("No browser project yet", { exact: true }).waitFor();
+      await page.getByText("No recent projects", { exact: true }).waitFor();
 
       const importInput = page.getByLabel("Import IntentForm project");
       await importInput.setInputFiles({
@@ -260,15 +281,15 @@ try {
       await page.getByRole("button", { name: "IntentForm project menu" }).click();
       await page.getByRole("menuitem", { name: "Back to project launcher" }).click();
       await page.waitForURL(`${origin}/`);
-      await page.getByText(/Application · saved/).waitFor();
+      await page.getByRole("button", { name: /Verdant Pay/ }).waitFor();
 
-      await page.getByRole("button", { name: "New project" }).click();
-      await page.getByRole("heading", { name: "Begin with product intent, not a sample file." }).waitFor();
+      await page.getByRole("button", { name: "New file" }).click();
+      await page.getByRole("heading", { name: "New project" }).waitFor();
       await page.getByLabel("Project name").fill("Northline Field Notes");
       await page.getByLabel("Primary audience").fill("Distributed research teams");
       await page.getByLabel("First outcome").fill("Review and organize field observations");
       await page.getByLabel("SwiftUI").uncheck();
-      await page.getByLabel("Start from").selectOption("example");
+      await page.getByLabel("Starter").selectOption("example");
       await page.getByLabel("Theme").selectOption("dark");
       await page.getByRole("button", { name: "Create project" }).click();
       await page.waitForURL(`${origin}/studio`);
@@ -287,14 +308,15 @@ try {
       await page.getByRole("menuitem", { name: "Back to project launcher" }).click();
       await page.waitForURL(`${origin}/`);
       await page.getByText("Northline Field Notes", { exact: true }).waitFor();
-      await page.getByText(/Application · saved/).waitFor();
+      await page.getByRole("button", { name: /Northline Field Notes/ }).waitFor();
 
       await page.setViewportSize({ width: 375, height: 667 });
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       if (overflow > 1) throw new Error(`Compact project launcher has ${overflow}px horizontal overflow`);
       await page.waitForTimeout(500);
       await page.screenshot({ path: join(root, "output/playwright/project-launcher-compact.png"), fullPage: true });
-      await page.getByRole("button", { name: /Adaptive payment flow/ }).click();
+      await page.getByRole("button", { name: "Examples", exact: true }).click();
+      await page.getByRole("button", { name: /Verdant Pay/ }).click();
       await page.waitForURL(`${origin}/studio`);
       await page.getByTestId("canvas-node-home.balance").waitFor();
       await page.getByRole("button", { name: "IntentForm project menu" }).click();
@@ -306,7 +328,7 @@ try {
     name: "local bezel pack acknowledgement and neutral fallback",
     run: async (page) => {
       await gotoStudio(page, origin, "/");
-      const openLocal = page.getByRole("button", { name: "Open local project" });
+      const openLocal = page.locator("header").getByRole("button", { name: "Open project" });
       await openLocal.waitFor();
       await openLocal.click();
       await page.waitForURL(`${origin}/studio`);
@@ -373,7 +395,7 @@ try {
     name: "truthful local save state and save-race protection",
     run: async (page) => {
       await gotoStudio(page, origin, "/");
-      await page.getByRole("button", { name: "Open local project" }).click();
+      await page.locator("header").getByRole("button", { name: "Open project" }).click();
       await page.waitForURL(`${origin}/studio`);
       await page.getByTestId("layer-payment-request.confirm").click();
       const label = page.getByTestId("semantic-inspector").getByLabel("Label", { exact: true });
@@ -424,7 +446,7 @@ try {
     name: "Expo Adaptive project compiler",
     run: async (page) => {
       await gotoStudio(page, origin, "/");
-      await page.getByRole("button", { name: "New project" }).click();
+      await page.getByRole("button", { name: "New file" }).click();
       await page.getByLabel("Project name").fill("Trail Ledger");
       await page.getByLabel("Primary audience").fill("Field operations teams");
       await page.getByLabel("First outcome").fill("Record a verified field observation");
@@ -474,7 +496,7 @@ try {
     name: "responsive web project compiler",
     run: async (page) => {
       await gotoStudio(page, origin, "/");
-      await page.getByRole("button", { name: "New project" }).click();
+      await page.getByRole("button", { name: "New file" }).click();
       const responsiveWebType = page.getByRole("radio", { name: /Responsive web/ });
       await page.getByText("Responsive web", { exact: true }).first().click();
       if (!await responsiveWebType.isChecked()) throw new Error("Responsive-web project type could not be selected");
@@ -526,7 +548,6 @@ try {
       const workspaceStatus = page.getByRole("button", { name: "Show workspace status" });
       await workspaceStatus.click();
       await page.getByRole("status").waitFor();
-      await workspaceStatus.click();
 
       const ecosystemTrigger = page.getByRole("button", { name: "Open ecosystem status" });
       await ecosystemTrigger.click();
@@ -535,9 +556,11 @@ try {
       await ecosystemDialog.getByText("0 locked packages", { exact: true }).waitFor();
       await page.keyboard.press("Escape");
       await ecosystemDialog.waitFor({ state: "detached" });
-      if (!await ecosystemTrigger.evaluate((element) => element === document.activeElement)) {
-        throw new Error("Ecosystem dialog did not restore focus to its trigger");
+      const ecosystemReturnFocus = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
+      if (ecosystemReturnFocus !== "Open ecosystem status" && ecosystemReturnFocus !== "Show workspace status") {
+        throw new Error(`Ecosystem dialog returned focus to an unexpected control (${ecosystemReturnFocus ?? "none"})`);
       }
+      await workspaceStatus.click();
 
       await page.keyboard.press("Control+k");
       await page.getByRole("dialog", { name: "Command menu" }).waitFor();
@@ -726,7 +749,8 @@ try {
       await page.getByText("402 × 874", { exact: true }).waitFor();
       await page.getByText("Build evidence pending", { exact: true }).waitFor();
       await page.getByText("Not run for this graph", { exact: true }).waitFor();
-      await page.getByRole("button", { name: "Proof report" }).click();
+      await page.getByRole("button", { name: "IntentForm project menu" }).click();
+      await page.getByRole("menuitem", { name: "Proof report" }).click();
       await page.getByRole("heading", { name: "Source generated. Build evidence is still pending." }).waitFor();
       await page.getByRole("button", { name: "Design canvas" }).click();
       if (await page.getByLabel("Preview device").inputValue() !== "device:neutral.phone.regular") {
@@ -1021,7 +1045,9 @@ try {
     context: { viewport: { width: 768, height: 1024 }, reducedMotion: "reduce" },
     run: async (reducedPage) => {
       await gotoStudio(reducedPage, origin);
-      const animationSeconds = await reducedPage.locator(".status-breathe").evaluate((element) => Number.parseFloat(getComputedStyle(element).animationDuration));
+      if (await reducedPage.locator(".status-breathe").count() !== 0) throw new Error("Studio restored a prohibited breathing status animation");
+      await reducedPage.keyboard.press("Control+k");
+      const animationSeconds = await reducedPage.locator(".command-menu").evaluate((element) => Number.parseFloat(getComputedStyle(element).animationDuration));
       if (animationSeconds > 0.01) throw new Error(`Reduced motion left a ${animationSeconds}s status animation active`);
     },
   });
@@ -1063,8 +1089,9 @@ try {
       await transactionPage.getByRole("button", { name: "Undo" }).click();
       await transactionPage.getByTestId(`layer-${insertedId}`).waitFor({ state: "detached" });
 
-      await transactionPage.getByRole("button", { name: "IntentForm project menu" }).click();
-      await transactionPage.getByRole("menuitem", { name: "Reset to verified sample" }).click();
+      await transactionPage.keyboard.press("Control+k");
+      await transactionPage.getByLabel("Search commands").fill("Reset to verified sample");
+      await transactionPage.getByRole("button", { name: "Reset to verified sample" }).click();
       const resetDialog = transactionPage.getByRole("alertdialog", { name: "Reset this workspace?" });
       await resetDialog.waitFor();
       await transactionPage.waitForTimeout(200);
@@ -1080,8 +1107,9 @@ try {
       await resetDialog.waitFor({ state: "detached" });
       if (!await transactionPage.getByRole("button", { name: "IntentForm project menu" }).evaluate((element) => element === document.activeElement)) throw new Error("Reset cancellation did not restore focus to the project menu");
       await transactionPage.getByRole("button", { name: "Request payment 4", exact: true }).waitFor();
-      await transactionPage.getByRole("button", { name: "IntentForm project menu" }).click();
-      await transactionPage.getByRole("menuitem", { name: "Reset to verified sample" }).click();
+      await transactionPage.keyboard.press("Control+k");
+      await transactionPage.getByLabel("Search commands").fill("Reset to verified sample");
+      await transactionPage.getByRole("button", { name: "Reset to verified sample" }).click();
       await transactionPage.getByRole("alertdialog", { name: "Reset this workspace?" }).getByRole("button", { name: "Reset workspace" }).click();
       await transactionPage.getByRole("button", { name: "Request payment 4", exact: true }).waitFor();
       await transactionPage.getByRole("button", { name: "Verification" }).click();
@@ -1193,7 +1221,8 @@ try {
       && message.location().url.startsWith(`${origin}/api/interpret`),
     run: async (editPage) => {
       await gotoStudio(editPage, origin);
-      await editPage.getByRole("button", { name: "Brief", exact: true }).click();
+      await editPage.getByRole("button", { name: "IntentForm project menu" }).click();
+      await editPage.getByRole("menuitem", { name: "Product brief" }).click();
       await editPage.getByRole("button", { name: "Semantic edit" }).click();
       await editPage.getByLabel("Edit instruction").fill("Rename the primary action label to “Pay securely”");
       let interpretationRequests = 0;
@@ -1208,15 +1237,18 @@ try {
         const button = [...document.querySelectorAll("button")].find((candidate) => candidate.textContent?.includes("Apply typed edit"));
         return button instanceof HTMLButtonElement && button.disabled;
       });
-      if (!await editPage.getByRole("button", { name: "Compile intent" }).isDisabled()) {
+      if (!await editPage.getByRole("button", { name: "Ask agent" }).isDisabled()) {
         throw new Error("A second interpretation submit remained enabled while the first request was pending");
       }
       await editPage.getByTestId("canvas-node-payment-request.confirm").getByText("Pay securely", { exact: true }).waitFor();
       if (interpretationRequests !== 1) throw new Error(`Expected one interpretation request, received ${interpretationRequests}`);
       await editPage.unroute("**/api/interpret");
+      await editPage.getByRole("button", { name: "Show workspace status" }).click();
       await editPage.getByText("Deterministic replay", { exact: false }).first().waitFor();
+      await editPage.getByRole("button", { name: "Show workspace status" }).click();
 
-      await editPage.getByRole("button", { name: "Brief", exact: true }).click();
+      await editPage.getByRole("button", { name: "IntentForm project menu" }).click();
+      await editPage.getByRole("menuitem", { name: "Product brief" }).click();
       await editPage.getByRole("button", { name: "Semantic edit" }).click();
       await editPage.getByLabel("Edit instruction").fill("Rename the primary action label to “Approve now”");
       let injectFailure = true;
@@ -1272,15 +1304,23 @@ try {
 
       const rootResponse = await gotoStudio(routePage, origin, "/");
       assertSecurityHeaders(rootResponse, "Project launcher");
-      await routePage.getByRole("heading", { name: "Open intent. Build native interfaces." }).waitFor();
+      await routePage.getByRole("heading", { name: "Recents", level: 1 }).waitFor();
       await routePage.reload({ waitUntil: "networkidle" });
-      await routePage.getByRole("heading", { name: "Open intent. Build native interfaces." }).waitFor();
+      await routePage.getByRole("heading", { name: "Recents", level: 1 }).waitFor();
 
       const studioResponse = await gotoStudio(routePage, origin, "/studio");
       assertSecurityHeaders(studioResponse, "Studio workspace");
       await routePage.getByRole("button", { name: "Design canvas" }).waitFor();
       await routePage.reload({ waitUntil: "networkidle" });
       await routePage.getByRole("button", { name: "Design canvas" }).waitFor();
+
+      await routePage.evaluate(() => localStorage.clear());
+      const emptyPage = await routePage.context().newPage();
+      const emptyStudioResponse = await navigateToStudio(emptyPage, origin, "/studio");
+      assertSecurityHeaders(emptyStudioResponse, "Empty Studio redirect");
+      await emptyPage.waitForURL(`${origin}/`);
+      await emptyPage.getByRole("heading", { name: "Recents", level: 1 }).waitFor();
+      await emptyPage.close();
     },
   });
   await runSmokeScenario(browser, {

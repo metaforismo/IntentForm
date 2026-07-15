@@ -200,6 +200,10 @@ async function runPackagedDesktopSmoke(executable: string): Promise<void> {
       if (!api) throw new Error("Desktop preload API is missing.");
       await api.setService({ service: "mcp", action: "start" });
       await api.copyMcpConfiguration();
+      document.querySelector('[aria-label="Show workspace status"]')?.click();
+      for (let attempt = 0; attempt < 40 && !document.querySelector('[aria-label="Open desktop services"]'); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
       const desktopTrigger = document.querySelector('[aria-label="Open desktop services"]');
       desktopTrigger?.focus();
       desktopTrigger?.click();
@@ -280,6 +284,7 @@ try {
   page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.waitForURL(/\/studio$/, { timeout: 30_000 });
+  await page.getByRole("button", { name: "Show workspace status" }).click();
   await page.getByRole("button", { name: "Open desktop services" }).click();
   await page.getByRole("dialog", { name: "Desktop services" }).waitFor();
   await page.getByText("Installed capabilities").waitFor();

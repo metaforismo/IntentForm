@@ -68,6 +68,7 @@ const stages: Array<{ id: Stage; label: string; shortLabel: string; icon: typeof
   { id: "verify", label: "Verification", shortLabel: "Verify", icon: ShieldCheck },
   { id: "report", label: "Proof report", shortLabel: "Report", icon: FileText },
 ];
+const primaryStages = stages.filter((item) => item.id === "canvas" || item.id === "outputs" || item.id === "verify");
 
 function getSessionId(): string {
   const key = "intentform-session";
@@ -87,8 +88,8 @@ interface TraceSummary {
 
 function ModeBadge({ mode, model, trace }: { mode: "live" | "replay"; model: string; trace: TraceSummary | null }) {
   return (
-    <div title={trace ? `${trace.requestFingerprint} · ${trace.attempts} attempt(s)${trace.usage ? ` · ${trace.usage.totalTokens} tokens` : ""}` : undefined} className="inline-flex min-h-8 items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--chip)] px-2.5 text-[11px] font-medium text-[var(--muted)] shadow-[inset_0_1px_0_var(--float-inset)]">
-      <span className={`status-breathe size-2 rounded-full ${mode === "live" ? "bg-[var(--accent)]" : "bg-amber-500"}`} />
+    <div title={trace ? `${trace.requestFingerprint} · ${trace.attempts} attempt(s)${trace.usage ? ` · ${trace.usage.totalTokens} tokens` : ""}` : undefined} className="inline-flex min-h-8 items-center gap-2 rounded-md border border-[var(--if-border)] bg-[var(--if-panel-alt)] px-2.5 text-[11px] font-medium text-[var(--if-text-secondary)]">
+      <span className={`size-2 rounded-full ${mode === "live" ? "bg-[var(--if-green)]" : "bg-[var(--if-amber)]"}`} />
       {mode === "live" ? "Live model" : "Deterministic replay"}
       <span className="hidden font-mono font-normal text-[var(--faint)] 2xl:inline">{model}</span>
     </div>
@@ -161,6 +162,7 @@ export function Studio() {
   const projectMenuContent = useRef<HTMLDivElement>(null);
   const projectMenuWasOpen = useRef(false);
   const noticeTrigger = useRef<HTMLButtonElement>(null);
+  const noticeContent = useRef<HTMLDivElement>(null);
   const resetCancelButton = useRef<HTMLButtonElement>(null);
   const resetDialog = useRef<HTMLElement>(null);
   const resetReturnFocus = useRef<HTMLElement | null>(null);
@@ -223,37 +225,63 @@ export function Studio() {
   };
 
   useEffect(() => {
-    try {
-      const recovered = loadBrowserProject(window.localStorage);
-      if (recovered.status === "ready") {
-        const restored = recovered.project.graph;
-        const nextScreen = restored.screens.find((screen) => screen.id === selectedScreen) ?? restored.screens[0];
-        setGraph(restored);
-        setBaseline(restored);
-        setProjectType(recovered.project.projectType);
-        if (recovered.project.projectType === "responsive-web" && restored.platforms.some((platform) => platform.target === "web" && platform.enabled)) {
-          setOutputTarget("web");
-          setScenarioId(restored.web
-            ? `web:${restored.web.defaultFrame}`
-            : `device:${restored.devices.defaultProfile}`);
-        }
-        setProjectSource(recovered.project.source);
-        setLocalProjectFingerprint(recovered.project.localFingerprint ?? null);
-        setSelectedScreen(nextScreen?.id ?? "");
-        setSelectedNodeId(nextScreen?.nodes[0]?.id ?? null);
-        setNotice(`Restored ${restored.product.name} from browser recovery.`);
-      } else if (recovered.status === "invalid") {
-        setNotice("Browser recovery needs attention. Return to the project launcher to inspect or discard it.");
-        window.location.replace("/");
-        return;
-      } else {
-        setNotice("Opened the verified example because no browser project was selected.");
+    let cancelled = false;
+    const restoreGraph = (
+      restored: SemanticInterfaceGraph,
+      metadata: { projectType: ProjectType; source: ProjectSource; localFingerprint?: string | undefined },
+      notice: string,
+    ) => {
+      if (cancelled) return;
+      const nextScreen = restored.screens.find((screen) => screen.id === selectedScreen) ?? restored.screens[0];
+      setGraph(restored);
+      setBaseline(restored);
+      setProjectType(metadata.projectType);
+      if (metadata.projectType === "responsive-web" && restored.platforms.some((platform) => platform.target === "web" && platform.enabled)) {
+        setOutputTarget("web");
+        setScenarioId(restored.web
+          ? `web:${restored.web.defaultFrame}`
+          : `device:${restored.devices.defaultProfile}`);
       }
+      setProjectSource(metadata.source);
+      setLocalProjectFingerprint(metadata.localFingerprint ?? null);
+      setSelectedScreen(nextScreen?.id ?? "");
+      setSelectedNodeId(nextScreen?.nodes[0]?.id ?? null);
+      setNotice(notice);
       setDraftReady(true);
-    } catch {
-      setNotice("Browser recovery is unavailable, so this session is temporary.");
-      setDraftReady(true);
-    }
+    };
+    void (async () => {
+      try {
+        const recovered = loadBrowserProject(window.localStorage);
+        if (recovered.status === "ready") {
+          const restored = recovered.project.graph;
+          restoreGraph(restored, recovered.project, `Restored ${restored.product.name} from browser recovery.`);
+          return;
+        }
+        if (recovered.status === "invalid") {
+          setNotice("Browser recovery needs attention. Return to the project launcher to inspect or discard it.");
+          window.location.replace("/");
+          return;
+        }
+        if (window.intentformDesktop) {
+          const response = await fetch("/api/project", { cache: "no-store" });
+          const result = (await response.json()) as { error?: string; graph?: unknown; fingerprint?: string };
+          if (!response.ok || !result.graph || typeof result.fingerprint !== "string") {
+            throw new Error(result.error ?? "The granted desktop project could not be opened.");
+          }
+          const restored = parseGraph(result.graph);
+          restoreGraph(restored, {
+            projectType: restored.web ? "responsive-web" : "application",
+            source: "local",
+            localFingerprint: result.fingerprint,
+          }, `Opened ${restored.product.name} from the granted desktop project.`);
+          return;
+        }
+        window.location.replace("/");
+      } catch {
+        window.location.replace("/");
+      }
+    })();
+    return () => { cancelled = true; };
     // Restoring the draft is a mount-only concern.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -327,17 +355,23 @@ export function Studio() {
 
   useEffect(() => {
     if (!noticeOpen) return;
-    const close = () => setNoticeOpen(false);
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target instanceof Node ? event.target : null;
+      if (target && (noticeContent.current?.contains(target) || noticeTrigger.current?.contains(target))) return;
+      if (event.target instanceof Element && event.target.closest('[aria-modal="true"]')) return;
+      setNoticeOpen(false);
+    };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      if (event.defaultPrevented || document.querySelector('[aria-modal="true"]')) return;
       event.preventDefault();
       setNoticeOpen(false);
       noticeTrigger.current?.focus();
     };
-    window.addEventListener("pointerdown", close);
+    window.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("keydown", onKeyDown);
     return () => {
-      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [noticeOpen]);
@@ -747,7 +781,7 @@ export function Studio() {
   return (
     <main className="studio-grain h-[100dvh] overflow-hidden text-[var(--ink)]">
       <a className="skip-link" href="#studio-workspace">Skip to workspace</a>
-      <div className="grid h-full min-h-0 grid-rows-[40px_auto_minmax(0,1fr)] bg-[var(--surface)]">
+      <div className="grid h-full min-h-0 grid-rows-[36px_40px_minmax(0,1fr)] bg-[var(--if-panel)]">
         <div className="relative z-[6] flex min-w-0 items-end border-b border-[var(--line)] bg-[var(--app-bg,var(--canvas))] px-2 pt-1">
           <div role="tablist" aria-label="Open project documents" className="flex min-w-0 items-end gap-px overflow-x-auto [scrollbar-width:none]">
           {openTabs.map((tab) => {
@@ -778,7 +812,7 @@ export function Studio() {
           </div>
           <button type="button" aria-label="Open another document" onClick={() => { const tab = openTabs.includes("output") ? "design" : "output"; setOpenTabs((tabs) => tabs.includes(tab) ? tabs : [...tabs, tab]); setActiveTab(tab); }} className="mb-1 grid size-7 shrink-0 place-items-center rounded-[7px] text-[var(--muted)] hover:bg-[var(--hover)]"><Plus size={13} /></button>
         </div>
-        <header className="studio-topbar relative z-[5] grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto] items-center overflow-visible border-b border-[var(--line)] bg-[rgba(250,251,248,.92)] px-3 py-1 backdrop-blur-xl">
+        <header className="studio-topbar relative z-[5] grid h-10 grid-cols-[auto_minmax(0,1fr)_auto] items-center overflow-visible border-b border-[var(--if-border-subtle)] px-2">
           <div className="flex min-w-0 items-center gap-2.5">
             <div className="relative">
               <button
@@ -812,9 +846,10 @@ export function Studio() {
                     <button type="button" role="menuitem" onClick={exportGraph} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
                       <DownloadSimple size={13} /> Export graph as JSON
                     </button>
-                    <button type="button" role="menuitem" onClick={requestProjectReset} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
-                      <ArrowsCounterClockwise size={13} /> Reset to verified sample
-                    </button>
+                    <div className="my-1 border-t border-[var(--line)]" />
+                    <button type="button" role="menuitem" onClick={() => { setStage("brief"); setMenuOpen(false); }} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]"><Sparkle size={13} /> Product brief</button>
+                    <button type="button" role="menuitem" onClick={() => { setStage("graph"); setMenuOpen(false); }} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]"><TreeStructure size={13} /> Semantic graph</button>
+                    <button type="button" role="menuitem" onClick={() => { setStage("report"); setMenuOpen(false); }} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] text-[var(--t-strong)] hover:bg-[var(--hover)]"><FileText size={13} /> Proof report</button>
                   </div>
                 </>
               ) : null}
@@ -831,8 +866,8 @@ export function Studio() {
             </div>
           </div>
 
-          <nav aria-label="Workflow" className="mx-auto flex max-w-full min-w-0 items-center overflow-x-auto rounded-[10px] border border-[var(--line)] bg-[var(--chip)] p-0.5 [scrollbar-width:none]">
-            {stages.map((item) => {
+          <nav aria-label="Workspace" className="mx-auto flex max-w-[260px] min-w-0 items-center overflow-x-auto rounded-md border border-[var(--if-border)] bg-[var(--if-panel-alt)] p-0.5 [scrollbar-width:none]">
+            {primaryStages.map((item) => {
               const Icon = item.icon;
               const active = stage === item.id;
               return (
@@ -843,10 +878,10 @@ export function Studio() {
                   aria-label={item.label}
                   aria-current={active ? "page" : undefined}
                   onClick={() => setStage(item.id)}
-                  className={`group relative flex min-h-8 items-center justify-center gap-1.5 rounded-lg px-2 text-[12px] font-medium transition-[background,color,box-shadow,transform] duration-200 active:scale-[.97] lg:px-2.5 ${active ? "bg-[var(--seg-active)] text-[var(--ink)] shadow-[0_5px_14px_-10px_var(--shadow-strong),inset_0_0_0_1px_var(--float-inset)]" : "text-[var(--muted)] hover:bg-[var(--seg-hover)] hover:text-[var(--ink)]"}`}
+                  className={`group relative flex h-7 min-w-[72px] items-center justify-center gap-1.5 rounded-[4px] px-2 text-[11px] font-medium ${active ? "bg-[var(--if-raised)] text-[var(--if-text)]" : "text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)] hover:text-[var(--if-text)]"}`}
                 >
                   <Icon size={14} weight={active ? "fill" : "regular"} />
-                  <span className="hidden min-[1400px]:inline">{item.shortLabel}</span>
+                  <span>{item.shortLabel}</span>
                   {item.id === "verify" && errorCount > 0 ? (
                     <span className="absolute -right-0.5 -top-0.5 grid size-3.5 place-items-center rounded-full bg-[var(--danger)] font-mono text-[10px] font-bold text-white">{errorCount}</span>
                   ) : null}
@@ -855,9 +890,7 @@ export function Studio() {
             })}
           </nav>
 
-          <div className="flex items-center justify-end gap-2">
-            <DesktopControl />
-            <EcosystemControl />
+          <div className="flex items-center justify-end gap-1">
             <button
               type="button"
               aria-label="Toggle color theme"
@@ -872,8 +905,9 @@ export function Studio() {
                 {noticeIsError ? <Warning size={14} weight="fill" className="text-[var(--danger)]" /> : <CheckCircle size={14} weight="fill" className="text-[var(--accent)]" />}
               </button>
               {noticeOpen ? (
-                <div role="region" aria-label="Workspace status" className="menu-pop absolute right-0 top-10 z-[6] w-[min(320px,calc(100vw-24px))] overflow-hidden">
+                <div ref={noticeContent} role="region" aria-label="Workspace status" className="menu-pop absolute right-0 top-10 z-[6] w-[min(320px,calc(100vw-24px))] overflow-hidden">
                   <div role="status" aria-live="polite" className="border-b border-[var(--line)] p-3 text-[12px] leading-relaxed text-[var(--ink)]">{notice}</div>
+                  <div className="flex flex-wrap items-center gap-1 border-b border-[var(--line)] p-2"><DesktopControl /><EcosystemControl /><ModeBadge mode={mode} model={model} trace={lastTrace} /></div>
                   {activity.length > 1 ? (
                     <div className="max-h-56 overflow-auto p-1.5">
                       <span className="block px-1.5 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-[.12em] text-[var(--faint)]">Recent activity</span>
@@ -888,15 +922,21 @@ export function Studio() {
                 </div>
               ) : null}
             </div>
-            <div className="hidden lg:block"><ModeBadge mode={mode} model={model} trace={lastTrace} /></div>
+            <button
+              type="button"
+              onClick={() => setStage("outputs")}
+              className="hidden h-8 items-center gap-1.5 rounded-md border border-[var(--if-border)] bg-[var(--if-raised)] px-3 text-[11px] font-medium hover:bg-[var(--if-hover)] sm:inline-flex"
+            >
+              <Code size={13} /> Build
+            </button>
             <button
               type="button"
               onClick={() => compileBrief("create")}
               disabled={isPending}
-              className="inline-flex min-h-8 items-center gap-2 rounded-lg bg-[var(--accent-deep)] px-3 text-[12px] font-semibold text-white shadow-[0_8px_18px_-14px_rgba(36,84,68,.9)] transition-[transform,background] hover:bg-[var(--accent-dark)] active:scale-[.97] disabled:cursor-wait disabled:opacity-70"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--if-blue-action)] px-3 text-[11px] font-semibold text-white hover:bg-[var(--if-blue-action-hover)] disabled:cursor-wait disabled:opacity-70"
             >
               {isPending ? <CircleNotch className="animate-spin" size={14} /> : <Lightning size={14} weight="fill" />}
-              <span className="hidden sm:inline">{stage === "canvas" ? "Recompile" : "Compile intent"}</span>
+              <span className="hidden sm:inline">Ask agent</span>
             </button>
           </div>
           {isPending ? <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-[var(--line)]"><motion.span className="block h-full w-1/3 bg-[var(--accent)]" initial={{ x: "-100%" }} animate={{ x: "300%" }} transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }} /></div> : null}
