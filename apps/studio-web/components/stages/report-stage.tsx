@@ -9,16 +9,16 @@ import {
   ShieldCheck,
   TreeStructure,
 } from "@phosphor-icons/react";
-import type { compileReact } from "@intentform/compiler-react";
 import type { SemanticChange, SemanticInterfaceGraph } from "@intentform/semantic-schema";
 import type { VerificationResult } from "@intentform/verifier";
-
-type GeneratedFileSet = ReturnType<typeof compileReact>;
+import type { StudioGeneratedFileSet } from "../target-compilation";
 
 interface ReportStageProps {
   graph: SemanticInterfaceGraph;
-  reactOutput: GeneratedFileSet;
-  swiftOutput: GeneratedFileSet;
+  reactOutput: StudioGeneratedFileSet | null;
+  swiftOutput: StudioGeneratedFileSet | null;
+  reactMessage: string | null;
+  swiftMessage: string | null;
   scenario: { label: string; viewport: { width: number; height: number } };
   verification: VerificationResult;
   changes: SemanticChange[];
@@ -30,6 +30,8 @@ export function ReportStage({
   graph,
   reactOutput,
   swiftOutput,
+  reactMessage,
+  swiftMessage,
   scenario,
   verification,
   changes,
@@ -43,18 +45,29 @@ export function ReportStage({
       label: "Graph validated",
       detail: `${graph.screens.length} screens · ${graph.screens.flatMap((screen) => screen.nodes).length} semantic nodes`,
       icon: TreeStructure,
+      complete: true,
     },
     {
-      label: "React source generated",
-      detail: "Deterministic source output, byte-stable across runs",
-      chip: reactOutput.fingerprint,
+      label: reactOutput ? "React source generated" : "React source unavailable",
+      detail: reactOutput
+        ? reactOutput.diagnostics.length > 0
+          ? `Deterministic source output with ${reactOutput.diagnostics.length} reported compiler fallback${reactOutput.diagnostics.length === 1 ? "" : "s"}`
+          : "Deterministic source output, byte-stable across runs"
+        : reactMessage,
+      chip: reactOutput?.fingerprint ?? "NOT GENERATED",
       icon: Code,
+      complete: Boolean(reactOutput),
     },
     {
-      label: "SwiftUI source generated",
-      detail: "Deterministic source output, byte-stable across runs",
-      chip: swiftOutput.fingerprint,
+      label: swiftOutput ? "SwiftUI source generated" : "SwiftUI source unavailable",
+      detail: swiftOutput
+        ? swiftOutput.diagnostics.length > 0
+          ? `Deterministic source output with ${swiftOutput.diagnostics.length} reported compiler fallback${swiftOutput.diagnostics.length === 1 ? "" : "s"}`
+          : "Deterministic source output, byte-stable across runs"
+        : swiftMessage,
+      chip: swiftOutput?.fingerprint ?? "NOT GENERATED",
       icon: DeviceMobile,
+      complete: Boolean(swiftOutput),
     },
     {
       label: verification.passed ? `${scenario.label} verified` : `${scenario.label} verification incomplete`,
@@ -69,27 +82,31 @@ export function ReportStage({
         ? "PASS"
         : buildPending && blockingFindings.length === 0 ? "NOT RUN" : `${verification.findings.length} OPEN`,
       icon: ShieldCheck,
+      complete: verification.passed,
     },
   ];
+  const availableOutputCount = Number(Boolean(reactOutput)) + Number(Boolean(swiftOutput));
 
   return (
     <div className="mx-auto grid max-w-[1200px] gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(330px,.8fr)]">
       <div>
         <span className="font-mono text-[10px] text-[var(--accent)]">PROOF REPORT</span>
         <h2 className="mt-3 max-w-[700px] text-3xl font-semibold tracking-[-.05em] md:text-4xl">
-          {verification.passed
+          {availableOutputCount === 0
+            ? "Graph valid. No target output is currently available."
+            : verification.passed
             ? changes.length === 0
-              ? "The current SwiftUI output is built and verified."
-              : "The repaired SwiftUI output is built and verified."
+              ? "The current generated output is built and verified."
+              : "The repaired output is built and verified."
             : changes.length === 0
               ? "Source generated. Build evidence is still pending."
-              : "The repair changed both outputs. Verification is still pending."}
+              : "The repair changed the graph. Available output was regenerated; verification is still pending."}
         </h2>
         <div className="mt-8">
           {steps.map((item, index) => {
             const Icon = item.icon;
             const isLast = index === steps.length - 1;
-            const isVerifiedCheck = isLast && !verification.passed;
+            const isIncomplete = item.complete === false;
             return (
               <div key={item.label} className="relative grid grid-cols-[26px_1fr] gap-4 pb-7 last:pb-0">
                 {!isLast && (
@@ -112,7 +129,7 @@ export function ReportStage({
                     <CheckCircle
                       size={18}
                       weight="fill"
-                      className={isVerifiedCheck ? "text-[var(--faint)]" : "text-[var(--accent)]"}
+                      className={isIncomplete ? "text-[var(--faint)]" : "text-[var(--accent)]"}
                     />
                   </div>
                 </div>

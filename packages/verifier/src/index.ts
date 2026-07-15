@@ -1,5 +1,6 @@
 import {
   classifyDevice,
+  isTransactionalScreen,
   type PlatformTarget,
   type SemanticInterfaceGraph,
 } from "@intentform/semantic-schema";
@@ -200,6 +201,20 @@ export function verifyGraph(
   scenario: VerificationScenario,
 ): VerificationResult {
   const findings: VerificationFinding[] = [];
+  const platform = graph.platforms.find((candidate) => candidate.target === scenario.target);
+
+  if (!platform?.enabled) {
+    findings.push({
+      id: `${scenario.target}.target.disabled`,
+      target: scenario.target,
+      screenId: "project",
+      severity: "error",
+      violatedIntent: `The ${scenario.target} verification target must be enabled before its output can be accepted.`,
+      evidence: [{ kind: "rule", label: "Target enabled", value: false }],
+      responsibleLayer: "compiler",
+      status: "open",
+    });
+  }
 
   findings.push(...verifyTokenContrast(graph, scenario.target));
 
@@ -230,7 +245,8 @@ export function verifyGraph(
   const deviceClass = classifyDevice(scenario.viewport);
   for (const screen of graph.screens) {
     const primaryAction = screen.nodes.find((node) => node.kind === "primary-action");
-    if (!primaryAction) {
+    const contract = graph.contracts.find((item) => item.screenId === screen.id);
+    if (!primaryAction && isTransactionalScreen(screen, contract)) {
       findings.push({
         id: `${scenario.target}.${screen.id}.primary.missing`,
         target: scenario.target,
@@ -243,6 +259,8 @@ export function verifyGraph(
       });
       continue;
     }
+
+    if (!primaryAction) continue;
 
     if (deviceClass === "compact" && primaryAction.layout.placement?.compact !== "persistent-bottom") {
       findings.push({
@@ -266,7 +284,6 @@ export function verifyGraph(
     const hasFailureState = screen.nodes.some((node) =>
       node.states.some((state) => state.name === "failed"),
     );
-    const contract = graph.contracts.find((item) => item.screenId === screen.id);
     if (contract?.visualStates.includes("failed") && !hasFailureState) {
       findings.push({
         id: `${scenario.target}.${screen.id}.failure-state.missing`,

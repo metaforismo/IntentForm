@@ -12,7 +12,7 @@ import {
   type Expression,
   type SemanticInterfaceGraph,
 } from "@intentform/semantic-schema";
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import {
   PREVIEW_READY,
   PREVIEW_STATUS,
@@ -64,31 +64,45 @@ function RuntimeNode({
   const detail = node.bindings.detail?.name === node.bindings.value?.name
     ? ""
     : display(data, node.bindings.detail);
-
+  const accessibility = {
+    "aria-label": node.accessibility.label,
+    ...(node.accessibility.hint ? { "aria-description": node.accessibility.hint } : {}),
+    ...(node.accessibility.live === "off" ? {} : { "aria-live": node.accessibility.live }),
+  } as const;
+  let content: ReactNode;
   if (node.kind === "balance-summary") {
-    return <section className="runtime-balance" aria-label={node.accessibilityLabel}><span>{node.label}</span>{value ? <strong>{value}</strong> : null}{detail ? <small>{detail}</small> : null}</section>;
+    content = <section className="runtime-balance" {...accessibility}><span>{node.intent.label}</span>{value ? <strong>{value}</strong> : null}{detail ? <small>{detail}</small> : null}</section>;
+  } else if (node.kind === "transaction-list") {
+    content = <section {...accessibility}><h2>{node.intent.label}</h2>{value ? <p className="runtime-activity">{value}</p> : null}</section>;
+  } else if (node.kind === "money-input") {
+    content = <label className="runtime-money"><span>{node.intent.label}</span><input key={`${node.id}:${value}`} inputMode="decimal" defaultValue={value} {...accessibility} /></label>;
+  } else if (node.kind === "recipient-identity") {
+    content = <section className="runtime-recipient" {...accessibility}>{value ? <span className="runtime-avatar" aria-hidden="true">{value.slice(0, 2).toUpperCase()}</span> : null}<span><strong>{value || node.intent.label}</strong>{detail ? <small>{detail}</small> : null}</span></section>;
+  } else if (node.kind === "primary-action") {
+    const compact = node.layout.compactPlacement === "persistent-bottom" ? "persistent" : "inline";
+    const regular = node.layout.regularPlacement === "persistent-bottom" ? "persistent" : "inline";
+    content = <button className={`runtime-primary runtime-compact-${compact} runtime-regular-${regular}`} type="button" {...accessibility} onClick={emit}>{node.intent.label}</button>;
+  } else if (node.kind === "secondary-action") {
+    content = <button className="runtime-secondary" type="button" {...accessibility} onClick={emit}>{node.intent.label}</button>;
+  } else if (node.kind === "status-message") {
+    content = <p role="status" className="runtime-status" {...accessibility}>{node.intent.label}</p>;
+  } else {
+    content = <section className="runtime-receipt" {...accessibility}><span>{node.intent.label}</span>{detail ? <strong>{detail}</strong> : null}{value ? <small>{value}</small> : null}</section>;
   }
-  if (node.kind === "transaction-list") {
-    return <section aria-label={node.accessibilityLabel}><h2>{node.label}</h2>{value ? <p className="runtime-activity">{value}</p> : null}</section>;
-  }
-  if (node.kind === "money-input") {
-    return <label className="runtime-money"><span>{node.label}</span><input key={`${node.id}:${value}`} inputMode="decimal" defaultValue={value} aria-label={node.accessibilityLabel} /></label>;
-  }
-  if (node.kind === "recipient-identity") {
-    return <section className="runtime-recipient" aria-label={node.accessibilityLabel}>{value ? <span className="runtime-avatar" aria-hidden="true">{value.slice(0, 2).toUpperCase()}</span> : null}<span><strong>{value || node.label}</strong>{detail ? <small>{detail}</small> : null}</span></section>;
-  }
-  if (node.kind === "primary-action") {
-    const compact = node.compactPlacement === "persistent-bottom" ? "persistent" : "inline";
-    const regular = node.regularPlacement === "persistent-bottom" ? "persistent" : "inline";
-    return <button className={`runtime-primary runtime-compact-${compact} runtime-regular-${regular}`} type="button" aria-label={node.accessibilityLabel} onClick={emit}>{node.label}</button>;
-  }
-  if (node.kind === "secondary-action") {
-    return <button className="runtime-secondary" type="button" aria-label={node.accessibilityLabel} onClick={emit}>{node.label}</button>;
-  }
-  if (node.kind === "status-message") {
-    return <p role="status" className="runtime-status">{node.label}</p>;
-  }
-  return <section className="runtime-receipt" aria-label={node.accessibilityLabel}><span>{node.label}</span>{detail ? <strong>{detail}</strong> : null}{value ? <small>{value}</small> : null}</section>;
+  const semantics = {
+    "--runtime-node-gap": `${node.layout.gap}px`,
+    "--runtime-node-padding": `${node.layout.padding}px`,
+  } as CSSProperties;
+  return (
+    <div
+      className={`runtime-node runtime-axis-${node.layout.axis} runtime-width-${node.layout.width} runtime-emphasis-${node.style.emphasis} runtime-importance-${node.intent.importance}`}
+      data-intent-purpose={node.intent.purpose}
+      data-intent-role={node.style.role}
+      style={semantics}
+    >
+      {content}
+    </div>
+  );
 }
 
 function RuntimeScreen({
@@ -118,6 +132,8 @@ function RuntimeScreen({
       className="runtime-preview-root"
       data-compiler-fingerprint={preview.fingerprint}
       data-screen-id={screen.id}
+      data-screen-purpose={screen.purpose}
+      data-screen-route={screen.route}
       style={style}
     >
       <header><span className="runtime-eyebrow">{preview.ir.productName}</span><h1>{screen.title}</h1></header>

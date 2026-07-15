@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { demoGraph } from "../packages/proof-report/src/demo";
 import { applyGraphPatch } from "../packages/semantic-schema/src/index";
@@ -5,6 +8,7 @@ import { verifyGraph } from "../packages/verifier/src/index";
 import { POST as interpret } from "../apps/studio-web/app/api/interpret/route";
 import { GET as getProject, PUT as putProject } from "../apps/studio-web/app/api/project/route";
 import { POST as repair } from "../apps/studio-web/app/api/repair/route";
+import { loadProject, saveProject } from "../packages/mcp-server/src/store";
 import {
   API_BODY_LIMIT_BYTES,
   ApiInputError,
@@ -15,6 +19,7 @@ import {
 const originalVercel = process.env.VERCEL;
 const originalVercelEnv = process.env.VERCEL_ENV;
 const originalApiKey = process.env.OPENAI_API_KEY;
+const originalProjectDir = process.env.INTENTFORM_PROJECT_DIR;
 
 afterEach(() => {
   if (originalVercel === undefined) delete process.env.VERCEL;
@@ -23,6 +28,8 @@ afterEach(() => {
   else process.env.VERCEL_ENV = originalVercelEnv;
   if (originalApiKey === undefined) delete process.env.OPENAI_API_KEY;
   else process.env.OPENAI_API_KEY = originalApiKey;
+  if (originalProjectDir === undefined) delete process.env.INTENTFORM_PROJECT_DIR;
+  else process.env.INTENTFORM_PROJECT_DIR = originalProjectDir;
 });
 
 function jsonRequest(url: string, body: unknown, method = "POST", headers: HeadersInit = {}) {
@@ -161,5 +168,36 @@ describe("local project trust boundary", () => {
       { origin: "http://localhost", "sec-fetch-site": "same-origin" },
     ));
     expect(invalid.status).toBe(422);
+  });
+
+  it("returns a conflict instead of overwriting an intervening agent edit", async () => {
+    delete process.env.VERCEL;
+    delete process.env.VERCEL_ENV;
+    const projectDir = mkdtempSync(join(tmpdir(), "intentform-api-project-"));
+    process.env.INTENTFORM_PROJECT_DIR = projectDir;
+    try {
+      const openedResponse = await getProject(new Request("http://localhost/api/project"));
+      const opened = await openedResponse.json() as { fingerprint: string };
+      const agentGraph = structuredClone(demoGraph);
+      agentGraph.tokens.colors["color.accent"] = "#7a4b9e";
+      const agentSave = saveProject(projectDir, agentGraph, "agent edit", opened.fingerprint);
+
+      const staleGraph = structuredClone(demoGraph);
+      staleGraph.tokens.colors["color.accent"] = "#315fcb";
+      const response = await putProject(jsonRequest(
+        "http://localhost/api/project",
+        { graph: staleGraph, reason: "studio save", expectedFingerprint: opened.fingerprint },
+        "PUT",
+        { origin: "http://localhost", "sec-fetch-site": "same-origin" },
+      ));
+      const payload = await response.json() as { currentFingerprint?: string; error?: string };
+
+      expect(response.status).toBe(409);
+      expect(payload.currentFingerprint).toBe(agentSave.fingerprint);
+      expect(payload.error).toMatch(/changed after it was opened/i);
+      expect(loadProject(projectDir).graph.tokens.colors["color.accent"]).toBe("#7a4b9e");
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
   });
 });

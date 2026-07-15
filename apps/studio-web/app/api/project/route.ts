@@ -1,4 +1,10 @@
-import { loadProject, resolveProjectDir, saveProject } from "@intentform/mcp-server/store";
+import {
+  loadProject,
+  ProjectBusyError,
+  ProjectConflictError,
+  resolveProjectDir,
+  saveProject,
+} from "@intentform/mcp-server/store";
 import {
   inputErrorResponse,
   isLocalProjectRequestAllowed,
@@ -53,9 +59,22 @@ export async function PUT(request: Request) {
       resolveProjectDir(),
       body.graph,
       body.reason ?? "studio save",
+      body.expectedFingerprint,
     );
     return Response.json({ fingerprint: saved.fingerprint }, { headers: noStoreHeaders });
-  } catch {
+  } catch (error) {
+    if (error instanceof ProjectConflictError) {
+      return Response.json(
+        { error: error.message, currentFingerprint: error.currentFingerprint },
+        { status: 409, headers: noStoreHeaders },
+      );
+    }
+    if (error instanceof ProjectBusyError) {
+      return Response.json(
+        { error: error.message },
+        { status: 423, headers: noStoreHeaders },
+      );
+    }
     return Response.json(
       { error: "The graph could not be saved to the local project." },
       { status: 503, headers: noStoreHeaders },

@@ -381,6 +381,61 @@ try {
   });
 
   await runSmokeScenario(browser, {
+    name: "editor transactions and repair history",
+    run: async (transactionPage) => {
+      await gotoStudio(transactionPage, origin);
+
+      await transactionPage.keyboard.press("Control+k");
+      await transactionPage.getByLabel("Search commands").fill("Duplicate current screen");
+      await transactionPage.getByRole("button", { name: "Duplicate current screen", exact: true }).click();
+      const copiedScreen = transactionPage.getByRole("button", { name: "Duplicate screen Request payment copy" });
+      await copiedScreen.waitFor();
+      await transactionPage.getByRole("button", { name: "Undo" }).click();
+      await copiedScreen.waitFor({ state: "detached" });
+
+      await transactionPage.getByRole("button", { name: "Request payment 4", exact: true }).click();
+      await transactionPage.getByTestId("layer-payment-request.confirm").click();
+      await transactionPage.getByRole("button", { name: "Duplicate layer" }).click();
+      await transactionPage.getByRole("status").getByText(/more than one primary action.*No changes were saved/i).waitFor();
+      if (await transactionPage.getByTestId("layer-payment-request.confirm-copy").count() !== 0) {
+        throw new Error("A rejected primary-action duplicate leaked into the canonical graph");
+      }
+      await transactionPage.getByTestId("semantic-inspector").getByText("payment-request.confirm", { exact: true }).waitFor();
+      await transactionPage.getByRole("button", { name: "Show workspace status" }).click();
+
+      await transactionPage.getByLabel("Visual state").selectOption("failed");
+      await transactionPage.getByRole("button", { name: "Insert component" }).click();
+      await transactionPage.getByRole("menu", { name: "Insert semantic component" })
+        .getByRole("menuitem").filter({ hasText: "Status message" }).click();
+      const insertedId = "payment-request.custom-status-message-2";
+      await transactionPage.getByTestId(`canvas-node-${insertedId}`).waitFor();
+      await transactionPage.getByLabel("Visual state").selectOption("idle");
+      await transactionPage.getByTestId(`canvas-node-${insertedId}`).waitFor({ state: "detached" });
+      if (await transactionPage.getByTestId(`layer-${insertedId}`).getAttribute("data-state-visible") !== "false") {
+        throw new Error("A layer inserted in the failed state leaked into the idle state");
+      }
+      await transactionPage.getByRole("button", { name: "Undo" }).click();
+      await transactionPage.getByTestId(`layer-${insertedId}`).waitFor({ state: "detached" });
+
+      await transactionPage.getByRole("button", { name: "IntentForm project menu" }).click();
+      await transactionPage.getByRole("menuitem", { name: "Reset to verified sample" }).click();
+      await transactionPage.getByRole("button", { name: "Verification" }).click();
+      await transactionPage.getByRole("button", { name: "Plan repair" }).click();
+      await transactionPage.getByRole("heading", { name: "The repair changed the graph. Available output was regenerated; verification is still pending." }).waitFor();
+      await transactionPage.getByRole("button", { name: "Design canvas" }).click();
+      await transactionPage.getByTestId("layer-payment-request.confirm").click();
+      const repairedPlacement = transactionPage.getByText("Bottom safe area · compact", { exact: true });
+      await repairedPlacement.waitFor();
+      const undo = transactionPage.getByRole("button", { name: "Undo" });
+      if (await undo.isDisabled()) throw new Error("The accepted repair bypassed semantic undo history");
+      await undo.click();
+      await repairedPlacement.waitFor({ state: "detached" });
+      await transactionPage.getByRole("button", { name: "Redo" }).click();
+      await repairedPlacement.waitFor();
+    },
+  });
+
+  await runSmokeScenario(browser, {
     name: "request concurrency and recovery",
     allowConsoleError: (message) => message.text().includes("503 (Service Unavailable)")
       && message.location().url.startsWith(`${origin}/api/interpret`),

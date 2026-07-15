@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { compileReact } from "@intentform/compiler-react";
 import { compileSwiftUI } from "@intentform/compiler-swiftui";
-import { parseGraph, semanticDiff, stableSerialize } from "@intentform/semantic-schema";
+import {
+  parseGraph,
+  semanticDiff,
+  stableSerialize,
+  type SemanticInterfaceGraph,
+} from "@intentform/semantic-schema";
 import { demoGraph } from "./demo";
 import { buildProofReport } from "./index";
 import { verifyGraph, verifyRenderedPrimaryAction } from "@intentform/verifier";
@@ -18,6 +23,83 @@ describe("IntentForm proof pipeline", () => {
   it("produces byte-equivalent output for the same graph", () => {
     expect(compileReact(demoGraph)).toEqual(compileReact(demoGraph));
     expect(compileSwiftUI(demoGraph)).toEqual(compileSwiftUI(demoGraph));
+  });
+
+  const editableParityCases: Array<[
+    string,
+    (graph: SemanticInterfaceGraph) => void,
+  ]> = [
+    ["screen purpose", (graph) => { graph.screens[1]!.purpose = "Collect and confirm a customer payment request"; }],
+    ["screen route", (graph) => { graph.screens[1]!.route = "/collect-payment"; }],
+    ["node purpose", (graph) => { graph.screens[1]!.nodes[1]!.intent.purpose = "Confirm the verified recipient identity"; }],
+    ["importance", (graph) => { graph.screens[1]!.nodes[1]!.intent.importance = "secondary"; }],
+    ["layout axis", (graph) => { graph.screens[1]!.nodes[1]!.layout.axis = "horizontal"; }],
+    ["layout width", (graph) => { graph.screens[1]!.nodes[1]!.layout.width = "hug"; }],
+    ["layout gap", (graph) => { graph.screens[1]!.nodes[1]!.layout.gapToken = "space.8"; }],
+    ["layout padding", (graph) => { graph.screens[1]!.nodes[1]!.layout.paddingToken = "space.24"; }],
+    ["style role", (graph) => { graph.screens[1]!.nodes[1]!.style.role = "surface"; }],
+    ["style emphasis", (graph) => { graph.screens[1]!.nodes[1]!.style.emphasis = "strong"; }],
+    ["accessibility hint", (graph) => { graph.screens[1]!.nodes[1]!.accessibility.hint = "Verify the recipient before continuing"; }],
+    ["accessibility live mode", (graph) => { graph.screens[1]!.nodes[2]!.accessibility.live = "assertive"; }],
+    ["spacing token", (graph) => { graph.tokens.spacing["space.16"] = 19; }],
+    ["surface color token", (graph) => { graph.tokens.colors["color.surface"] = "#f7f2e8"; }],
+  ];
+
+  it.each(editableParityCases)("lowers editable %s changes into both target outputs", (_name, mutate) => {
+    const edited = structuredClone(demoGraph);
+    mutate(edited);
+    const graph = parseGraph(edited);
+
+    expect(compileReact(graph).fingerprint).not.toBe(compileReact(demoGraph).fingerprint);
+    expect(compileSwiftUI(graph).fingerprint).not.toBe(compileSwiftUI(demoGraph).fingerprint);
+  });
+
+  it("reports capability fallbacks instead of silently accepting unsupported fixed width", () => {
+    const edited = structuredClone(demoGraph);
+    edited.screens[1]!.nodes[1]!.layout.width = "fixed";
+
+    for (const output of [compileReact(parseGraph(edited)), compileSwiftUI(parseGraph(edited))]) {
+      expect(output.diagnostics).toContainEqual(expect.objectContaining({
+        severity: "warning",
+        path: "screens.payment-request.nodes.payment-request.recipient.layout.width",
+        message: expect.stringMatching(/fixed width requires an explicit dimension/i),
+      }));
+    }
+  });
+
+  it("applies known target overrides and diagnoses unknown override keys", () => {
+    const edited = structuredClone(demoGraph);
+    edited.screens[1]!.nodes[1]!.platformOverrides = {
+      react: { "layout.axis": "horizontal", "unsupported.magic": true },
+      swiftui: { "style.emphasis": "quiet" },
+    };
+    const graph = parseGraph(edited);
+    const react = compileReact(graph);
+    const swift = compileSwiftUI(graph);
+    const reactScreen = react.files.find((file) => file.path.endsWith("payment-request.tsx"));
+    const swiftScreen = swift.files.find((file) => file.path.endsWith("paymentRequest.swift"));
+
+    expect(reactScreen?.content).toContain("if-axis-horizontal");
+    expect(swiftScreen?.content).toContain('emphasis: "quiet"');
+    expect(react.diagnostics).toContainEqual(expect.objectContaining({
+      severity: "warning",
+      path: "screens.payment-request.nodes.payment-request.recipient.platformOverrides.react.unsupported.magic",
+    }));
+  });
+
+  it("reports the SwiftUI assertive-live fallback while preserving native update semantics", () => {
+    const edited = structuredClone(demoGraph);
+    edited.screens[1]!.nodes[2]!.accessibility.live = "assertive";
+
+    const swift = compileSwiftUI(parseGraph(edited));
+    const screen = swift.files.find((file) => file.path.endsWith("paymentRequest.swift"));
+    expect(screen?.content).toContain("// IntentForm live region: assertive");
+    expect(screen?.content).toContain(".accessibilityAddTraits(.updatesFrequently)");
+    expect(swift.diagnostics).toContainEqual(expect.objectContaining({
+      severity: "warning",
+      path: "screens.payment-request.nodes.payment-request.failure.accessibility.live",
+      message: expect.stringMatching(/does not expose assertive live-region urgency/i),
+    }));
   });
 
   it("repairs the controlled compact-action failure and reruns verification", () => {
@@ -101,6 +183,45 @@ describe("IntentForm proof pipeline", () => {
     expect(output.files.find((file) => file.path.endsWith("App.tsx"))?.content).toContain("<Screen4Screen");
     expect(output.files.find((file) => file.path.endsWith("screens/screen-4.tsx"))?.content).toContain("function Screen4Screen");
     expect(compileSwiftUI(parseGraph(graph)).files.find((file) => file.path.endsWith("screen4.swift"))?.content).toContain("struct Screen4Screen");
+  });
+
+  it("does not require a primary action on an informational screen", () => {
+    const graph = structuredClone(demoGraph);
+    graph.screens.push({
+      id: "about",
+      title: "About",
+      purpose: "Explain the product",
+      route: "/about",
+      nodes: [structuredClone(graph.screens[2]!.nodes[0]!)],
+    });
+    graph.screens.at(-1)!.nodes[0]!.id = "about.content";
+    const parsed = parseGraph(graph);
+    const verification = verifyGraph(parsed, {
+      target: "react",
+      viewport: { width: 402, height: 874 },
+      buildStatus: "passed",
+    });
+
+    expect(verification.findings).not.toContainEqual(expect.objectContaining({
+      id: "react.about.primary.missing",
+    }));
+  });
+
+  it("fails verification explicitly when the selected target is disabled", () => {
+    const graph = structuredClone(demoGraph);
+    graph.platforms.find((platform) => platform.target === "react")!.enabled = false;
+    const verification = verifyGraph(parseGraph(graph), {
+      target: "react",
+      viewport: { width: 402, height: 874 },
+      buildStatus: "passed",
+    });
+
+    expect(verification.passed).toBe(false);
+    expect(verification.findings).toContainEqual(expect.objectContaining({
+      id: "react.target.disabled",
+      severity: "error",
+      responsibleLayer: "compiler",
+    }));
   });
 
   it("verifies rendered compact placement from browser bounds", () => {

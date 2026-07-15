@@ -66,6 +66,7 @@ export const repairRequestSchema = z.object({
 export const projectSaveRequestSchema = z.object({
   graph: semanticInterfaceGraphSchema,
   reason: boundedText(160).optional(),
+  expectedFingerprint: z.string().regex(/^[a-f0-9]{8}$/),
 }).strict();
 
 export class ApiInputError extends Error {

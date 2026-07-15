@@ -20,8 +20,6 @@ import {
   TreeStructure,
   Warning,
 } from "@phosphor-icons/react";
-import { compileReact } from "@intentform/compiler-react";
-import { compileSwiftUI } from "@intentform/compiler-swiftui";
 import { demoBrief, demoGraph } from "@intentform/proof-report/demo";
 import { applyRepair, type RepairProposal } from "@intentform/repair-planner";
 import {
@@ -35,6 +33,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ManualEditor, type WorkflowStage } from "./manual-editor";
 import { deviceProfiles, type DeviceId } from "./editor/support";
+import { compileStudioTarget } from "./target-compilation";
 import { BriefStage } from "./stages/brief-stage";
 import { GraphStage } from "./stages/graph-stage";
 import { OutputsStage } from "./stages/outputs-stage";
@@ -99,6 +98,8 @@ interface RequestFailure {
   retryLabel: string;
 }
 
+class LocalProjectConflictError extends Error {}
+
 export function Studio() {
   const [stage, setStage] = useState<Stage>("canvas");
   const [brief, setBrief] = useState(demoBrief);
@@ -125,7 +126,10 @@ export function Studio() {
   const [theme, setThemeState] = useState<"light" | "dark">("light");
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [requestFailure, setRequestFailure] = useState<RequestFailure | null>(null);
+  const [localProjectFingerprint, setLocalProjectFingerprint] = useState<string | null>(null);
   const lastCommit = useRef({ at: 0, notice: "" });
+  const graphRef = useRef(graph);
+  graphRef.current = graph;
   const requestSequence = useRef(0);
   const activeRequest = useRef<{ id: number; controller: AbortController } | null>(null);
   const retryRequest = useRef<(() => void) | null>(null);
@@ -226,22 +230,27 @@ export function Studio() {
     };
   }, [noticeOpen]);
 
-  const reactOutput = useMemo(() => compileReact(graph), [graph]);
-  const swiftOutput = useMemo(() => compileSwiftUI(graph), [graph]);
+  const reactCompilation = useMemo(() => compileStudioTarget(graph, "react"), [graph]);
+  const swiftCompilation = useMemo(() => compileStudioTarget(graph, "swiftui"), [graph]);
+  const reactOutput = reactCompilation.output;
+  const swiftOutput = swiftCompilation.output;
   const scenario = scenarios[scenarioId];
+  const verificationTarget = swiftOutput ? "swiftui" : reactOutput ? "react" : outputTarget;
   const verification = useMemo(
-    () => verifyGraph(graph, { target: "swiftui", viewport: scenario.viewport, buildStatus: "not-run" }),
-    [graph, scenario],
+    () => verifyGraph(graph, { target: verificationTarget, viewport: scenario.viewport, buildStatus: "not-run" }),
+    [graph, scenario, verificationTarget],
   );
   const changes = useMemo(() => semanticDiff(baseline, graph), [baseline, graph]);
   const output = outputTarget === "react" ? reactOutput : swiftOutput;
-  const graphFingerprint = useRef(reactOutput.fingerprint);
-  graphFingerprint.current = reactOutput.fingerprint;
+  const outputMessage = outputTarget === "react" ? reactCompilation.message : swiftCompilation.message;
+  const graphSnapshot = useMemo(() => stableSerialize(graph), [graph]);
+  const graphSnapshotRef = useRef(graphSnapshot);
+  graphSnapshotRef.current = graphSnapshot;
   const isPending = pendingAction !== null;
-  const selectedCode = output.files.find((file) => file.path === outputFilePath)
-    ?? output.files.find((file) => file.path.includes(`screens/${selectedScreen}`))
-    ?? output.files[Math.max(0, graph.screens.findIndex((screen) => screen.id === selectedScreen))]
-    ?? output.files[0];
+  const selectedCode = output?.files.find((file) => file.path === outputFilePath)
+    ?? output?.files.find((file) => file.path.includes(`screens/${selectedScreen}`))
+    ?? output?.files[Math.max(0, graph.screens.findIndex((screen) => screen.id === selectedScreen))]
+    ?? output?.files[0];
 
   const beginRequest = (action: PendingAction) => {
     activeRequest.current?.controller.abort();
@@ -270,6 +279,7 @@ export function Studio() {
   /* Rapid identical edits (dragging a color token) coalesce into one undo
      step instead of flooding the history. */
   const commitGraph = (nextGraph: SemanticInterfaceGraph, nextNotice: string) => {
+    const validated = parseGraph(nextGraph);
     const now = Date.now();
     const coalesce = lastCommit.current.notice === nextNotice && now - lastCommit.current.at < 900;
     if (!coalesce) {
@@ -280,7 +290,7 @@ export function Studio() {
       setNoticeText(nextNotice);
     }
     lastCommit.current = { at: now, notice: nextNotice };
-    setGraph(nextGraph);
+    setGraph(validated);
   };
 
   const reconcileSelection = (nextGraph: SemanticInterfaceGraph) => {
@@ -351,8 +361,8 @@ export function Studio() {
     void (async () => {
       try {
         const response = await fetch("/api/project", { signal: active.controller.signal, cache: "no-store" });
-        const result = (await response.json()) as { error?: string; graph?: unknown; seeded?: boolean };
-        if (!response.ok || !result.graph || typeof result.seeded !== "boolean") {
+        const result = (await response.json()) as { error?: string; graph?: unknown; fingerprint?: string; seeded?: boolean };
+        if (!response.ok || !result.graph || typeof result.fingerprint !== "string" || typeof result.seeded !== "boolean") {
           throw new Error(result.error ?? "No local .intentform project is available in this deployment.");
         }
         const nextGraph = parseGraph(result.graph);
@@ -361,6 +371,7 @@ export function Studio() {
         setBaseline(nextGraph);
         setHistory([]);
         setFuture([]);
+        setLocalProjectFingerprint(result.fingerprint);
         const nextScreen = nextGraph.screens.find((screen) => screen.id === selectedScreen) ?? nextGraph.screens[0];
         setSelectedScreen(nextScreen?.id ?? "");
         setSelectedNodeId(nextScreen?.nodes[0]?.id ?? null);
@@ -383,24 +394,43 @@ export function Studio() {
 
   const saveLocalProject = () => {
     setMenuOpen(false);
+    if (!localProjectFingerprint) {
+      failRequest(
+        "Open the local .intentform project before saving so IntentForm can detect intervening agent edits.",
+        "Open local project",
+        openLocalProject,
+      );
+      return;
+    }
     const active = beginRequest("project-save");
     const graphToSave = graph;
+    const expectedFingerprint = localProjectFingerprint;
     void (async () => {
       try {
         const response = await fetch("/api/project", {
           method: "PUT",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ graph: graphToSave, reason: "studio save" }),
+          body: JSON.stringify({ graph: graphToSave, reason: "studio save", expectedFingerprint }),
           signal: active.controller.signal,
         });
-        const result = (await response.json()) as { error?: string; fingerprint?: string };
+        const result = (await response.json()) as { error?: string; fingerprint?: string; currentFingerprint?: string };
+        if (response.status === 409) {
+          throw new LocalProjectConflictError(result.error ?? "The local project changed after it was opened.");
+        }
         if (!response.ok || typeof result.fingerprint !== "string") {
           throw new Error(result.error ?? "The graph could not be saved to the local project.");
         }
         if (!isCurrentRequest(active.id)) return;
-        setNotice("Saved the graph to .intentform/graph.json for the MCP server and coding agents.");
+        setLocalProjectFingerprint(result.fingerprint);
+        setNotice(graphRef.current === graphToSave
+          ? "Saved the graph atomically to .intentform/graph.json for the MCP server and coding agents."
+          : "Saved the captured graph revision atomically; newer Studio edits remain unsaved.");
       } catch (error) {
         if (!isCurrentRequest(active.id) || active.controller.signal.aborted) return;
+        if (error instanceof LocalProjectConflictError) {
+          failRequest(error.message, "Open latest project", openLocalProject);
+          return;
+        }
         failRequest(
           error instanceof Error ? error.message : "The local project could not be saved.",
           "Retry save",
@@ -425,7 +455,7 @@ export function Studio() {
 
   const compileBrief = (operation: "create" | "edit" = briefOperation) => {
     const active = beginRequest("interpret");
-    const baseFingerprint = reactOutput.fingerprint;
+    const baseSnapshot = stableSerialize(graph);
     const instruction = operation === "edit" ? editInstruction : brief;
     const graphToEdit = graph;
     const screenToEdit = selectedScreen;
@@ -445,7 +475,7 @@ export function Studio() {
         const result = payload as { graph: unknown; mode: "live" | "replay"; model: string; note: string; trace?: TraceSummary };
         const nextGraph = parseGraph(result.graph);
         if (!isCurrentRequest(active.id)) return;
-        if (operation === "edit" && graphFingerprint.current !== baseFingerprint) {
+        if (operation === "edit" && graphSnapshotRef.current !== baseSnapshot) {
           throw new Error("The graph changed while the edit was being planned. Review the current graph and retry the edit.");
         }
         if (operation === "edit") commitGraph(nextGraph, result.note);
@@ -478,7 +508,7 @@ export function Studio() {
 
   const repairFinding = (finding: VerificationFinding) => {
     const active = beginRequest("repair");
-    const baseFingerprint = reactOutput.fingerprint;
+    const baseSnapshot = stableSerialize(graph);
     const graphToRepair = graph;
     const scenarioToVerify = verification.scenario;
     void (async () => {
@@ -498,15 +528,14 @@ export function Studio() {
         if (!response.ok || !payload.proposal || !payload.mode || !payload.model) throw new Error(payload.error ?? "A safe repair could not be planned.");
         const result = payload as { proposal: RepairProposal; mode: "live" | "replay"; model: string; trace?: TraceSummary };
         if (!isCurrentRequest(active.id)) return;
-        if (graphFingerprint.current !== baseFingerprint) {
+        if (graphSnapshotRef.current !== baseSnapshot) {
           throw new Error("The graph changed while the repair was being planned. Re-run verification before retrying.");
         }
         const repaired = applyRepair(graphToRepair, result.proposal);
-        setGraph(repaired);
+        commitGraph(repaired, result.proposal.summary);
         setMode(result.mode);
         setModel(result.model);
         setLastTrace(result.trace ?? null);
-        setNotice(result.proposal.summary);
         setStage("report");
       } catch (error) {
         if (!isCurrentRequest(active.id) || active.controller.signal.aborted) return;
@@ -725,7 +754,9 @@ export function Studio() {
                   setOutputTarget={setOutputTarget}
                   setOutputFilePath={setOutputFilePath}
                   output={output}
+                  outputMessage={outputMessage}
                   reactOutput={reactOutput}
+                  reactMessage={reactCompilation.message}
                   selectedCode={selectedCode}
                   copyGeneratedFile={copyGeneratedFile}
                   copied={copied}
@@ -752,6 +783,8 @@ export function Studio() {
                   graph={graph}
                   reactOutput={reactOutput}
                   swiftOutput={swiftOutput}
+                  reactMessage={reactCompilation.message}
+                  swiftMessage={swiftCompilation.message}
                   scenario={scenario}
                   verification={verification}
                   changes={changes}

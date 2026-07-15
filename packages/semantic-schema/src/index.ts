@@ -50,7 +50,7 @@ const idSchema = z.string()
 const identifierSchema = z.string()
   .min(1)
   .max(64)
-  .regex(/^[a-zA-Z_$][a-zA-Z0-9_$]*$/)
+  .regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/)
   .refine((value) => !["__proto__", "prototype", "constructor"].includes(value), "Reserved identifier");
 const tokenKeySchema = z.string()
   .min(1)
@@ -102,12 +102,12 @@ export const platformTargetSchema = z.enum([
   "web",
 ]);
 
-export const placementSchema = z.object({
+export const placementSchema = z.strictObject({
   compact: z.enum(["inline", "persistent-bottom"]),
   regular: z.enum(["inline", "persistent-bottom"]),
 });
 
-export const semanticLayoutSchema = z.object({
+export const semanticLayoutSchema = z.strictObject({
   axis: z.enum(["vertical", "horizontal", "overlay"]).default("vertical"),
   width: z.enum(["hug", "fill", "fixed"]).default("fill"),
   gapToken: tokenKeySchema.default("space.16"),
@@ -117,10 +117,10 @@ export const semanticLayoutSchema = z.object({
 
 export const expressionSchema: z.ZodType<Expression> = z.lazy(() =>
   z.discriminatedUnion("op", [
-    z.object({ op: z.literal("value"), value: fixtureValueSchema }),
-    z.object({ op: z.literal("field"), path: z.string().max(70).regex(/^data\.[a-zA-Z_$][a-zA-Z0-9_$]*$/) }),
-    z.object({ op: z.literal("eq"), left: expressionSchema, right: expressionSchema }),
-    z.object({ op: z.literal("not"), value: expressionSchema }),
+    z.strictObject({ op: z.literal("value"), value: fixtureValueSchema }),
+    z.strictObject({ op: z.literal("field"), path: z.string().max(70).regex(/^data\.[a-zA-Z_][a-zA-Z0-9_]*$/) }),
+    z.strictObject({ op: z.literal("eq"), left: expressionSchema, right: expressionSchema }),
+    z.strictObject({ op: z.literal("not"), value: expressionSchema }),
   ]),
 );
 
@@ -130,7 +130,7 @@ export type Expression =
   | { op: "eq"; left: Expression; right: Expression }
   | { op: "not"; value: Expression };
 
-export const semanticNodeSchema = z.object({
+export const semanticNodeSchema = z.strictObject({
   id: idSchema,
   kind: z.enum([
     "balance-summary",
@@ -142,24 +142,24 @@ export const semanticNodeSchema = z.object({
     "status-message",
     "receipt-summary",
   ]),
-  intent: z.object({
+  intent: z.strictObject({
     purpose: safeTextSchema().min(3),
     label: safeTextSchema(240).optional(),
     importance: z.enum(["primary", "secondary", "supporting"]).default("supporting"),
   }),
   layout: semanticLayoutSchema,
-  style: z.object({
+  style: z.strictObject({
     role: tokenKeySchema.default("surface"),
     emphasis: z.enum(["quiet", "normal", "strong"]).default("normal"),
   }),
-  accessibility: z.object({
+  accessibility: z.strictObject({
     label: safeTextSchema(240),
     hint: safeTextSchema(500).optional(),
     live: z.enum(["off", "polite", "assertive"]).default("off"),
   }),
-  states: z.array(z.object({ name: visualStateSchema, visibleWhen: expressionSchema.optional() })).max(5).default([]),
+  states: z.array(z.strictObject({ name: visualStateSchema, visibleWhen: expressionSchema.optional() })).max(5).default([]),
   interactions: z.array(
-    z.object({
+    z.strictObject({
       event: identifierSchema,
       requires: z.array(identifierSchema).max(GRAPH_LIMITS.maxFieldsPerContract).default([]),
     }),
@@ -171,13 +171,13 @@ export const semanticNodeSchema = z.object({
     )
     .refine((record) => Object.keys(record).length <= 8, "Platform overrides must contain at most 8 targets")
     .optional(),
-  provenance: z.object({
+  provenance: z.strictObject({
     author: z.enum(["human", "gpt-5.6", "system"]),
     revision: z.number().int().nonnegative(),
   }),
 });
 
-export const screenSchema = z.object({
+export const screenSchema = z.strictObject({
   id: z.string().min(1).max(64).regex(/^[a-z][a-z0-9-]*$/),
   title: safeTextSchema(160),
   purpose: safeTextSchema().min(3),
@@ -185,17 +185,17 @@ export const screenSchema = z.object({
   nodes: z.array(semanticNodeSchema).min(1).max(GRAPH_LIMITS.maxNodesPerScreen),
 });
 
-export const uiContractSchema = z.object({
+export const uiContractSchema = z.strictObject({
   screenId: z.string().min(1).max(64).regex(/^[a-z][a-z0-9-]*$/),
   data: z.array(
-    z.object({
+    z.strictObject({
       name: identifierSchema,
       type: z.enum(["string", "number", "boolean", "money", "status"]),
       required: z.boolean().default(true),
     }),
   ).max(GRAPH_LIMITS.maxFieldsPerContract),
   events: z.array(
-    z.object({
+    z.strictObject({
       name: identifierSchema,
       payload: z.enum(["string", "number", "boolean"]).optional(),
     }),
@@ -204,7 +204,7 @@ export const uiContractSchema = z.object({
   fixtures: z.array(idSchema).max(10),
 });
 
-export const fixtureSetSchema = z.object({
+export const fixtureSetSchema = z.strictObject({
   id: idSchema,
   screenId: z.string().min(1).max(64).regex(/^[a-z][a-z0-9-]*$/),
   state: visualStateSchema,
@@ -214,15 +214,23 @@ export const fixtureSetSchema = z.object({
   ),
 });
 
+export function isTransactionalScreen(
+  screen: ScreenDefinition,
+  contract?: UIContract,
+): boolean {
+  return (contract?.events.length ?? 0) > 0
+    || screen.nodes.some((node) => node.interactions.length > 0);
+}
+
 export const semanticInterfaceGraphSchema = z
-  .object({
+  .strictObject({
     schemaVersion: z.literal("0.1.0"),
-    product: z.object({
+    product: z.strictObject({
       name: safeTextSchema(120),
       audience: z.array(safeTextSchema(240)).min(1).max(20),
       principles: z.array(safeTextSchema(500)).min(1).max(20),
     }),
-    tokens: z.object({
+    tokens: z.strictObject({
       colors: z.record(
         colorTokenKeySchema,
         colorValueSchema,
@@ -246,22 +254,22 @@ export const semanticInterfaceGraphSchema = z
       ),
     }),
     platforms: z.array(
-      z.object({
+      z.strictObject({
         target: platformTargetSchema,
         enabled: z.boolean(),
         capabilities: z.array(tokenKeySchema).max(32),
       }),
     ).max(5),
-    components: z.array(z.object({
+    components: z.array(z.strictObject({
       id: idSchema,
       kind: tokenKeySchema,
       description: safeTextSchema(500),
     })).max(GRAPH_LIMITS.maxComponents),
     screens: z.array(screenSchema).min(1).max(GRAPH_LIMITS.maxScreens),
     flows: z.array(
-      z.object({
+      z.strictObject({
         id: idSchema,
-        steps: z.array(z.object({
+        steps: z.array(z.strictObject({
           from: z.string().min(1).max(64).regex(/^[a-z][a-z0-9-]*$/),
           event: identifierSchema,
           to: z.string().min(1).max(64).regex(/^[a-z][a-z0-9-]*$/),
@@ -360,8 +368,7 @@ export const semanticInterfaceGraphSchema = z
       const contractEvents = new Set(contract?.events.map((event) => event.name) ?? []);
       const visualStates = new Set(contract?.visualStates ?? []);
       const primaryActions = screen.nodes.filter((node) => node.kind === "primary-action");
-      const transactional = (contract?.events.length ?? 0) > 0
-        || screen.nodes.some((node) => node.interactions.length > 0);
+      const transactional = isTransactionalScreen(screen, contract);
 
       if (primaryActions.length > 1) {
         addIssue(`Screen ${screen.id} has more than one primary action`, ["screens", screenIndex, "nodes"]);
@@ -518,32 +525,32 @@ export type ScreenDefinition = z.infer<typeof screenSchema>;
 export type SemanticInterfaceGraph = z.infer<typeof semanticInterfaceGraphSchema>;
 export type UIContract = z.infer<typeof uiContractSchema>;
 
-export const graphPatchSchema = z.object({
+export const graphPatchSchema = z.strictObject({
   id: idSchema,
   rationale: safeTextSchema(1_000),
   operations: z.array(
     z.discriminatedUnion("op", [
-      z.object({
+      z.strictObject({
         op: z.literal("set-placement"),
         target: idSchema,
         compact: z.enum(["inline", "persistent-bottom"]),
         regular: z.enum(["inline", "persistent-bottom"]),
       }),
-      z.object({ op: z.literal("set-label"), target: idSchema, label: safeTextSchema(240) }),
-      z.object({ op: z.literal("set-purpose"), target: idSchema, purpose: safeTextSchema().min(3) }),
-      z.object({
+      z.strictObject({ op: z.literal("set-label"), target: idSchema, label: safeTextSchema(240) }),
+      z.strictObject({ op: z.literal("set-purpose"), target: idSchema, purpose: safeTextSchema().min(3) }),
+      z.strictObject({
         op: z.literal("set-emphasis"),
         target: idSchema,
         emphasis: z.enum(["quiet", "normal", "strong"]),
       }),
-      z.object({ op: z.literal("set-gap-token"), target: idSchema, token: spacingTokenKeySchema }),
-      z.object({ op: z.literal("set-padding-token"), target: idSchema, token: spacingTokenKeySchema }),
-      z.object({
+      z.strictObject({ op: z.literal("set-gap-token"), target: idSchema, token: spacingTokenKeySchema }),
+      z.strictObject({ op: z.literal("set-padding-token"), target: idSchema, token: spacingTokenKeySchema }),
+      z.strictObject({
         op: z.literal("set-color-token"),
         token: colorTokenKeySchema,
         value: colorValueSchema,
       }),
-      z.object({
+      z.strictObject({
         op: z.literal("set-fixture-value"),
         screenId: z.string().min(1).max(64).regex(/^[a-z][a-z0-9-]*$/),
         state: visualStateSchema,

@@ -47,8 +47,21 @@ const eventHandler = (node: PlatformIRNode): string => {
   return ` onClick={() => { ${node.events.map(eventCall).join("; ")}; }}`;
 };
 
+const classFragment = (value: string): string => value.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase();
+
+const accessibilityAttributes = (node: PlatformIRNode): string => {
+  const hint = node.accessibility.hint
+    ? ` aria-description={${JSON.stringify(node.accessibility.hint)}}`
+    : "";
+  const live = node.accessibility.live === "off"
+    ? ""
+    : ` aria-live=${JSON.stringify(node.accessibility.live)}`;
+  return ` aria-label={${JSON.stringify(node.accessibility.label)}}${hint}${live}`;
+};
+
 const componentForNode = (node: PlatformIRNode): string => {
-  const label = `{${JSON.stringify(node.label)}}`;
+  const label = `{${JSON.stringify(node.intent.label)}}`;
+  const accessibility = accessibilityAttributes(node);
   const handler = eventHandler(node);
   const value = node.bindings.value ? displayedField(node.bindings.value.name) : null;
   const detail = node.bindings.detail && node.bindings.detail.name !== node.bindings.value?.name
@@ -57,36 +70,48 @@ const componentForNode = (node: PlatformIRNode): string => {
   let source: string;
   switch (node.kind) {
     case "balance-summary":
-      source = `<section className="balance" aria-label={${JSON.stringify(node.accessibilityLabel)}}><span>${label}</span>${value ? `<strong>${value}</strong>` : ""}${detail ? `<small>${detail}</small>` : ""}</section>`;
+      source = `<section className="balance"${accessibility}><span>${label}</span>${value ? `<strong>${value}</strong>` : ""}${detail ? `<small>${detail}</small>` : ""}</section>`;
       break;
     case "transaction-list":
-      source = `<section aria-label={${JSON.stringify(node.accessibilityLabel)}}><h2>${label}</h2>${value ? `<p>${value}</p>` : ""}</section>`;
+      source = `<section${accessibility}><h2>${label}</h2>${value ? `<p>${value}</p>` : ""}</section>`;
       break;
     case "money-input":
-      source = `<label className="money-field"><span>${label}</span><input inputMode="decimal"${node.bindings.value ? ` defaultValue={${fieldValue(node.bindings.value.name)}}` : ""} aria-label={${JSON.stringify(node.accessibilityLabel)}} /></label>`;
+      source = `<label className="money-field"><span>${label}</span><input inputMode="decimal"${node.bindings.value ? ` defaultValue={${fieldValue(node.bindings.value.name)}}` : ""}${accessibility} /></label>`;
       break;
     case "recipient-identity":
-      source = `<section className="recipient" aria-label={${JSON.stringify(node.accessibilityLabel)}}>${node.bindings.value ? `<span className="avatar" aria-hidden="true">{String(${fieldValue(node.bindings.value.name)} ?? "").slice(0, 2).toUpperCase()}</span>` : ""}<span><strong>${value ?? label}</strong>${detail ? `<small>${detail}</small>` : ""}</span></section>`;
+      source = `<section className="recipient"${accessibility}>${node.bindings.value ? `<span className="avatar" aria-hidden="true">{String(${fieldValue(node.bindings.value.name)} ?? "").slice(0, 2).toUpperCase()}</span>` : ""}<span><strong>${value ?? label}</strong>${detail ? `<small>${detail}</small>` : ""}</span></section>`;
       break;
     case "primary-action": {
-      const compactPlacement = node.compactPlacement === "persistent-bottom" ? "persistent" : "inline";
-      const regularPlacement = node.regularPlacement === "persistent-bottom" ? "persistent" : "inline";
+      const compactPlacement = node.layout.compactPlacement === "persistent-bottom" ? "persistent" : "inline";
+      const regularPlacement = node.layout.regularPlacement === "persistent-bottom" ? "persistent" : "inline";
       const className = `primary placement-compact-${compactPlacement} placement-regular-${regularPlacement}`;
-      source = `<button className="${className}" type="button" aria-label={${JSON.stringify(node.accessibilityLabel)}}${handler}>${label}</button>`;
+      source = `<button className="${className}" type="button"${accessibility}${handler}>${label}</button>`;
       break;
     }
     case "secondary-action":
-      source = `<button className="secondary" type="button"${handler}>${label}</button>`;
+      source = `<button className="secondary" type="button"${accessibility}${handler}>${label}</button>`;
       break;
     case "status-message":
-      source = `<p role="status" className="status">${label}</p>`;
+      source = `<p role="status" className="status"${accessibility}>${label}</p>`;
       break;
     case "receipt-summary":
-      source = `<section className="receipt" aria-label={${JSON.stringify(node.accessibilityLabel)}}><span>${label}</span>${detail ? `<strong>${detail}</strong>` : ""}${value ? `<small>${value}</small>` : ""}</section>`;
+      source = `<section className="receipt"${accessibility}><span>${label}</span>${detail ? `<strong>${detail}</strong>` : ""}${value ? `<small>${value}</small>` : ""}</section>`;
       break;
     default:
       source = `<div>${label}</div>`;
   }
+
+  const wrapperClasses = [
+    "if-node",
+    `if-axis-${node.layout.axis}`,
+    `if-width-${node.layout.width}`,
+    `if-gap-${classFragment(node.layout.gapToken)}`,
+    `if-padding-${classFragment(node.layout.paddingToken)}`,
+    `if-role-${classFragment(node.style.role)}`,
+    `if-emphasis-${node.style.emphasis}`,
+    `if-importance-${node.intent.importance}`,
+  ].join(" ");
+  source = `<div className="${wrapperClasses}" data-intent-purpose={${JSON.stringify(node.intent.purpose)}} data-intent-role={${JSON.stringify(node.style.role)}}>${source}</div>`;
 
   if (node.visibility.length > 0) {
     const condition = node.visibility.map((visibility) => visibility.expression
@@ -123,7 +148,7 @@ export interface ${name}Props {
 
 export function ${name}({ data, events }: ${name}Props) {
   return (
-    <main className="screen" data-screen-id="${screen.id}">
+    <main className="screen" data-screen-id="${screen.id}" data-screen-route={${JSON.stringify(screen.route)}} data-screen-purpose={${JSON.stringify(screen.purpose)}}>
       <header><span className="eyebrow">{${JSON.stringify(ir.productName)}}</span><h1>{${JSON.stringify(screen.title)}}</h1></header>
       <div className="screen-content">
 ${body}
@@ -214,6 +239,14 @@ function stylesSource(ir: PlatformIR): string {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([name, value]) => `  ${name}: ${value};`)
     .join("\n");
+  const spacingClasses = Object.keys(ir.tokens.spacing)
+    .sort()
+    .flatMap((key) => {
+      const fragment = classFragment(key);
+      const variable = `var(${cssVarName(key)})`;
+      return [`.if-gap-${fragment} { --if-node-gap: ${variable}; }`, `.if-padding-${fragment} { --if-node-padding: ${variable}; }`];
+    })
+    .join("\n");
 
   return `:root {
   color-scheme: light;
@@ -235,6 +268,18 @@ body { margin: 0; color: var(--if-ink); background: var(--if-canvas); }
 .eyebrow { color: var(--if-accent); font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 h1 { margin: 8px 0 28px; font-size: 32px; letter-spacing: -.04em; }
 .screen-content { display: grid; gap: 18px; }
+.if-node { min-width: 0; padding: var(--if-node-padding, 0); }
+.if-axis-vertical > * { display: grid; gap: var(--if-node-gap, 0); }
+.if-axis-horizontal > * { display: flex; align-items: center; gap: var(--if-node-gap, 0); }
+.if-axis-overlay > * { display: grid; gap: 0; }
+.if-axis-overlay > * > * { grid-area: 1 / 1; }
+.if-width-hug { width: fit-content; max-width: 100%; }
+.if-width-fill, .if-width-fixed { width: 100%; }
+.if-emphasis-quiet { opacity: .72; }
+.if-emphasis-strong > * { font-weight: 700; }
+.if-importance-primary > * { filter: saturate(1.08); }
+.if-importance-supporting > * { filter: saturate(.88); }
+${spacingClasses}
 .balance { display: grid; gap: 6px; padding: 24px; border-radius: var(--if-surface-radius); background: var(--if-accent-deep); color: #ffffff; }
 .balance strong { font-size: 36px; letter-spacing: -.04em; }
 .balance small { color: rgb(255 255 255 / .62); }
@@ -280,7 +325,7 @@ export class ReactCompiler implements CompilerBackend {
       { path: "src/generated/styles.css", content: stylesSource(ir) },
       { path: "src/generated/App.tsx", content: appSource(ir) },
     ];
-    return { target: this.id, files, fingerprint: fingerprintFiles(files) };
+    return { target: this.id, files, fingerprint: fingerprintFiles(files), diagnostics: ir.diagnostics };
   }
 
   validate(output: GeneratedFileSet): CompilerDiagnostic[] {

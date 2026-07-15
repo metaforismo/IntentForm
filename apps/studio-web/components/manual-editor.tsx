@@ -49,6 +49,11 @@ import { Inspector } from "./editor/inspector";
 import { LayersPanel } from "./editor/layers-panel";
 import { CommandMenu, ShortcutsSheet, type EditorCommand } from "./editor/overlays";
 import {
+  duplicateScreenTransaction,
+  editorTransactionError,
+  insertionStateBindings,
+} from "./editor/transactions";
+import {
   deviceProfiles,
   isFormControl,
   isNodeVisible,
@@ -281,9 +286,12 @@ export function ManualEditor({
      reaches the committed graph or the local draft. */
   const commitDraft = useCallback((draft: SemanticInterfaceGraph, notice: string) => {
     try {
-      onCommit(parseGraph(draft), notice);
-    } catch {
-      onNotice("That edit was rejected by the semantic schema, so nothing changed.");
+      const validated = parseGraph(draft);
+      onCommit(validated, notice);
+      return validated;
+    } catch (error) {
+      onNotice(editorTransactionError(error));
+      return null;
     }
   }, [onCommit, onNotice]);
 
@@ -314,8 +322,8 @@ export function ManualEditor({
     try {
       const draft = withFixtureValue(graph, screen.id, activeVisualState, fieldName, value);
       commitDraft(draft, `Updated ${fieldName} in the ${screen.title} ${activeVisualState} fixture.`);
-    } catch {
-      onNotice("That fixture edit was rejected, so the preview data stayed unchanged.");
+    } catch (error) {
+      onNotice(editorTransactionError(error));
     }
   }, [activeVisualState, commitDraft, graph, onNotice, screen]);
 
@@ -348,9 +356,9 @@ export function ManualEditor({
     const found = findNode(draft, nodeId);
     if (!found || found.screen.nodes.length <= 1) return;
     found.screen.nodes = found.screen.nodes.filter((node) => node.id !== nodeId);
-    onSelectNode(found.screen.nodes[0]?.id ?? null);
-    commitDraft(draft, `Removed ${nodeNames[found.node.kind]} from ${found.screen.title}.`);
-  }, [commitDraft, graph, onSelectNode]);
+    const committed = commitDraft(draft, `Removed ${nodeNames[found.node.kind]} from ${found.screen.title}.`);
+    if (committed && selectedNodeId === nodeId) onSelectNode(found.screen.nodes[0]?.id ?? null);
+  }, [commitDraft, graph, onSelectNode, selectedNodeId]);
 
   const duplicateNodeById = useCallback((nodeId: string) => {
     const draft = structuredClone(graph);
@@ -369,8 +377,8 @@ export function ManualEditor({
     copy.accessibility.label = copy.intent.label;
     copy.provenance = { author: "human", revision: 0 };
     found.screen.nodes.splice(index + 1, 0, copy);
-    onSelectNode(id);
-    commitDraft(draft, `Duplicated ${nodeNames[found.node.kind]} as a new semantic node.`);
+    const committed = commitDraft(draft, `Duplicated ${nodeNames[found.node.kind]} as a new semantic node.`);
+    if (committed) onSelectNode(id);
   }, [commitDraft, graph, onSelectNode]);
 
   const insertNode = (kind: SemanticNode["kind"]) => {
@@ -389,13 +397,15 @@ export function ManualEditor({
       layout: { axis: "vertical", width: "fill", gapToken: "space.16", paddingToken: "space.20", ...(kind === "primary-action" ? { placement: { compact: "inline" as const, regular: "inline" as const } } : {}) },
       style: { role: kind, emphasis: preset.importance === "primary" ? "strong" : preset.importance === "secondary" ? "quiet" : "normal" },
       accessibility: { label: preset.label, live: preset.live },
-      states: [],
+      states: insertionStateBindings(activeVisualState),
       interactions: [],
       provenance: { author: "human", revision: 0 },
     });
-    onSelectNode(id);
-    setInsertOpen(false);
-    commitDraft(draft, `Inserted a semantic ${nodeNames[kind].toLowerCase()}.`);
+    const committed = commitDraft(draft, `Inserted a semantic ${nodeNames[kind].toLowerCase()}.`);
+    if (committed) {
+      onSelectNode(id);
+      setInsertOpen(false);
+    }
   };
 
   const reorderScreens = useCallback((orderedIds: string[]) => {
@@ -408,34 +418,19 @@ export function ManualEditor({
   }, [commitDraft, graph]);
 
   const duplicateScreen = useCallback((screenId: string) => {
-    const draft = structuredClone(graph);
-    const source = draft.screens.find((item) => item.id === screenId);
-    if (!source) return;
-    let copyIndex = 2;
-    let newId = `${screenId}-copy`;
-    while (draft.screens.some((item) => item.id === newId)) {
-      newId = `${screenId}-copy-${copyIndex}`;
-      copyIndex += 1;
+    try {
+      const source = graph.screens.find((item) => item.id === screenId);
+      if (!source) return;
+      const result = duplicateScreenTransaction(graph, screenId);
+      const committed = commitDraft(result.graph, `Duplicated ${source.title} with its contract and fixtures.`);
+      if (committed) {
+        onSelectScreen(result.screenId);
+        onSelectNode(result.nodeId);
+      }
+    } catch (error) {
+      onNotice(editorTransactionError(error));
     }
-    const copy = structuredClone(source);
-    copy.id = newId;
-    copy.title = `${source.title} copy`;
-    copy.route = `/${newId}`;
-    copy.nodes = copy.nodes.map((node) => ({
-      ...node,
-      id: node.id.startsWith(`${screenId}.`) ? `${newId}.${node.id.slice(screenId.length + 1)}` : `${newId}.${node.id}`,
-      provenance: { author: "human" as const, revision: 0 },
-    }));
-    draft.screens.splice(draft.screens.findIndex((item) => item.id === screenId) + 1, 0, copy);
-    const contract = draft.contracts.find((item) => item.screenId === screenId);
-    if (contract) draft.contracts.push({ ...structuredClone(contract), screenId: newId });
-    for (const fixture of draft.fixtures.filter((item) => item.screenId === screenId)) {
-      draft.fixtures.push({ ...structuredClone(fixture), id: `${newId}.${fixture.state}`, screenId: newId });
-    }
-    onSelectScreen(newId);
-    onSelectNode(copy.nodes[0]?.id ?? null);
-    commitDraft(draft, `Duplicated ${source.title} with its contract and fixtures.`);
-  }, [commitDraft, graph, onSelectNode, onSelectScreen]);
+  }, [commitDraft, graph, onNotice, onSelectNode, onSelectScreen]);
 
   const deleteScreen = useCallback((screenId: string) => {
     if (graph.screens.length <= 1) return;
@@ -449,11 +444,11 @@ export function ManualEditor({
       .map((flow) => ({ ...flow, steps: flow.steps.filter((step) => step.from !== screenId && step.to !== screenId) }))
       .filter((flow) => flow.steps.length > 0);
     const fallback = draft.screens[0];
-    if (selectedScreen === screenId && fallback) {
+    const committed = commitDraft(draft, `Removed ${removed.title} and its contract, fixtures and flow steps.`);
+    if (committed && selectedScreen === screenId && fallback) {
       onSelectScreen(fallback.id);
       onSelectNode(fallback.nodes[0]?.id ?? null);
     }
-    commitDraft(draft, `Removed ${removed.title} and its contract, fixtures and flow steps.`);
   }, [commitDraft, graph, onSelectNode, onSelectScreen, selectedScreen]);
 
   const addScreen = useCallback(() => {
@@ -479,9 +474,11 @@ export function ManualEditor({
         provenance: { author: "human", revision: 0 },
       }],
     });
-    onSelectScreen(id);
-    onSelectNode(nodeId);
-    commitDraft(draft, "Added a new semantic screen without introducing platform code.");
+    const committed = commitDraft(draft, "Added a new semantic screen without introducing platform code.");
+    if (committed) {
+      onSelectScreen(id);
+      onSelectNode(nodeId);
+    }
   }, [commitDraft, graph, onSelectNode, onSelectScreen]);
 
   const updateScreenField = (field: "title" | "purpose", value: string) => {

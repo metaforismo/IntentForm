@@ -21,7 +21,12 @@ describe("fixture editing", () => {
       id: "payment-request.loading",
       screenId: "payment-request",
       state: "loading",
-      data: { amount: "120.00", recipientName: "Elena Serra", status: "loading" },
+      data: {
+        amount: "120.00",
+        recipientName: "Elena Serra",
+        recipientHandle: "mara@northline.test",
+        status: "loading",
+      },
     });
     expect(edited.contracts.find((item) => item.screenId === "payment-request")?.fixtures).toContain("payment-request.loading");
     expect(fixtureFor(edited, "payment-request", "loading").recipientName).toBe("Elena Serra");

@@ -108,7 +108,7 @@ intentform_compile            byte-stable React or SwiftUI into .intentform/outp
 intentform_diff / revert      semantic history — every agent edit is reversible
 ```
 
-In the intended MCP workflow an agent edits validated intent rather than generated UI files, and deterministic compilers produce the target code. The Studio opens and saves the same `.intentform/graph.json` (project menu → *Open/Save local project*), so agent edits land on the design board and human edits are visible to agents. See [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md) for the full loop, and [CLAUDE.md](CLAUDE.md) for in-repo agent conventions.
+In the intended MCP workflow an agent edits validated intent rather than generated UI files, and deterministic compilers produce the target code. The Studio opens and saves the same `.intentform/graph.json` (project menu → *Open/Save local project*), so agent edits land on the design board and human edits are visible to agents. Writes use atomic replacement and expected fingerprints; if an agent changes the graph after Studio opens it, Studio refuses the stale save and asks you to reopen instead of overwriting the agent revision. See [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md) for the full loop, and [CLAUDE.md](CLAUDE.md) for in-repo agent conventions.
 
 ## How Codex and GPT-5.6 shaped the build
 

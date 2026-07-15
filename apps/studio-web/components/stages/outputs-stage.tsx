@@ -1,10 +1,10 @@
 "use client";
 
 import { CheckCircle, Copy } from "@phosphor-icons/react";
-import type { compileReact } from "@intentform/compiler-react";
 import type { SemanticInterfaceGraph } from "@intentform/semantic-schema";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { OutputTarget } from "../studio";
+import type { StudioGeneratedFileSet } from "../target-compilation";
 import {
   PREVIEW_READY,
   PREVIEW_REQUEST,
@@ -14,13 +14,11 @@ import {
 } from "../runtime-preview-protocol";
 import { PhonePreview } from "./phone-preview";
 
-type GeneratedFileSet = ReturnType<typeof compileReact>;
-
 type FileRow =
   | { kind: "header"; key: string; label: string }
-  | { kind: "file"; key: string; file: GeneratedFileSet["files"][number]; label: string };
+  | { kind: "file"; key: string; file: StudioGeneratedFileSet["files"][number]; label: string };
 
-function buildFileRows(files: GeneratedFileSet["files"], target: OutputTarget): FileRow[] {
+function buildFileRows(files: StudioGeneratedFileSet["files"], target: OutputTarget): FileRow[] {
   const prefix = target === "react" ? "src/generated/" : "Generated/";
   let lastDirectory: string | null = null;
   const rows: FileRow[] = [];
@@ -42,9 +40,11 @@ interface OutputsStageProps {
   outputTarget: OutputTarget;
   setOutputTarget: (target: OutputTarget) => void;
   setOutputFilePath: (path: string | null) => void;
-  output: GeneratedFileSet;
-  reactOutput: GeneratedFileSet;
-  selectedCode: GeneratedFileSet["files"][number] | undefined;
+  output: StudioGeneratedFileSet | null;
+  outputMessage: string | null;
+  reactOutput: StudioGeneratedFileSet | null;
+  reactMessage: string | null;
+  selectedCode: StudioGeneratedFileSet["files"][number] | undefined;
   copyGeneratedFile: () => void;
   copied: boolean;
   graph: SemanticInterfaceGraph;
@@ -56,7 +56,9 @@ export function OutputsStage({
   setOutputTarget,
   setOutputFilePath,
   output,
+  outputMessage,
   reactOutput,
+  reactMessage,
   selectedCode,
   copyGeneratedFile,
   copied,
@@ -68,6 +70,7 @@ export function OutputsStage({
   const [previewError, setPreviewError] = useState<string | null>(null);
 
   const sendPreview = useCallback(() => {
+    if (!reactOutput) return;
     const message: ActivePreviewRequest = {
       type: PREVIEW_REQUEST,
       fingerprint: reactOutput.fingerprint,
@@ -75,15 +78,21 @@ export function OutputsStage({
       selectedScreen,
     };
     previewFrame.current?.contentWindow?.postMessage(message, "*");
-  }, [graph, reactOutput.fingerprint, selectedScreen]);
+  }, [graph, reactOutput, selectedScreen]);
 
   useEffect(() => {
+    if (!reactOutput) {
+      setPreviewStatus("error");
+      setPreviewError(reactMessage ?? "The React target is unavailable for this graph.");
+      return;
+    }
     setPreviewStatus("loading");
     setPreviewError(null);
     sendPreview();
-  }, [sendPreview]);
+  }, [reactMessage, reactOutput, sendPreview]);
 
   useEffect(() => {
+    if (!reactOutput) return;
     const receive = (event: MessageEvent<unknown>) => {
       if (event.source !== previewFrame.current?.contentWindow || !event.data || typeof event.data !== "object") return;
       const messageType = (event.data as { type?: unknown }).type;
@@ -103,12 +112,12 @@ export function OutputsStage({
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [reactOutput.fingerprint, sendPreview]);
+  }, [reactOutput, sendPreview]);
 
   return (
     <div className="mx-auto grid max-w-[1400px] gap-5 xl:grid-cols-[minmax(330px,.72fr)_minmax(0,1.28fr)]">
       <div>
-        {outputTarget === "react" ? (
+        {outputTarget === "react" && reactOutput ? (
           <div className="overflow-hidden rounded-[32px] border border-[var(--line)] bg-[var(--inset)] p-4">
             <div className="mb-3 flex items-center justify-between px-1 text-[10px] text-[var(--muted)]">
               <span className="font-semibold text-[var(--accent-dark)]">Active compiled preview</span>
@@ -127,7 +136,14 @@ export function OutputsStage({
             />
             {previewError ? <p role="alert" className="mt-3 px-1 text-[11px] text-[var(--danger)]">{previewError}</p> : null}
           </div>
-        ) : <PhonePreview graph={graph} selectedScreen={selectedScreen} />}
+        ) : outputTarget === "swiftui" && output ? (
+          <PhonePreview graph={graph} selectedScreen={selectedScreen} />
+        ) : (
+          <div role="alert" className="rounded-[24px] border border-amber-500/30 bg-amber-500/8 p-6 text-sm leading-relaxed text-[var(--ink)]">
+            <strong className="block text-[var(--accent-dark)]">Target unavailable</strong>
+            <span className="mt-2 block text-[var(--muted)]">{outputMessage}</span>
+          </div>
+        )}
       </div>
       <div className="min-w-0 overflow-hidden rounded-[24px] border border-[#303a35] bg-[#1c211f] text-[#dce5df] shadow-[0_24px_50px_-34px_rgba(18,28,23,.8)]">
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
@@ -135,16 +151,28 @@ export function OutputsStage({
             {(["react", "swiftui"] as const).map((target) => <button key={target} type="button" aria-pressed={outputTarget === target} onClick={() => { setOutputTarget(target); setOutputFilePath(null); }} className={`rounded-md px-3 py-1.5 text-[10px] font-semibold capitalize ${outputTarget === target ? "bg-white/12 text-white" : "text-white/45 hover:text-white/70"}`}>{target}</button>)}
           </div>
           <div className="flex items-center gap-3">
-            <button type="button" onClick={copyGeneratedFile} className="inline-flex items-center gap-1.5 rounded-md bg-white/8 px-2.5 py-1.5 text-[10px] font-medium text-white/70 hover:bg-white/12 hover:text-white">
+            <button type="button" onClick={copyGeneratedFile} disabled={!selectedCode} className="inline-flex items-center gap-1.5 rounded-md bg-white/8 px-2.5 py-1.5 text-[10px] font-medium text-white/70 hover:bg-white/12 hover:text-white disabled:cursor-not-allowed disabled:opacity-40">
               {copied ? <CheckCircle size={12} weight="fill" className="text-emerald-300" /> : <Copy size={12} />}
               {copied ? "Copied" : "Copy file"}
             </button>
-            <span className="hidden font-mono text-[9px] text-white/40 md:inline">sha {output.fingerprint}</span>
+            <span className="hidden font-mono text-[9px] text-white/40 md:inline">{output ? `sha ${output.fingerprint}` : "not generated"}</span>
           </div>
         </div>
+        {output && output.diagnostics.length > 0 ? (
+          <div className="border-b border-amber-300/20 bg-amber-300/8 px-4 py-3" role="status" aria-live="polite">
+            <strong className="text-[10px] font-semibold text-amber-100">{output.diagnostics.length} compiler fallback{output.diagnostics.length === 1 ? "" : "s"}</strong>
+            <div className="mt-1 grid gap-1">
+              {output.diagnostics.map((diagnostic) => (
+                <span key={`${diagnostic.path}:${diagnostic.message}`} className="font-mono text-[9px] leading-relaxed text-amber-100/65">
+                  {diagnostic.path}: {diagnostic.message}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div className="grid md:grid-cols-[210px_minmax(0,1fr)]">
           <div className="hidden max-h-[590px] overflow-auto border-r border-white/10 p-2 md:block">
-            {buildFileRows(output.files, outputTarget).map((row) =>
+            {buildFileRows(output?.files ?? [], outputTarget).map((row) =>
               row.kind === "header" ? (
                 <div key={row.key} className="truncate px-2 pt-2 pb-1 text-[9px] uppercase tracking-[.12em] text-white/30">
                   {row.label}
@@ -162,8 +190,14 @@ export function OutputsStage({
             )}
           </div>
           <div className="min-w-0">
-            <div className="border-b border-white/10 px-4 py-2 font-mono text-[9px] text-[#8ea69b]">{selectedCode?.path}</div>
-            <pre className="code-scroll max-h-[550px] overflow-auto p-5 text-[10.5px] leading-[1.7]"><code>{selectedCode?.content}</code></pre>
+            {output ? (
+              <>
+                <div className="border-b border-white/10 px-4 py-2 font-mono text-[9px] text-[#8ea69b]">{selectedCode?.path}</div>
+                <pre className="code-scroll max-h-[550px] overflow-auto p-5 text-[10.5px] leading-[1.7]"><code>{selectedCode?.content}</code></pre>
+              </>
+            ) : (
+              <div role="alert" className="p-6 text-xs leading-relaxed text-amber-100/80">{outputMessage}</div>
+            )}
           </div>
         </div>
       </div>

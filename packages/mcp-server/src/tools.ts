@@ -40,6 +40,38 @@ function verificationSummary(graph: SemanticInterfaceGraph, scenario: ScenarioId
   };
 }
 
+type CompilerTarget = "react" | "swiftui";
+
+function outputSummary(graph: SemanticInterfaceGraph, target: CompilerTarget) {
+  const platform = graph.platforms.find((candidate) => candidate.target === target);
+  if (!platform?.enabled) {
+    return {
+      status: "disabled" as const,
+      fingerprint: null,
+      message: `The ${target} target is not enabled by this graph.`,
+    };
+  }
+
+  try {
+    const output = target === "react" ? compileReact(graph) : compileSwiftUI(graph);
+    return {
+      status: "generated" as const,
+      fingerprint: output.fingerprint,
+      diagnosticCount: output.diagnostics.length,
+      diagnostics: output.diagnostics,
+      message: null,
+    };
+  } catch (error) {
+    return {
+      status: "failed" as const,
+      fingerprint: null,
+      message: error instanceof Error
+        ? error.message.slice(0, 500)
+        : `The ${target} compiler failed without a diagnostic.`,
+    };
+  }
+}
+
 export function describeProject(dir: string) {
   const { graph, fingerprint, seeded } = loadProject(dir);
   const verification = verificationSummary(graph, "compact");
@@ -77,8 +109,8 @@ export function describeProject(dir: string) {
       findingCount: verification.findings.length,
     },
     outputs: {
-      react: compileReact(graph).fingerprint,
-      swiftui: compileSwiftUI(graph).fingerprint,
+      react: outputSummary(graph, "react"),
+      swiftui: outputSummary(graph, "swiftui"),
     },
   };
 }
@@ -103,8 +135,9 @@ function commit(
   before: SemanticInterfaceGraph,
   after: SemanticInterfaceGraph,
   reason: string,
+  expectedFingerprint: string,
 ): MutationResult {
-  const saved = saveProject(dir, after, reason);
+  const saved = saveProject(dir, after, reason, expectedFingerprint);
   const verification = verificationSummary(after, "compact");
   return {
     changes: semanticDiff(before, after),
@@ -120,15 +153,15 @@ function commit(
 
 export function applyPatch(dir: string, patchInput: unknown): MutationResult {
   const patch = graphPatchSchema.parse(patchInput);
-  const { graph } = loadProject(dir);
+  const { graph, fingerprint } = loadProject(dir);
   const after = applyGraphPatch(graph, patch);
-  return commit(dir, graph, after, patch.rationale || `patch ${patch.id}`);
+  return commit(dir, graph, after, patch.rationale || `patch ${patch.id}`, fingerprint);
 }
 
 export function replaceGraph(dir: string, graphInput: unknown, reason: string): MutationResult {
-  const { graph } = loadProject(dir);
+  const { graph, fingerprint } = loadProject(dir);
   const after = parseGraph(graphInput);
-  return commit(dir, graph, after, reason);
+  return commit(dir, graph, after, reason, fingerprint);
 }
 
 export function verifyProject(dir: string, scenario: ScenarioId) {
@@ -152,6 +185,7 @@ export function compileProject(dir: string, target: "react" | "swiftui", write: 
   return {
     target,
     fingerprint: output.fingerprint,
+    diagnostics: output.diagnostics,
     fileCount: output.files.length,
     files: output.files.map((file) => file.path),
     ...(write ? { writtenTo: outputRoot, written } : {}),
@@ -164,9 +198,9 @@ export function projectRevisions(dir: string) {
 }
 
 export function revertProject(dir: string, revisionId: string): MutationResult {
-  const { graph } = loadProject(dir);
+  const { graph, fingerprint } = loadProject(dir);
   const restored = loadRevisionGraph(dir, revisionId);
-  return commit(dir, graph, restored, `revert to ${revisionId}`);
+  return commit(dir, graph, restored, `revert to ${revisionId}`, fingerprint);
 }
 
 export function diffAgainstRevision(dir: string, revisionId?: string) {

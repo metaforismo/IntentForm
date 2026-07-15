@@ -36,7 +36,7 @@ Node IDs are stable; discover them with intentform_describe_project. The patch i
 const tools: ToolDefinition[] = [
   {
     name: "intentform_describe_project",
-    description: "Inspect the IntentForm project: product, screens with stable node IDs, design tokens, flows, contracts, current verification status and both compiler fingerprints. Call this first to discover node IDs before editing.",
+    description: "Inspect the IntentForm project: product, screens with stable node IDs, design tokens, flows, contracts, current verification status, and each compiler target's generation status and fingerprint when available. Call this first to discover node IDs before editing.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     run: () => describeProject(projectDir),
   },

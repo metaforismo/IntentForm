@@ -25,7 +25,11 @@ const swiftIdentifier = (value: string): string => {
   return /^\d/.test(camel) ? `screen${camel}` : camel;
 };
 
-const escapeSwift = (value: string): string => value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+const escapeSwift = (value: string): string => value
+  .replaceAll("\\", "\\\\")
+  .replaceAll('"', '\\"')
+  .replaceAll("\n", "\\n")
+  .replaceAll("\r", "\\r");
 
 const swiftKeywords = new Set([
   "as", "associatedtype", "break", "case", "catch", "class", "continue", "default", "defer", "do",
@@ -80,7 +84,7 @@ const swiftEventCall = (node: PlatformIRNode): string => node.events.map((event)
 }).join("; ");
 
 function swiftNode(node: PlatformIRNode): string {
-  const label = escapeSwift(node.label);
+  const label = escapeSwift(node.intent.label);
   const value = swiftDisplay(node.bindings.value);
   const detail = node.bindings.detail?.name === node.bindings.value?.name
     ? '""'
@@ -101,7 +105,7 @@ function swiftNode(node: PlatformIRNode): string {
       source = `RecipientIdentity(label: "${label}", value: ${value}, detail: ${node.bindings.detail && node.bindings.detail.name !== node.bindings.value?.name ? detail : "nil"})`;
       break;
     case "primary-action":
-      source = `Button("${label}") { ${eventCall} }\n                    .buttonStyle(.borderedProminent)\n                    .controlSize(.large)\n                    .frame(maxWidth: .infinity)\n                    .accessibilityLabel("${escapeSwift(node.accessibilityLabel)}")\n                    .accessibilityIdentifier("intentform.${node.id}")`;
+      source = `Button("${label}") { ${eventCall} }\n                        .buttonStyle(.borderedProminent)\n                        .controlSize(.large)\n                        .frame(maxWidth: .infinity)`;
       break;
     case "secondary-action":
       source = `Button("${label}") { ${eventCall} }\n                    .buttonStyle(.bordered)`;
@@ -114,9 +118,17 @@ function swiftNode(node: PlatformIRNode): string {
       break;
   }
 
-  if (node.kind !== "primary-action") {
-    source += `\n                    .accessibilityIdentifier("intentform.${escapeSwift(node.id)}")`;
+  source += `\n                        .accessibilityLabel(Text("${escapeSwift(node.accessibility.label)}"))`;
+  if (node.accessibility.hint) {
+    source += `\n                        .accessibilityHint(Text("${escapeSwift(node.accessibility.hint)}"))`;
   }
+  if (node.accessibility.live !== "off") {
+    source += `\n                        // IntentForm live region: ${node.accessibility.live}`;
+    source += `\n                        .accessibilityAddTraits(.updatesFrequently)`;
+  }
+  source += `\n                        .accessibilityIdentifier("intentform.${escapeSwift(node.id)}")`;
+
+  source = `IntentFormNodeLayout(\n                        axis: "${node.layout.axis}",\n                        width: "${node.layout.width}",\n                        gap: ${node.layout.gap},\n                        padding: ${node.layout.padding},\n                        role: "${escapeSwift(node.style.role)}",\n                        emphasis: "${node.style.emphasis}",\n                        importance: "${node.intent.importance}",\n                        purpose: "${escapeSwift(node.intent.purpose)}"\n                    ) {\n                        ${source}\n                    }`;
 
   if (node.visibility.length > 0) {
     const condition = node.visibility.map((visibility) => visibility.expression
@@ -179,8 +191,8 @@ function swiftScreen(ir: PlatformIR, screenIndex: number): string {
             let viewportFrame = proxy.frame(in: .global)
             let deviceClass = IntentFormDeviceClass.resolve(width: viewportFrame.maxX, height: viewportFrame.maxY)
             let usesPersistentPrimary = deviceClass == .compact
-                ? ${primary.compactPlacement === "persistent-bottom"}
-                : ${primary.regularPlacement === "persistent-bottom"}
+                ? ${primary.layout.compactPlacement === "persistent-bottom"}
+                : ${primary.layout.regularPlacement === "persistent-bottom"}
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
@@ -214,6 +226,9 @@ ${content}
 
   return `import SwiftUI
 
+// Intent: ${escapeSwift(screen.purpose)}
+// Route: ${escapeSwift(screen.route)}
+
 ${swiftDataSource(screen, name)}
 
 ${swiftEventsSource(screen, name)}
@@ -226,6 +241,7 @@ struct ${name}: View {
         ${screenBody}
         .navigationTitle("${escapeSwift(screen.title)}")
         .tint(IntentFormTheme.accent)
+        .background(IntentFormTheme.surface)
     }
 }
 `;
@@ -316,6 +332,8 @@ const swiftColor = (color: Rgb): string =>
 function componentsSource(ir: PlatformIR): string {
   const accent = parseHex(ir.tokens.colors["color.accent"], { r: 0.224, g: 0.455, b: 0.38 });
   const ink = parseHex(ir.tokens.colors["color.ink"], { r: 0.094, g: 0.11, b: 0.102 });
+  const canvas = parseHex(ir.tokens.colors["color.canvas"], { r: 0.953, g: 0.961, b: 0.945 });
+  const surface = parseHex(ir.tokens.colors["color.surface"], { r: 0.984, g: 0.988, b: 0.976 });
   const white: Rgb = { r: 1, g: 1, b: 1 };
   const controlRadius = ir.tokens.radii["radius.control"] ?? 18;
   const surfaceRadius = ir.tokens.radii["radius.surface"] ?? 28;
@@ -324,6 +342,9 @@ function componentsSource(ir: PlatformIR): string {
 
 enum IntentFormTheme {
     static let accent = ${swiftColor(accent)}
+    static let ink = ${swiftColor(ink)}
+    static let canvas = ${swiftColor(canvas)}
+    static let surface = ${swiftColor(surface)}
     static let accentDeep = ${swiftColor(mix(accent, ink, 0.62))}
     static let accentSoft = ${swiftColor(mix(accent, white, 0.14))}
     static let controlRadius: CGFloat = ${controlRadius}
@@ -338,6 +359,59 @@ enum IntentFormDeviceClass {
         width <= ${DEVICE_CLASS_LIMITS.compactMaxWidth} || height <= ${DEVICE_CLASS_LIMITS.compactMaxHeight}
             ? .compact
             : .regular
+    }
+}
+
+struct IntentFormNodeLayout<Content: View>: View {
+    let axis: String
+    let width: String
+    let gap: CGFloat
+    let padding: CGFloat
+    let role: String
+    let emphasis: String
+    let importance: String
+    let purpose: String
+    @ViewBuilder let content: Content
+
+    init(
+        axis: String,
+        width: String,
+        gap: CGFloat,
+        padding: CGFloat,
+        role: String,
+        emphasis: String,
+        importance: String,
+        purpose: String,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.axis = axis
+        self.width = width
+        self.gap = gap
+        self.padding = padding
+        self.role = role
+        self.emphasis = emphasis
+        self.importance = importance
+        self.purpose = purpose
+        self.content = content()
+    }
+
+    @ViewBuilder private var arrangedContent: some View {
+        if axis == "horizontal" {
+            HStack(spacing: gap) { content }
+        } else if axis == "overlay" {
+            ZStack(alignment: .leading) { content }
+        } else {
+            VStack(alignment: .leading, spacing: gap) { content }
+        }
+    }
+
+    var body: some View {
+        arrangedContent
+            .frame(maxWidth: width == "hug" ? nil : .infinity, alignment: .leading)
+            .padding(padding)
+            .opacity(emphasis == "quiet" ? 0.72 : 1)
+            .fontWeight(emphasis == "strong" || importance == "primary" ? .semibold : nil)
+            .accessibilityValue(Text(purpose))
     }
 }
 
@@ -393,7 +467,7 @@ export class SwiftUICompiler implements CompilerBackend {
       { path: "Generated/Components/IntentFormComponents.swift", content: componentsSource(ir) },
       { path: "Generated/IntentFormApp.swift", content: swiftAppSource(ir) },
     ];
-    return { target: this.id, files, fingerprint: fingerprintFiles(files) };
+    return { target: this.id, files, fingerprint: fingerprintFiles(files), diagnostics: ir.diagnostics };
   }
 
   validate(output: GeneratedFileSet): CompilerDiagnostic[] {

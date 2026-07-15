@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -14,7 +14,12 @@ import {
   revertProject,
   verifyProject,
 } from "./tools.ts";
-import { loadProject } from "./store.ts";
+import {
+  loadProject,
+  ProjectBusyError,
+  ProjectConflictError,
+  saveProject,
+} from "./store.ts";
 
 let dir: string;
 
@@ -36,14 +41,67 @@ describe("IntentForm agent project store", () => {
     expect(second.fingerprint).toBe(first.fingerprint);
   });
 
+  it("writes atomically and rejects a stale writer without losing the winning graph", () => {
+    const opened = loadProject(dir);
+    const agentGraph = structuredClone(opened.graph);
+    agentGraph.tokens.colors["color.accent"] = "#7a4b9e";
+    const agentSave = saveProject(dir, agentGraph, "agent color change", opened.fingerprint);
+
+    const staleStudioGraph = structuredClone(opened.graph);
+    staleStudioGraph.tokens.colors["color.accent"] = "#315fcb";
+    expect(() => saveProject(dir, staleStudioGraph, "stale studio save", opened.fingerprint))
+      .toThrow(ProjectConflictError);
+
+    expect(loadProject(dir).graph.tokens.colors["color.accent"]).toBe("#7a4b9e");
+    expect(loadProject(dir).fingerprint).toBe(agentSave.fingerprint);
+    expect(projectRevisions(dir).revisions).toHaveLength(1);
+    expect(readdirSync(dir).filter((entry) => entry.startsWith(".") && entry.endsWith(".tmp"))).toEqual([]);
+    expect(readdirSync(dir)).not.toContain(".write.lock");
+  });
+
+  it("fails closed while another process owns the project write lock", () => {
+    const opened = loadProject(dir);
+    writeFileSync(join(dir, ".write.lock"), "another-process\n", "utf8");
+    expect(() => saveProject(dir, opened.graph, "contended save", opened.fingerprint))
+      .toThrow(ProjectBusyError);
+  });
+
+  it("recovers a write lock left behind by a terminated process", () => {
+    const opened = loadProject(dir);
+    writeFileSync(join(dir, ".write.lock"), "99999999\n", "utf8");
+    expect(saveProject(dir, opened.graph, "recover stale lock", opened.fingerprint).fingerprint)
+      .toBe(opened.fingerprint);
+    expect(readdirSync(dir)).not.toContain(".write.lock");
+  });
+
   it("describes the project with stable node ids and compiler fingerprints", () => {
     const summary = describeProject(dir);
     expect(summary.product.name).toBe("Verdant Pay");
     expect(summary.screens.map((screen) => screen.id)).toEqual(["home", "payment-request", "receipt"]);
     expect(summary.screens[1]?.nodes.map((node) => node.id)).toContain("payment-request.confirm");
-    expect(summary.outputs.react).toBe(compileReact(demoGraph).fingerprint);
+    expect(summary.outputs.react).toEqual({
+      status: "generated",
+      fingerprint: compileReact(demoGraph).fingerprint,
+      diagnosticCount: 0,
+      diagnostics: [],
+      message: null,
+    });
     expect(summary.verification.buildStatus).toBe("not-run");
     expect(summary.verification.passed).toBe(false);
+  });
+
+  it("describes a disabled compiler target without throwing or fabricating a fingerprint", () => {
+    const graph = structuredClone(demoGraph);
+    graph.platforms.find((platform) => platform.target === "react")!.enabled = false;
+    replaceGraph(dir, graph, "disable React output");
+
+    const summary = describeProject(dir);
+    expect(summary.outputs.react).toEqual({
+      status: "disabled",
+      fingerprint: null,
+      message: expect.stringMatching(/react target is not enabled/i),
+    });
+    expect(summary.outputs.swiftui.status).toBe("generated");
   });
 
   it("applies a typed patch atomically, records a revision and re-verifies", () => {

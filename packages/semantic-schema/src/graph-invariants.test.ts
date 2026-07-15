@@ -116,6 +116,17 @@ describe("semantic graph invariants", () => {
     expect(parseGraph(graph).screens.at(-1)?.id).toBe("manual");
   });
 
+  it("rejects unknown persisted fields instead of silently deleting them", () => {
+    expectInvalid((graph) => { graph.futureRoot = { enabled: true }; }, /Unrecognized key/);
+    expectInvalid((graph) => { graph.screens[0]!.nodes[0]!.futureNode = true; }, /Unrecognized key/);
+    expectInvalid((graph) => { graph.contracts[0]!.data[0]!.futureField = "metadata"; }, /Unrecognized key/);
+    expect(() => graphPatchSchema.parse({
+      id: "unknown-patch-field",
+      rationale: "Fail closed",
+      operations: [{ op: "set-label", target: "home.submit", label: "Submit", future: true }],
+    })).toThrow(/Unrecognized key/);
+  });
+
   it("rejects duplicate identities, routes and declarations", () => {
     expectInvalid((graph) => graph.screens.push(structuredClone(graph.screens[0]!)), /Duplicate screen id: home/);
     expectInvalid((graph) => {
@@ -221,6 +232,7 @@ describe("semantic graph invariants", () => {
       graph.screens[0]!.nodes[0]!.platformOverrides = { ghost: { flag: true } };
     }, /Unknown platform override target/);
     expectInvalid((graph) => { graph.contracts[0]!.data[0]!.name = "constructor"; }, /Reserved identifier/);
+    expectInvalid((graph) => { graph.contracts[0]!.data[0]!.name = "$amount"; }, /Invalid string/);
   });
 
   it("bounds graphs, patches and serialized request size", () => {
