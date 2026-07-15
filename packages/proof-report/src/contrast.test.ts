@@ -18,7 +18,7 @@ describe("token-layer contrast verification and repair", () => {
 
   it("flags a low-contrast accent as a tokens-layer error with evidence", () => {
     const themed = structuredClone(demoGraph);
-    themed.tokens.colors["color.accent"] = "#cde5da";
+    themed.tokens.modes.default!.values.colors["color.accent"] = "#cde5da";
     const finding = verifyGraph(parseGraph(themed), scenario).findings
       .find((item) => item.id.endsWith("tokens.contrast.primary-action"));
     expect(finding?.responsibleLayer).toBe("tokens");
@@ -29,7 +29,7 @@ describe("token-layer contrast verification and repair", () => {
 
   it("repairs contrast deterministically through a typed color-token patch", () => {
     const themed = structuredClone(demoGraph);
-    themed.tokens.colors["color.accent"] = "#cde5da";
+    themed.tokens.modes.default!.values.colors["color.accent"] = "#cde5da";
     const graph = parseGraph(themed);
     const finding = verifyGraph(graph, scenario).findings
       .find((item) => item.id.endsWith("tokens.contrast.primary-action"));

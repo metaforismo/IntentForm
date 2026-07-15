@@ -19,6 +19,7 @@ This repository is the OpenAI Build Week vertical slice. It intentionally proves
 - Compact and regular device profiles; direct manipulation changes the active semantic breakpoint rather than storing coordinates.
 - Fit-to-canvas, trackpad zoom, middle-mouse panning, preview mode and contextual keyboard shortcuts for selection, panels and revision history.
 - Searchable recursive layers and commands, human editing for labels, layout relations, width, spacing tokens, emphasis, sibling ordering, subtree-safe duplication and component insertion, with undo/redo.
+- Versioned local component definitions with typed props, named slots, variants, states, overrides, reset/detach, deprecation, deterministic compiler expansion and a strict `1.0.0` library ABI.
 - Project launcher with guided blank application/prototype/library starters, validated imports, copy-only examples, browser recovery diagnostics and an optional local-agent workspace bridge.
 - Versioned browser project recovery carrying project type, source, timestamp and local conflict fingerprint; invalid recovery remains inspectable instead of silently replacing a project.
 - Deterministic React and SwiftUI compiler backends for stack, grid, overlay, scroll, safe-area, adaptive, wrap, split, bounded freeform and page-flow hierarchy.
@@ -105,11 +106,18 @@ IntentForm is designed to be **driven by coding agents**, not just humans. The r
 intentform_preview_migration inspect schema status without writing
 intentform_apply_migration   checkpoint and migrate a previewed old graph
 intentform_describe_project   inspect screens, stable node IDs, tokens, flows, findings
+intentform_list_token_modes   inspect resolved modes, aliases and deprecation
+intentform_import_dtcg / intentform_export_dtcg  DTCG 2025.10 interchange
+intentform_search_assets / intentform_import_asset  licensed local media
+intentform_asset_gc           preview or remove unreferenced local asset bytes
+intentform_search_components discover typed local definitions without copying layers
+intentform_component_schema  inspect props, slots, variants, states and template contracts
+intentform_instantiate_component add a validated, revisioned component instance
 intentform_preview_patch      validate and inspect a typed semantic edit without writing
 intentform_apply_patch        smallest typed semantic or hierarchy edit, validated and revisioned
 intentform_replace_graph      structural edits with full schema validation
 intentform_verify             deterministic intent rules per device scenario
-intentform_compile            byte-stable React or SwiftUI into .intentform/output/
+intentform_compile            byte-stable React or SwiftUI plus permitted assets into output/
 intentform_diff / revert      semantic history — every agent edit is reversible
 ```
 

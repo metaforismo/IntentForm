@@ -1,6 +1,7 @@
 import {
   CANONICAL_DEVICE_VIEWPORTS,
   classifyDevice,
+  resolveTokenMode,
   setFixtureValue,
   type DeviceClass,
   type SemanticInterfaceGraph,
@@ -12,7 +13,7 @@ export type MobilePanel = "structure" | "inspector" | null;
 export type PreviewBreakpoint = DeviceClass;
 export type DeviceId = "compact-phone" | "regular-phone" | "regular-tablet";
 export type VisualState = "idle" | "loading" | "empty" | "failed" | "completed";
-export type RailTab = "layers" | "tokens";
+export type RailTab = "layers" | "components" | "assets" | "tokens";
 export type NodeCommand = "duplicate" | "delete" | "move-up" | "move-down";
 
 export interface DeviceProfile {
@@ -106,12 +107,12 @@ export function isFormControl(target: EventTarget | null): boolean {
 /* Design-token accessors: the canvas previews bind to the graph's own tokens so
    token edits repaint every frame and reach the semantic diff. */
 export function tokenColor(graph: SemanticInterfaceGraph, key: string, fallback: string): string {
-  const value = graph.tokens.colors[key];
+  const value = resolveTokenMode(graph.tokens).colors[key];
   return typeof value === "string" && /^#[0-9a-fA-F]{3,8}$/.test(value) ? value : fallback;
 }
 
 export function tokenRadius(graph: SemanticInterfaceGraph, key: string, fallback: number): number {
-  const value = graph.tokens.radii[key];
+  const value = resolveTokenMode(graph.tokens).radii[key];
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 

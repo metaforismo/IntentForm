@@ -144,6 +144,11 @@ function swiftNode(node: PlatformIRNode, guardedPrimaryId?: string): string {
       break;
   }
 
+  if (node.asset?.kind === "raster" && node.asset.exportPolicy !== "blocked") {
+    const contentMode = node.asset.fit === "cover" || node.asset.fit === "fill" ? "fill" : "fit";
+    source = `VStack(spacing: ${node.layout.gap}) {\n                        Image("${node.asset.digest}")\n                            .resizable()\n                            .aspectRatio(contentMode: .${contentMode})\n                            .clipped()\n                            .accessibilityHidden(${node.asset.decorative})\n                        // IntentForm focal point: ${node.asset.focalPoint.x}, ${node.asset.focalPoint.y}\n                        ${source}\n                    }`;
+  }
+
   source += `\n                        .accessibilityLabel(Text("${escapeSwift(node.accessibility.label)}"))`;
   if (node.accessibility.hint) {
     source += `\n                        .accessibilityHint(Text("${escapeSwift(node.accessibility.hint)}"))`;
@@ -361,6 +366,8 @@ function componentsSource(ir: PlatformIR): string {
   return `import SwiftUI
 
 enum IntentFormTheme {
+    static let activeMode = "${escapeSwift(ir.activeTokenMode)}"
+    static let availableModes = [${Object.keys(ir.tokenModes).sort().map((mode) => `"${escapeSwift(mode)}"`).join(", ")}]
     static let accent = ${swiftColor(accent)}
     static let ink = ${swiftColor(ink)}
     static let canvas = ${swiftColor(canvas)}
@@ -762,6 +769,20 @@ export class SwiftUICompiler implements CompilerBackend {
       ...ir.screens.map((screen, index) => ({ path: `Generated/Screens/${swiftIdentifier(screen.id)}.swift`, content: swiftScreen(ir, index) })),
       { path: "Generated/Components/IntentFormComponents.swift", content: componentsSource(ir) },
       { path: "Generated/IntentFormApp.swift", content: swiftAppSource(ir) },
+      ...(ir.assets.length > 0 ? [{
+        path: "Generated/Assets.manifest.json",
+        content: `${JSON.stringify({
+          version: 1,
+          assets: ir.assets.map((asset) => ({
+            id: asset.id,
+            kind: asset.kind,
+            digest: asset.digest,
+            storageKey: asset.storageKey,
+            exportPolicy: asset.exportPolicy,
+            license: asset.license,
+          })),
+        }, null, 2)}\n`,
+      }] : []),
     ];
     return { target: this.id, files, fingerprint: fingerprintFiles(files), diagnostics: ir.diagnostics };
   }

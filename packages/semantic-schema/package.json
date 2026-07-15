@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./component-library": "./src/component-library.ts",
     "./migrations": "./src/migrations.ts"
   },
   "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" },

@@ -4,6 +4,8 @@ import {
   applyGraphPatch,
   graphPatchSchema,
   parseGraph,
+  resolveTokenMode,
+  semanticDiff,
   stableSerialize,
 } from "./index";
 
@@ -21,19 +23,41 @@ function makeValidGraph() {
   };
 
   return {
-    schemaVersion: "0.2.0",
+    schemaVersion: "0.4.0",
     product: {
       name: "Invariant test",
       audience: ["product teams"],
       principles: ["Keep generated output deterministic"],
     },
     tokens: {
-      colors: { "color.accent": "#397461", "color.surface": "#fbfcf9" },
-      spacing: { "space.16": 16, "space.20": 20 },
-      radii: { "radius.surface": 24 },
+      defaultMode: "default",
+      activeMode: "default",
+      modes: { default: { name: "Default", values: {
+        colors: { "color.accent": "#397461", "color.surface": "#fbfcf9" },
+        spacing: { "space.16": 16, "space.20": 20 },
+        radii: { "radius.surface": 24 },
+      } } },
+      aliases: {},
+      deprecated: {},
+      extensions: {},
     },
+    assets: [],
     platforms: [{ target: "react", enabled: true, capabilities: ["responsive-layout"] }],
-    components: [{ id: "intent.primary-action", kind: "primary-action", description: "Primary action" }],
+    components: [{
+      id: "intent.receipt-summary",
+      name: "Receipt summary",
+      description: "A reusable receipt summary.",
+      version: "1.0.0",
+      template: {
+        ...structuredClone(contentNode),
+        id: "receipt-summary.root",
+        children: [],
+      },
+      properties: [],
+      slots: [],
+      variants: [],
+      states: [],
+    }],
     screens: [
       {
         id: "home",
@@ -118,7 +142,7 @@ describe("semantic graph invariants", () => {
 
   it("migrates flat roots into recursive nodes with deterministic layout defaults", () => {
     const parsed = parseGraph(makeValidGraph());
-    expect(parsed.schemaVersion).toBe("0.2.0");
+    expect(parsed.schemaVersion).toBe("0.4.0");
     expect(parsed.screens[0]?.nodes[0]).toMatchObject({
       children: [],
       layout: {
@@ -337,8 +361,8 @@ describe("semantic graph invariants", () => {
   it("rejects unsafe token, override and generated-text inputs", () => {
     expectInvalid((graph) => { graph.screens[0]!.nodes[0]!.layout.gapToken = "space.missing"; }, /Unknown spacing token/);
     expectInvalid((graph) => { graph.screens[0]!.nodes[0]!.layout.gapToken = "constructor"; }, /Reserved token key/);
-    expectInvalid((graph) => { graph.tokens.colors["color.accent"] = "url(javascript:alert(1))"; }, /Invalid string/);
-    expectInvalid((graph) => { graph.tokens.spacing["space.16"] = 513; }, /Too big/);
+    expectInvalid((graph) => { graph.tokens.modes.default!.values.colors["color.accent"] = "url(javascript:alert(1))"; }, /Invalid string/);
+    expectInvalid((graph) => { graph.tokens.modes.default!.values.spacing["space.16"] = 513; }, /Too big/);
     expectInvalid((graph) => { graph.screens[0]!.nodes[0]!.intent.label = "Submit\nmalicious"; }, /Control characters are not allowed/);
     expectInvalid((graph) => { graph.screens[0]!.nodes[0]!.intent.label = "Submit\u202Ehidden"; }, /Control characters are not allowed/);
     expectInvalid((graph) => {
@@ -346,6 +370,144 @@ describe("semantic graph invariants", () => {
     }, /Unknown platform override target/);
     expectInvalid((graph) => { graph.contracts[0]!.data[0]!.name = "constructor"; }, /Reserved identifier/);
     expectInvalid((graph) => { graph.contracts[0]!.data[0]!.name = "$amount"; }, /Invalid string/);
+  });
+
+  it("resolves sparse token modes and aliases, then patches the active mode atomically", () => {
+    const draft: GraphDraft = makeValidGraph();
+    draft.tokens.modes.night = {
+      name: "Night",
+      values: { colors: { "color.accent": "#88aacc" }, spacing: {}, radii: {} },
+    };
+    draft.tokens.aliases["color.action"] = "color.accent";
+    draft.tokens.deprecated["color.action"] = "Use color.accent";
+    const graph = parseGraph(draft);
+
+    expect(resolveTokenMode(graph.tokens, "night")).toMatchObject({
+      colors: {
+        "color.accent": "#88aacc",
+        "color.action": "#88aacc",
+        "color.surface": "#fbfcf9",
+      },
+      spacing: { "space.16": 16, "space.20": 20 },
+    });
+    const switched = applyGraphPatch(graph, {
+      id: "tokens.switch-night",
+      rationale: "Preview the low-light token mode",
+      operations: [{ op: "set-token-mode", mode: "night" }],
+    });
+    const edited = applyGraphPatch(switched, {
+      id: "tokens.edit-night",
+      rationale: "Tune the low-light accent",
+      operations: [{ op: "set-color-token", token: "color.accent", value: "#7799bb" }],
+    });
+    expect(edited.tokens.modes.night?.values.colors["color.accent"]).toBe("#7799bb");
+    expect(graph.tokens.modes.default?.values.colors["color.accent"]).toBe("#397461");
+    expect(semanticDiff(graph, edited)).toEqual(expect.arrayContaining([
+      { path: "tokens.activeMode", before: "default", after: "night" },
+      { path: "tokens.modes.night.values.colors.color.accent", before: "#88aacc", after: "#7799bb" },
+    ]));
+  });
+
+  it("rejects cyclic, cross-type, concrete, missing, and stale token metadata", () => {
+    expectInvalid((graph) => {
+      graph.tokens.aliases = { "color.one": "color.two", "color.two": "color.one" };
+    }, /alias cycle/i);
+    expectInvalid((graph) => {
+      graph.tokens.aliases = { "color.action": "space.16" };
+    }, /alias type mismatch/i);
+    expectInvalid((graph) => {
+      graph.tokens.aliases = { "color.accent": "color.surface" };
+    }, /both concrete and an alias/i);
+    expectInvalid((graph) => {
+      graph.tokens.aliases = { "color.action": "color.missing" };
+    }, /unknown token alias/i);
+    expectInvalid((graph) => {
+      graph.tokens.deprecated = { "color.missing": true };
+    }, /deprecated token does not exist/i);
+  });
+
+  it("binds licensed content-addressed assets through typed reversible patches", () => {
+    const draft: GraphDraft = makeValidGraph();
+    const digest = "a".repeat(64);
+    draft.assets = [{
+      id: "brand.hero",
+      name: "Brand hero",
+      kind: "raster",
+      digest,
+      mediaType: "image/png",
+      byteLength: 128,
+      storageKey: `assets/${digest}.png`,
+      width: 1200,
+      height: 800,
+      variants: [],
+      license: { name: "Project-owned", redistribution: "allowed" },
+      exportPolicy: "copy",
+      metadata: { role: "hero" },
+    }];
+    const graph = parseGraph(draft);
+    const bound = applyGraphPatch(graph, {
+      id: "assets.bind-hero",
+      rationale: "Bind the licensed hero asset",
+      operations: [{
+        op: "bind-asset",
+        target: "receipt.content",
+        assetId: "brand.hero",
+        fit: "cover",
+        focalPoint: { x: 0.4, y: 0.25 },
+        decorative: false,
+      }],
+    });
+    expect(bound.screens[1]?.nodes[0]?.asset).toEqual({
+      assetId: "brand.hero",
+      fit: "cover",
+      focalPoint: { x: 0.4, y: 0.25 },
+      decorative: false,
+    });
+    expect(semanticDiff(graph, bound)).toContainEqual(expect.objectContaining({ path: "receipt.content.asset" }));
+    const cleared = applyGraphPatch(bound, {
+      id: "assets.clear-hero",
+      rationale: "Return to semantic-only content",
+      operations: [{ op: "clear-asset", target: "receipt.content" }],
+    });
+    expect(cleared.screens[1]?.nodes[0]?.asset).toBeUndefined();
+    expect(semanticDiff(bound, cleared)).toContainEqual(expect.objectContaining({ path: "receipt.content.asset" }));
+  });
+
+  it("fails closed for invalid asset media, licensing, digests, variants, and bindings", () => {
+    const addAsset = (graph: GraphDraft, overrides: Record<string, unknown> = {}) => {
+      const digest = "a".repeat(64);
+      graph.assets = [{
+        id: "brand.hero",
+        name: "Brand hero",
+        kind: "raster",
+        digest,
+        mediaType: "image/png",
+        byteLength: 128,
+        storageKey: `assets/${digest}.png`,
+        variants: [],
+        license: { name: "Project-owned", redistribution: "allowed" },
+        exportPolicy: "copy",
+        metadata: {},
+        ...overrides,
+      }];
+    };
+    expectInvalid((graph) => addAsset(graph, { mediaType: "text/html" }), /media type.*does not match kind/i);
+    expectInvalid((graph) => addAsset(graph, { storageKey: `assets/${"a".repeat(64)}.svg` }), /extension does not match/i);
+    expectInvalid((graph) => addAsset(graph, { digest: "b".repeat(64) }), /storage key must contain/i);
+    expectInvalid((graph) => addAsset(graph, {
+      license: { name: "Restricted", redistribution: "restricted" },
+    }), /license that allows redistribution/i);
+    expectInvalid((graph) => {
+      graph.screens[1]!.nodes[0]!.asset = { assetId: "missing", fit: "contain", focalPoint: { x: 0.5, y: 0.5 }, decorative: false };
+    }, /unknown asset/i);
+    expectInvalid((graph) => {
+      addAsset(graph);
+      graph.screens[1]!.nodes[0]!.asset = { assetId: "brand.hero", variantId: "missing", fit: "contain", focalPoint: { x: 0.5, y: 0.5 }, decorative: false };
+    }, /unknown asset variant/i);
+    expectInvalid((graph) => {
+      addAsset(graph, { kind: "font", mediaType: "font/woff2", storageKey: `assets/${"a".repeat(64)}.woff2` });
+      graph.screens[1]!.nodes[0]!.asset = { assetId: "brand.hero", fit: "contain", focalPoint: { x: 0.5, y: 0.5 }, decorative: false };
+    }, /font assets cannot be bound/i);
   });
 
   it("bounds graphs, patches and serialized request size", () => {
@@ -372,6 +534,34 @@ describe("semantic graph invariants", () => {
     })).toThrow(/Unknown spacing token/);
 
     expectInvalid((graph) => {
+      for (let index = 1; index <= GRAPH_LIMITS.maxTokenModes; index += 1) {
+        graph.tokens.modes[`mode-${index}`] = { name: `Mode ${index}`, values: { colors: {}, spacing: {}, radii: {} } };
+      }
+    }, /tokens require 1 through/i);
+    expectInvalid((graph) => {
+      graph.tokens.aliases = Object.fromEntries(Array.from(
+        { length: GRAPH_LIMITS.maxTokenAliases + 1 },
+        (_, index) => [`color.alias-${index}`, "color.accent"],
+      ));
+    }, /at most 256 aliases/i);
+    expectInvalid((graph) => {
+      const digest = "a".repeat(64);
+      graph.assets = Array.from({ length: GRAPH_LIMITS.maxAssets + 1 }, (_, index) => ({
+        id: `asset-${index}`,
+        name: `Asset ${index}`,
+        kind: "raster",
+        digest,
+        mediaType: "image/png",
+        byteLength: 1,
+        storageKey: `assets/${digest}.png`,
+        variants: [],
+        license: { name: "Project-owned", redistribution: "allowed" },
+        exportPolicy: "copy",
+        metadata: {},
+      }));
+    }, /too big/i);
+
+    expectInvalid((graph) => {
       const content = structuredClone(graph.screens[1]!.nodes[0]!);
       graph.screens[1]!.nodes = Array.from({ length: GRAPH_LIMITS.maxNodesPerScreen + 1 }, (_, index) => ({
         ...structuredClone(content),
@@ -386,7 +576,7 @@ describe("semantic graph invariants", () => {
   it("parses and serializes equivalent inputs deterministically", () => {
     for (let index = 0; index < 10; index += 1) {
       const graph = makeValidGraph();
-      graph.tokens.colors["color.accent"] = `#${index.toString(16).padStart(6, "0")}`;
+      graph.tokens.modes.default!.values.colors["color.accent"] = `#${index.toString(16).padStart(6, "0")}`;
       const first = stableSerialize(parseGraph(graph));
       const second = stableSerialize(parseGraph(JSON.parse(first)));
       expect(second).toBe(first);

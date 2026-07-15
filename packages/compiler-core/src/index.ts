@@ -1,4 +1,5 @@
 import type {
+  AssetDefinition,
   ContainerNodeKind,
   Expression,
   PlatformTarget,
@@ -6,7 +7,7 @@ import type {
   SemanticNode,
   UIContract,
 } from "@intentform/semantic-schema";
-import { isContainerNode } from "@intentform/semantic-schema";
+import { isContainerNode, resolveTokenMode, type ResolvedTokenMode, type TokenCollection } from "@intentform/semantic-schema";
 import { layoutCoverage } from "@intentform/layout-engine";
 
 export type PlatformIRField = UIContract["data"][number];
@@ -64,6 +65,18 @@ export interface PlatformIRNode {
   };
   style: SemanticNode["style"];
   accessibility: SemanticNode["accessibility"];
+  asset: {
+    id: string;
+    kind: AssetDefinition["kind"];
+    digest: string;
+    mediaType: string;
+    storageKey: string;
+    exportPolicy: AssetDefinition["exportPolicy"];
+    license: AssetDefinition["license"];
+    fit: NonNullable<SemanticNode["asset"]>["fit"];
+    focalPoint: NonNullable<SemanticNode["asset"]>["focalPoint"];
+    decorative: boolean;
+  } | null;
   events: PlatformIREvent[];
   visibility: Array<{ state: string; expression?: Expression }>;
   bindings: {
@@ -90,7 +103,11 @@ export interface PlatformIRScreen {
 export interface PlatformIR {
   target: PlatformTarget;
   productName: string;
-  tokens: SemanticInterfaceGraph["tokens"];
+  tokens: ResolvedTokenMode;
+  tokenCollection: TokenCollection;
+  tokenModes: Record<string, ResolvedTokenMode>;
+  activeTokenMode: string;
+  assets: AssetDefinition[];
   screens: PlatformIRScreen[];
   diagnostics: CompilerDiagnostic[];
 }
@@ -282,6 +299,7 @@ function resolveNodeSemantics(
   target: PlatformTarget,
   diagnostics: CompilerDiagnostic[],
 ): ResolvedNodeSemantics {
+  const tokens = resolveTokenMode(graph.tokens);
   const resolved: ResolvedNodeSemantics = {
     intent: {
       label: node.intent.label ?? node.intent.purpose,
@@ -312,8 +330,8 @@ function resolveNodeSemantics(
       ...(node.layout.position ? { position: node.layout.position } : {}),
       gapToken: node.layout.gapToken,
       paddingToken: node.layout.paddingToken,
-      gap: graph.tokens.spacing[node.layout.gapToken] ?? 0,
-      padding: graph.tokens.spacing[node.layout.paddingToken] ?? 0,
+      gap: tokens.spacing[node.layout.gapToken] ?? 0,
+      padding: tokens.spacing[node.layout.paddingToken] ?? 0,
       compactPlacement: node.layout.placement?.compact ?? "inline",
       regularPlacement: node.layout.placement?.regular ?? "inline",
     },
@@ -339,9 +357,9 @@ function resolveNodeSemantics(
   };
   const readSpacingToken = (key: string, property: "gapToken" | "paddingToken") => {
     const value = overrides[key];
-    if (typeof value === "string" && Object.hasOwn(graph.tokens.spacing, value)) {
+    if (typeof value === "string" && Object.hasOwn(tokens.spacing, value)) {
       resolved.layout[property] = value;
-      resolved.layout[property === "gapToken" ? "gap" : "padding"] = graph.tokens.spacing[value] ?? 0;
+      resolved.layout[property === "gapToken" ? "gap" : "padding"] = tokens.spacing[value] ?? 0;
     } else {
       warn(key, "Expected an existing spacing token. The shared semantic token was used.");
     }
@@ -440,10 +458,18 @@ export function lowerGraph(graph: SemanticInterfaceGraph, target: PlatformTarget
   const platform = graph.platforms.find((candidate) => candidate.target === target);
   if (!platform?.enabled) throw new Error(`The ${target} target is not enabled by this graph`);
   const diagnostics: CompilerDiagnostic[] = [];
+  const assetsById = new Map(graph.assets.map((asset) => [asset.id, asset]));
   const ir: PlatformIR = {
     target,
     productName: graph.product.name,
-    tokens: graph.tokens,
+    tokens: resolveTokenMode(graph.tokens),
+    tokenCollection: graph.tokens,
+    tokenModes: Object.fromEntries(Object.keys(graph.tokens.modes).sort().map((modeId) => [
+      modeId,
+      resolveTokenMode(graph.tokens, modeId),
+    ])),
+    activeTokenMode: graph.tokens.activeMode,
+    assets: graph.assets,
     screens: graph.screens.map((screen) => {
       const contract = graph.contracts.find((candidate) => candidate.screenId === screen.id);
       const referencedFixtures = contract
@@ -475,10 +501,48 @@ export function lowerGraph(graph: SemanticInterfaceGraph, target: PlatformTarget
       );
       const lowerNode = (node: SemanticNode): PlatformIRNode => {
         const semantics = resolveNodeSemantics(graph, screen.id, node, target, diagnostics);
+        const definition = node.asset ? assetsById.get(node.asset.assetId) : undefined;
+        const variant = node.asset?.variantId
+          ? definition?.variants.find((candidate) => candidate.id === node.asset?.variantId)
+          : undefined;
+        const file = variant ?? definition;
+        if (definition?.exportPolicy === "blocked") {
+          diagnostics.push({
+            severity: "warning",
+            path: `screens.${screen.id}.nodes.${node.id}.asset`,
+            message: `Asset ${definition.id} is blocked from generated output; the target uses a semantic fallback.`,
+          });
+        }
+        if (definition?.exportPolicy === "reference") {
+          diagnostics.push({
+            severity: "warning",
+            path: `screens.${screen.id}.nodes.${node.id}.asset`,
+            message: `Asset ${definition.id} is reference-only; generated output expects the host application to provide /${file?.storageKey ?? definition.storageKey}.`,
+          });
+        }
+        if (target === "swiftui" && definition && ["svg", "icon", "video", "audio"].includes(definition.kind)) {
+          diagnostics.push({
+            severity: "warning",
+            path: `screens.${screen.id}.nodes.${node.id}.asset`,
+            message: `SwiftUI raw ${definition.kind} assets require a platform adapter; the target uses a semantic fallback.`,
+          });
+        }
         return {
           id: node.id,
           kind: node.kind,
           ...semantics,
+          asset: node.asset && definition && file ? {
+            id: definition.id,
+            kind: definition.kind,
+            digest: file.digest,
+            mediaType: file.mediaType,
+            storageKey: file.storageKey,
+            exportPolicy: definition.exportPolicy,
+            license: definition.license,
+            fit: node.asset.fit,
+            focalPoint: node.asset.focalPoint,
+            decorative: node.asset.decorative,
+          } : null,
           events: eventsForNode(node, contract),
           visibility: node.states.map((state) => ({
             state: state.name,

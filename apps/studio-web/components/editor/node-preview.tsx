@@ -4,6 +4,7 @@ import { Check } from "@phosphor-icons/react";
 import { resolvedContainerMode } from "@intentform/layout-engine";
 import {
   isContainerNode,
+  resolveTokenMode,
   type SemanticInterfaceGraph,
   type SemanticNode,
 } from "@intentform/semantic-schema";
@@ -81,10 +82,51 @@ export function NodePreview({
   const hairline = `color-mix(in oklab, ${ink} 12%, #ffffff)`;
   const loading = state === "loading";
 
+  if (node.asset) {
+    const asset = graph.assets.find((candidate) => candidate.id === node.asset?.assetId);
+    const variant = node.asset.variantId
+      ? asset?.variants.find((candidate) => candidate.id === node.asset?.variantId)
+      : undefined;
+    const file = variant ?? asset;
+    const contentNode = structuredClone(node);
+    delete contentNode.asset;
+    return (
+      <div className="grid gap-2" data-preview-asset={asset?.id}>
+        {asset && file && asset.exportPolicy !== "blocked" && ["raster", "svg", "icon"].includes(asset.kind) ? (
+          <img
+            loading="lazy"
+            decoding="async"
+            src={`/api/project/assets/${file.digest}`}
+            alt={node.asset.decorative ? "" : node.accessibility.label}
+            className="max-h-52 w-full rounded-xl border border-zinc-200 bg-white"
+            style={{
+              objectFit: node.asset.fit,
+              objectPosition: `${Math.round(node.asset.focalPoint.x * 100)}% ${Math.round(node.asset.focalPoint.y * 100)}%`,
+            }}
+          />
+        ) : asset ? (
+          <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-3 text-center text-[11px] text-zinc-500">{asset.name} · {asset.exportPolicy === "blocked" ? "export blocked" : `${asset.kind} preview unavailable`}</div>
+        ) : null}
+        <NodePreview
+          node={contentNode}
+          graph={graph}
+          fixture={fixture}
+          state={state}
+          viewport={viewport}
+          selectedNodeId={selectedNodeId}
+          selectedNodeIds={selectedNodeIds}
+          hoveredNodeId={hoveredNodeId}
+          {...(onSelectNode ? { onSelectNode } : {})}
+        />
+      </div>
+    );
+  }
+
   if (isContainerNode(node)) {
     const mode = resolvedContainerMode(node, viewport);
-    const gap = graph.tokens.spacing[node.layout.gapToken] ?? 0;
-    const padding = graph.tokens.spacing[node.layout.paddingToken] ?? 0;
+    const spacing = resolveTokenMode(graph.tokens).spacing;
+    const gap = spacing[node.layout.gapToken] ?? 0;
+    const padding = spacing[node.layout.paddingToken] ?? 0;
     const horizontal = node.layout.axis === "horizontal";
     const style: CSSProperties = {
       ...semanticNodeBoxStyle(node),

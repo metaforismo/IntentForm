@@ -76,12 +76,12 @@ try {
             status: 409,
             contentType: "application/json",
             body: JSON.stringify({
-              error: "Project schema 0.0.1 must be migrated to 0.2.0 before it can be opened.",
+              error: "Project schema 0.0.1 must be migrated to 0.4.0 before it can be opened.",
               migration: {
                 status: "migration-required",
                 sourceFingerprint: "a".repeat(64),
                 fromVersion: "0.0.1",
-                toVersion: "0.2.0",
+                toVersion: "0.4.0",
                 diagnostics: [{
                   severity: "info",
                   code: "schema.migrated.0.0.1.to.0.1.0",
@@ -92,6 +92,16 @@ try {
                   code: "schema.migrated.0.1.0.to.0.2.0",
                   path: "schemaVersion",
                   message: "Converted schema 0.1.0 to 0.2.0.",
+                }, {
+                  severity: "info",
+                  code: "schema.migrated.0.2.0.to.0.3.0",
+                  path: "schemaVersion",
+                  message: "Converted schema 0.2.0 to 0.3.0.",
+                }, {
+                  severity: "info",
+                  code: "schema.migrated.0.3.0.to.0.4.0",
+                  path: "schemaVersion",
+                  message: "Converted schema 0.3.0 to 0.4.0.",
                 }],
               },
             }),
@@ -128,8 +138,13 @@ try {
       await page.getByRole("alert").getByText(/Import failed:/).waitFor();
       await page.getByRole("button", { name: "Dismiss launcher error" }).click();
 
-      const legacyImport = structuredClone(demoGraph) as unknown as Record<string, unknown>;
+      const legacyImport = structuredClone(demoGraph) as unknown as Record<string, unknown> & {
+        tokens: unknown;
+        assets?: unknown;
+      };
       legacyImport.schemaVersion = "0.0.1";
+      legacyImport.tokens = structuredClone(demoGraph.tokens.modes[demoGraph.tokens.defaultMode]!.values);
+      delete legacyImport.assets;
       await importInput.setInputFiles({
         name: "legacy.intentform.json",
         mimeType: "application/json",
@@ -650,6 +665,85 @@ try {
       if (await inlinePlacement.getAttribute("aria-pressed") !== "false") {
         throw new Error("Redo left both compact placement options active");
       }
+    },
+  });
+
+  await runSmokeScenario(browser, {
+    name: "component library instances",
+    run: async (componentPage) => {
+      await gotoStudio(componentPage, origin);
+      await componentPage.getByRole("button", { name: "Layout lab 20", exact: true }).click();
+      await componentPage.getByRole("tab", { name: "Library", exact: true }).click();
+      const library = componentPage.getByTestId("component-library-panel");
+      await library.getByText("Local components", { exact: true }).waitFor();
+      await library.getByRole("button", { name: "Insert Primary action" }).click();
+
+      const instanceId = "layout-lab.instance-primary-action-1";
+      const instance = componentPage.getByTestId(`canvas-node-${instanceId}`);
+      await instance.waitFor();
+      const inspector = componentPage.getByTestId("semantic-inspector");
+      await inspector.getByText("Component instance", { exact: true }).waitFor();
+      await inspector.getByText("intent.primary-action · v1.1.0", { exact: true }).waitFor();
+
+      await inspector.getByLabel("Component variant").selectOption("quiet");
+      await inspector.getByLabel("Component state").selectOption("working");
+      await instance.getByText("Working…", { exact: true }).waitFor();
+      const labelProperty = inspector.getByLabel("label", { exact: true });
+      await labelProperty.fill("Send from library");
+      await labelProperty.press("Enter");
+      await inspector.getByLabel("Component state").selectOption("ready");
+      await instance.getByText("Send from library", { exact: true }).waitFor();
+
+      await inspector.getByRole("button", { name: "Reset", exact: true }).click();
+      await instance.getByText("Continue", { exact: true }).waitFor();
+      await inspector.getByRole("button", { name: "Detach", exact: true }).click();
+      await inspector.getByText("Component instance", { exact: true }).waitFor({ state: "detached" });
+      await componentPage.getByRole("button", { name: "Undo" }).click();
+      await inspector.getByText("Component instance", { exact: true }).waitFor();
+
+      const overflow = await componentPage.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      if (overflow > 1) throw new Error(`Component library workflow introduced ${overflow}px horizontal overflow`);
+    },
+  });
+
+  await runSmokeScenario(browser, {
+    name: "token modes and licensed asset panels",
+    run: async (tokenPage) => {
+      await gotoStudio(tokenPage, origin);
+      await tokenPage.getByRole("tab", { name: "Tokens", exact: true }).click();
+      await tokenPage.getByText("DTCG 2025.10", { exact: true }).waitFor();
+      const mode = tokenPage.getByLabel("Active token mode");
+      await mode.selectOption("evening");
+      if (await mode.inputValue() !== "evening") throw new Error("Token mode selection did not commit");
+      await tokenPage.getByLabel("Hex for color.accent").waitFor();
+      if ((await tokenPage.getByLabel("Hex for color.accent").inputValue()).toLowerCase() !== "#68a990") {
+        throw new Error("Sparse evening token overrides did not resolve in the Studio panel");
+      }
+
+      await tokenPage.getByLabel("Import DTCG tokens").setInputFiles({
+        name: "incomplete.tokens.json",
+        mimeType: "application/json",
+        buffer: Buffer.from(JSON.stringify({
+          color: {
+            $type: "color",
+            accent: { $value: { colorSpace: "srgb", components: [0.2, 0.4, 0.6] } },
+          },
+        })),
+      });
+      await tokenPage.getByRole("alert").getByText(/Unknown spacing token/i).waitFor();
+      if (await mode.inputValue() !== "evening") throw new Error("Rejected token import mutated the active mode");
+
+      const downloadPromise = tokenPage.waitForEvent("download");
+      await tokenPage.getByRole("button", { name: "Export", exact: true }).click();
+      const download = await downloadPromise;
+      if (!download.suggestedFilename().endsWith(".tokens.json")) {
+        throw new Error(`Unexpected DTCG export filename: ${download.suggestedFilename()}`);
+      }
+
+      await tokenPage.getByRole("tab", { name: "Assets", exact: true }).click();
+      await tokenPage.getByTestId("asset-library-panel").getByText("No project assets yet.", { exact: false }).waitFor();
+      const overflow = await tokenPage.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      if (overflow > 1) throw new Error(`Token/asset panels introduced ${overflow}px horizontal overflow`);
     },
   });
 

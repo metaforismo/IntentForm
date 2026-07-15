@@ -3,15 +3,24 @@ import { pathToFileURL } from "node:url";
 import {
   applyMigration,
   applyPatch,
+  collectProjectAssets,
   compileProject,
+  componentSchema,
   describeProject,
   diffAgainstRevision,
+  exportProjectTokens,
   getGraph,
+  importProjectAssetFromInbox,
+  importProjectTokens,
+  instantiateProjectComponent,
+  listTokenModes,
   projectRevisions,
   previewMigration,
   previewPatch,
   replaceGraph,
   revertProject,
+  searchComponents,
+  searchProjectAssets,
   verifyProject,
   type ScenarioId,
 } from "./tools.ts";
@@ -33,7 +42,7 @@ interface ToolDefinition {
 }
 
 const PATCH_CONTRACT = `A GraphPatch is {"id": string, "rationale": string, "operations": Operation[]} where Operation is one of:
-{"op":"set-label","target":nodeId,"label":string} · {"op":"set-placement","target":nodeId,"compact":"inline"|"persistent-bottom","regular":"inline"|"persistent-bottom"} · {"op":"set-purpose","target":nodeId,"purpose":string} · {"op":"set-emphasis","target":nodeId,"emphasis":"quiet"|"normal"|"strong"} · {"op":"set-gap-token","target":nodeId,"token":string} · {"op":"set-padding-token","target":nodeId,"token":string} · {"op":"set-layout","target":nodeId, ...layoutFields} · {"op":"move-node","target":nodeId,"screenId":screenId,"parent":nodeId|null,"index"?:number} · {"op":"set-color-token","token":colorTokenName,"value":"#rrggbb"} · {"op":"set-fixture-value","screenId":screenId,"state":"idle"|"loading"|"empty"|"failed"|"completed","field":contractField,"value":string|number|boolean}.
+{"op":"set-label","target":nodeId,"label":string} · {"op":"set-placement","target":nodeId,"compact":"inline"|"persistent-bottom","regular":"inline"|"persistent-bottom"} · {"op":"set-purpose","target":nodeId,"purpose":string} · {"op":"set-emphasis","target":nodeId,"emphasis":"quiet"|"normal"|"strong"} · {"op":"set-gap-token","target":nodeId,"token":string} · {"op":"set-padding-token","target":nodeId,"token":string} · {"op":"set-layout","target":nodeId, ...layoutFields} · {"op":"move-node","target":nodeId,"screenId":screenId,"parent":nodeId|null,"index"?:number} · {"op":"set-color-token","token":colorTokenName,"value":"#rrggbb"} · {"op":"set-token-mode","mode":modeId} · {"op":"bind-asset","target":nodeId,"assetId":assetId,"variantId"?:variantId,"fit":"contain"|"cover"|"fill"|"none","focalPoint":{"x":0..1,"y":0..1},"decorative":boolean} · {"op":"clear-asset","target":nodeId} · {"op":"set-fixture-value","screenId":screenId,"state":"idle"|"loading"|"empty"|"failed"|"completed","field":contractField,"value":string|number|boolean}.
 Node IDs are stable; discover them with intentform_describe_project. The patch is schema-validated and rejected atomically if any operation is invalid.`;
 
 const PATCH_INPUT_SCHEMA = {
@@ -79,15 +88,145 @@ export const toolDefinitions: ToolDefinition[] = [
   },
   {
     name: "intentform_describe_project",
-    description: "Inspect the IntentForm project: product, screens with stable node IDs, design tokens, flows, contracts, current verification status, and each compiler target's generation status and fingerprint when available. Call this first to discover node IDs before editing.",
+    description: "Inspect the IntentForm project: product, screens with stable node IDs, token modes, licensed assets, flows, contracts, current verification status, and each compiler target's generation status and fingerprint when available. Call this first to discover node IDs before editing.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     run: () => describeProject(projectDir),
+  },
+  {
+    name: "intentform_list_token_modes",
+    description: "List every token mode with its sparse override count and fully resolved values, plus aliases and deprecation metadata. This is read-only and returns the current graph fingerprint.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    run: () => listTokenModes(projectDir),
+  },
+  {
+    name: "intentform_import_dtcg",
+    description: "Import a bounded W3C Design Tokens Community Group 2025.10 JSON document. Values, aliases, modes, deprecation, and vendor extensions are validated; invalid references and cycles fail atomically. Creates exactly one project revision.",
+    inputSchema: {
+      type: "object",
+      properties: { document: { type: "object", description: "Parsed DTCG 2025.10 JSON document" } },
+      required: ["document"],
+      additionalProperties: false,
+    },
+    run: (args) => importProjectTokens(projectDir, args.document),
+  },
+  {
+    name: "intentform_export_dtcg",
+    description: "Export the current project tokens as deterministic DTCG 2025.10 JSON, including aliases, modes, deprecation, and preserved vendor metadata. This is read-only.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    run: () => exportProjectTokens(projectDir),
+  },
+  {
+    name: "intentform_search_assets",
+    description: "Search the local content-addressed asset manifest by id, name, kind, media type, or license. Returns license/export policy and integrity diagnostics without exposing source filesystem paths.",
+    inputSchema: {
+      type: "object",
+      properties: { query: { type: "string", maxLength: 120, description: "Empty returns the complete asset manifest" } },
+      additionalProperties: false,
+    },
+    run: (args) => searchProjectAssets(projectDir, typeof args.query === "string" ? args.query : ""),
+  },
+  {
+    name: "intentform_import_asset",
+    description: "Import one licensed file already placed directly in .intentform/imports. The file is type-checked, SVG-sanitized, content-addressed, stripped of its source path, added to the graph, and committed as one revision.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        importName: { type: "string", minLength: 1, maxLength: 180, description: "Basename of a file directly inside .intentform/imports" },
+        id: { type: "string", pattern: "^[a-z][a-z0-9-]*$" },
+        name: { type: "string", minLength: 1, maxLength: 120 },
+        kind: { type: "string", enum: ["raster", "svg", "icon", "video", "audio", "font"] },
+        license: {
+          type: "object",
+          properties: {
+            name: { type: "string", minLength: 1, maxLength: 160 },
+            spdx: { type: "string", minLength: 1, maxLength: 80 },
+            sourceUrl: { type: "string", format: "uri", maxLength: 500 },
+            attribution: { type: "string", minLength: 1, maxLength: 500 },
+            redistribution: { type: "string", enum: ["allowed", "restricted", "unknown"] },
+          },
+          required: ["name", "redistribution"],
+          additionalProperties: false,
+        },
+        exportPolicy: { type: "string", enum: ["copy", "reference", "blocked"] },
+        metadata: { type: "object", additionalProperties: true },
+      },
+      required: ["importName", "id", "name", "license", "exportPolicy"],
+      additionalProperties: false,
+    },
+    run: (args) => importProjectAssetFromInbox(projectDir, {
+      importName: String(args.importName ?? ""),
+      id: String(args.id ?? ""),
+      name: String(args.name ?? ""),
+      ...(typeof args.kind === "string" ? { kind: args.kind as "raster" | "svg" | "icon" | "video" | "audio" | "font" } : {}),
+      license: (args.license ?? {}) as { name: string; spdx?: string; sourceUrl?: string; attribution?: string; redistribution: "allowed" | "restricted" | "unknown" },
+      exportPolicy: args.exportPolicy as "copy" | "reference" | "blocked",
+      ...(args.metadata && typeof args.metadata === "object" ? { metadata: args.metadata as Record<string, unknown> } : {}),
+    }),
+  },
+  {
+    name: "intentform_asset_gc",
+    description: "Preview unreferenced files in the content-addressed asset store. Set apply=true to delete only verified unused regular files; referenced files and symlinks are never removed.",
+    inputSchema: {
+      type: "object",
+      properties: { apply: { type: "boolean", description: "Defaults to false for a read-only preview" } },
+      additionalProperties: false,
+    },
+    run: (args) => collectProjectAssets(projectDir, args.apply === true),
   },
   {
     name: "intentform_get_graph",
     description: "Return the full Semantic Interface Graph as canonical, deterministic JSON. Use for detailed inspection or as the basis for intentform_replace_graph.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     run: () => getGraph(projectDir),
+  },
+  {
+    name: "intentform_search_components",
+    description: "Search the versioned local component library by id, name, or description. Returns typed props, slots, variants, states, deprecation, and the graph fingerprint without modifying the project.",
+    inputSchema: {
+      type: "object",
+      properties: { query: { type: "string", maxLength: 120, description: "Empty returns the complete local library" } },
+      additionalProperties: false,
+    },
+    run: (args) => searchComponents(projectDir, typeof args.query === "string" ? args.query : ""),
+  },
+  {
+    name: "intentform_component_schema",
+    description: "Return the executable schema for one local component definition, or every definition when id is omitted. Includes the stable local-library ABI and full template/prop/slot/variant/state contracts.",
+    inputSchema: {
+      type: "object",
+      properties: { definitionId: { type: "string" } },
+      additionalProperties: false,
+    },
+    run: (args) => componentSchema(projectDir, typeof args.definitionId === "string" ? args.definitionId : undefined),
+  },
+  {
+    name: "intentform_instantiate_component",
+    description: "Instantiate a typed local component on a screen or inside a container. The operation expands deterministically, validates the whole graph, creates one revision, and returns the exact semantic diff and fingerprint.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        definitionId: { type: "string" },
+        instanceId: { type: "string", description: "New globally unique semantic node id" },
+        screenId: { type: "string" },
+        parentId: { type: ["string", "null"] },
+        index: { type: "integer", minimum: 0, maximum: 64 },
+        variant: { type: "string" },
+        state: { type: "string" },
+        props: { type: "object", additionalProperties: { type: ["string", "number", "boolean"] } },
+      },
+      required: ["definitionId", "instanceId", "screenId"],
+      additionalProperties: false,
+    },
+    run: (args) => instantiateProjectComponent(projectDir, {
+      definitionId: String(args.definitionId ?? ""),
+      instanceId: String(args.instanceId ?? ""),
+      screenId: String(args.screenId ?? ""),
+      ...(typeof args.parentId === "string" || args.parentId === null ? { parentId: args.parentId } : {}),
+      ...(typeof args.index === "number" ? { index: args.index } : {}),
+      ...(typeof args.variant === "string" ? { variant: args.variant } : {}),
+      ...(typeof args.state === "string" ? { state: args.state } : {}),
+      ...(args.props && typeof args.props === "object" ? { props: args.props as Record<string, string | number | boolean> } : {}),
+    }),
   },
   {
     name: "intentform_preview_patch",
@@ -103,7 +242,7 @@ export const toolDefinitions: ToolDefinition[] = [
   },
   {
     name: "intentform_replace_graph",
-    description: "Replace the entire Semantic Interface Graph (current schemaVersion 0.2.0). Use for structural edits a typed patch cannot express (adding screens or nodes). Recursive hierarchy, depth, node-count and layout constraints are fully validated; invalid graphs are rejected without side effects. Returns the semantic diff and fresh verification findings.",
+    description: "Replace the entire Semantic Interface Graph (current schemaVersion 0.4.0). Use for structural edits a typed operation cannot express. Recursive hierarchy, components, token modes, licensed assets, node-count and layout constraints are fully validated; invalid graphs are rejected without side effects. Returns the semantic diff and fresh verification findings.",
     inputSchema: {
       type: "object",
       properties: {
@@ -125,7 +264,7 @@ export const toolDefinitions: ToolDefinition[] = [
   },
   {
     name: "intentform_compile",
-    description: "Compile the current graph with a deterministic backend ('react' or 'swiftui'). With write=true the files are emitted under .intentform/output/<target>/ so you can read them from disk. Same graph + same compiler always yields byte-identical output.",
+    description: "Compile the current graph with a deterministic backend ('react' or 'swiftui'). With write=true generated files and license-permitted copy-policy assets are emitted under .intentform/output/<target>/. Returns integrity, missing-file, and license diagnostics. Same graph + same compiler always yields byte-identical source output.",
     inputSchema: {
       type: "object",
       properties: {

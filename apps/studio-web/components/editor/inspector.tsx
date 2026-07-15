@@ -10,7 +10,10 @@ import {
   X,
 } from "@phosphor-icons/react";
 import {
+  findGraphNode,
   isContainerNode,
+  resolveTokenMode,
+  type ComponentOverride,
   type ContainerNodeKind,
   type SemanticInterfaceGraph,
   type SemanticNode,
@@ -22,11 +25,13 @@ export function SegmentedControl<T extends string>({
   label,
   value,
   options,
+  disabled = false,
   onChange,
 }: {
   label: string;
   value: T;
   options: Array<{ value: T; label: string }>;
+  disabled?: boolean;
   onChange(value: T): void;
 }) {
   return (
@@ -38,8 +43,9 @@ export function SegmentedControl<T extends string>({
             key={option.value}
             type="button"
             aria-pressed={value === option.value}
+            disabled={disabled}
             onClick={() => onChange(option.value)}
-            className={`min-h-7 truncate rounded-md px-2 text-[11px] font-medium transition-colors ${value === option.value ? "bg-[var(--seg-active)] text-[var(--t-strong)] shadow-[0_1px_4px_-2px_var(--shadow-strong)]" : "text-[var(--muted)] hover:text-[var(--t-strong)]"}`}
+            className={`min-h-7 truncate rounded-md px-2 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${value === option.value ? "bg-[var(--seg-active)] text-[var(--t-strong)] shadow-[0_1px_4px_-2px_var(--shadow-strong)]" : "text-[var(--muted)] hover:text-[var(--t-strong)]"}`}
           >
             {option.label}
           </button>
@@ -95,6 +101,7 @@ function NumberField({
   min = 0,
   max = 10_000,
   step = 1,
+  disabled = false,
   onCommit,
 }: {
   label: string;
@@ -102,6 +109,7 @@ function NumberField({
   min?: number;
   max?: number;
   step?: number;
+  disabled?: boolean;
   onCommit(next: number | undefined): void;
 }) {
   return (
@@ -113,6 +121,7 @@ function NumberField({
         min={min}
         max={max}
         step={step}
+        disabled={disabled}
         defaultValue={value}
         placeholder="Auto"
         onBlur={(event) => {
@@ -125,7 +134,7 @@ function NumberField({
           if (Number.isFinite(next) && next >= min && next <= max && next !== value) onCommit(next);
         }}
         onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); }}
-        className="min-h-8 rounded-lg border border-[var(--line)] bg-[var(--field)] px-2.5 font-mono text-[11px] font-normal text-[var(--t-strong)] outline-none transition-colors hover:border-[var(--line-strong)] focus:border-[var(--accent)]"
+        className="min-h-8 rounded-lg border border-[var(--line)] bg-[var(--field)] px-2.5 font-mono text-[11px] font-normal text-[var(--t-strong)] outline-none transition-colors hover:border-[var(--line-strong)] focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
       />
     </label>
   );
@@ -148,12 +157,19 @@ interface InspectorProps {
   graph: SemanticInterfaceGraph;
   screen: SemanticInterfaceGraph["screens"][number];
   selectedNode: SemanticNode | null;
+  componentContext: { rootId: string; targetId: string; definitionId: string } | null;
   selectionCount: number;
   profile: DeviceProfile;
   visualState: VisualState;
   visible: boolean;
   desktopVisible: boolean;
   updateNode(mutate: (node: SemanticNode) => void, notice: string): void;
+  onSetComponentProperty(name: string, value: string | number | boolean): void;
+  onSetComponentVariant(variant: string | null): void;
+  onSetComponentState(state: string | null): void;
+  onSetComponentOverride(override: ComponentOverride): void;
+  onResetComponent(): void;
+  onDetachComponent(): void;
   onUpdateFixture(fieldName: string, value: string | number | boolean): void;
   onSetActionEvent(nodeId: string, eventName: string | null): void;
   onSetFlowTarget(fromScreenId: string, eventName: string, targetScreenId: string | null): void;
@@ -171,12 +187,19 @@ export function Inspector({
   graph,
   screen,
   selectedNode,
+  componentContext,
   selectionCount,
   profile,
   visualState,
   visible,
   desktopVisible,
   updateNode,
+  onSetComponentProperty,
+  onSetComponentVariant,
+  onSetComponentState,
+  onSetComponentOverride,
+  onResetComponent,
+  onDetachComponent,
   onUpdateFixture,
   onSetActionEvent,
   onSetFlowTarget,
@@ -195,6 +218,17 @@ export function Inspector({
   const isAction = selectedNode?.kind === "primary-action" || selectedNode?.kind === "secondary-action";
   const exactFixture = graph.fixtures.find((item) => item.screenId === screen.id && item.state === visualState);
   const fixture = exactFixture ?? graph.fixtures.find((item) => item.screenId === screen.id && item.state === "idle");
+  const componentRoot = componentContext ? findGraphNode(graph, componentContext.rootId) : undefined;
+  const componentInstance = componentRoot?.componentInstance;
+  const componentDefinition = componentContext
+    ? graph.components.find((definition) => definition.id === componentContext.definitionId)
+    : undefined;
+  const componentNested = Boolean(componentContext && selectedNode?.id !== componentContext.rootId);
+  const resolvedTokens = resolveTokenMode(graph.tokens);
+  const bindableAssets = graph.assets.filter((asset) => asset.kind !== "font");
+  const boundAsset = selectedNode?.asset
+    ? graph.assets.find((asset) => asset.id === selectedNode.asset?.assetId)
+    : undefined;
 
   return (
     <aside
@@ -301,13 +335,120 @@ export function Inspector({
             </div>
           </div>
 
+          {componentDefinition && componentInstance && componentContext ? (
+            <Section title="Component instance">
+              <div className="rounded-xl border border-[var(--line)] bg-[var(--field)] p-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <strong className="block truncate text-[12px] font-semibold text-[var(--ink)]">{componentDefinition.name}</strong>
+                    <span className="mt-0.5 block font-mono text-[9px] text-[var(--faint)]">{componentDefinition.id} · v{componentDefinition.version}</span>
+                  </div>
+                  <span className="rounded bg-[var(--accent-soft)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--accent-text)]">attached</span>
+                </div>
+                {selectedNode.id !== componentContext.rootId ? (
+                  <p className="mt-2 text-[10px] leading-relaxed text-[var(--muted)]">Editing nested target <span className="font-mono">{componentContext.targetId}</span>. Definition-owned structural fields stay locked until detach.</p>
+                ) : null}
+              </div>
+              {componentDefinition.properties.map((property) => {
+                const value = componentInstance.props[property.name] ?? property.default;
+                if (property.type === "boolean") {
+                  return (
+                    <label key={property.name} className="flex min-h-8 items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--field)] px-2.5 text-[11px] font-medium text-[var(--muted)]">
+                      {property.name}
+                      <input aria-label={`Component property ${property.name}`} type="checkbox" checked={value === true} onChange={(event) => onSetComponentProperty(property.name, event.target.checked)} className="size-4 accent-[var(--accent)]" />
+                    </label>
+                  );
+                }
+                if (property.type === "number") {
+                  return <NumberField key={property.name} label={property.name} value={typeof value === "number" ? value : undefined} onCommit={(next) => { if (next !== undefined) onSetComponentProperty(property.name, next); }} />;
+                }
+                return <TextField key={property.name} label={property.name} value={typeof value === "string" ? value : ""} onCommit={(next) => { if (next && next !== value) onSetComponentProperty(property.name, next); }} />;
+              })}
+              {componentDefinition.variants.length > 0 ? (
+                <label className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">Variant
+                  <select aria-label="Component variant" value={componentInstance.variant ?? ""} onChange={(event) => onSetComponentVariant(event.target.value || null)} className="select-control text-[11px] font-normal">
+                    <option value="">Default · {componentDefinition.defaultVariant ?? "base"}</option>
+                    {componentDefinition.variants.map((variant) => <option key={variant.id} value={variant.id}>{variant.label}</option>)}
+                  </select>
+                </label>
+              ) : null}
+              {componentDefinition.states.length > 0 ? (
+                <label className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">Component state
+                  <select aria-label="Component state" value={componentInstance.state ?? ""} onChange={(event) => onSetComponentState(event.target.value || null)} className="select-control text-[11px] font-normal">
+                    <option value="">Default · {componentDefinition.defaultState ?? "base"}</option>
+                    {componentDefinition.states.map((state) => <option key={state.id} value={state.id}>{state.label}</option>)}
+                  </select>
+                </label>
+              ) : null}
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={onResetComponent} className="min-h-8 rounded-lg border border-[var(--line)] bg-[var(--field)] px-2 text-[11px] font-medium text-[var(--muted)] hover:border-[var(--line-strong)] hover:text-[var(--ink)]">Reset</button>
+                <button type="button" onClick={onDetachComponent} className="min-h-8 rounded-lg border border-[var(--warn)]/30 bg-[var(--warn-soft)] px-2 text-[11px] font-medium text-[var(--warn)] hover:border-[var(--warn)]">Detach</button>
+              </div>
+            </Section>
+          ) : null}
+
+          <Section title="Asset">
+            <label className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">Content asset
+              <select
+                aria-label="Content asset"
+                disabled={Boolean(componentContext)}
+                value={selectedNode.asset?.assetId ?? ""}
+                onChange={(event) => updateNode((node) => {
+                  if (!event.target.value) {
+                    delete node.asset;
+                    return;
+                  }
+                  node.asset = {
+                    assetId: event.target.value,
+                    fit: "contain",
+                    focalPoint: { x: 0.5, y: 0.5 },
+                    decorative: false,
+                  };
+                }, event.target.value ? `Bound asset ${event.target.value}.` : "Cleared the content asset.")}
+                className="select-control text-[11px] font-normal disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <option value="">None</option>
+                {bindableAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name} · {asset.kind}</option>)}
+              </select>
+            </label>
+            {boundAsset && selectedNode.asset ? (
+              <>
+                <div className="rounded-lg border border-[var(--line)] bg-[var(--field)] p-2.5 text-[10px] leading-relaxed text-[var(--muted)]">
+                  <span className="block font-mono text-[9px] text-[var(--faint)]">{boundAsset.digest.slice(0, 16)}…</span>
+                  <span className="mt-1 block">{boundAsset.license.name} · export {boundAsset.exportPolicy}</span>
+                </div>
+                {boundAsset.variants.length > 0 ? (
+                  <label className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">Variant
+                    <select disabled={Boolean(componentContext)} value={selectedNode.asset.variantId ?? ""} onChange={(event) => updateNode((node) => {
+                      if (!node.asset) return;
+                      if (event.target.value) node.asset.variantId = event.target.value;
+                      else delete node.asset.variantId;
+                    }, "Changed the asset variant.")} className="select-control text-[11px] font-normal">
+                      <option value="">Default</option>
+                      {boundAsset.variants.map((variant) => <option key={variant.id} value={variant.id}>{variant.label}</option>)}
+                    </select>
+                  </label>
+                ) : null}
+                <SegmentedControl disabled={Boolean(componentContext)} label="Fit" value={selectedNode.asset.fit} options={[{ value: "contain", label: "Contain" }, { value: "cover", label: "Cover" }, { value: "fill", label: "Fill" }, { value: "none", label: "None" }]} onChange={(value) => updateNode((node) => { if (node.asset) node.asset.fit = value; }, `Changed asset fit to ${value}.`)} />
+                <div className="grid grid-cols-2 gap-2">
+                  <NumberField disabled={Boolean(componentContext)} label="Focal X" value={selectedNode.asset.focalPoint.x} min={0} max={1} step={0.05} onCommit={(value) => { if (value !== undefined) updateNode((node) => { if (node.asset) node.asset.focalPoint.x = value; }, "Changed asset focal X."); }} />
+                  <NumberField disabled={Boolean(componentContext)} label="Focal Y" value={selectedNode.asset.focalPoint.y} min={0} max={1} step={0.05} onCommit={(value) => { if (value !== undefined) updateNode((node) => { if (node.asset) node.asset.focalPoint.y = value; }, "Changed asset focal Y."); }} />
+                </div>
+                <label className="flex min-h-8 items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--field)] px-2.5 text-[11px] font-medium text-[var(--muted)]">Decorative
+                  <input type="checkbox" checked={selectedNode.asset.decorative} disabled={Boolean(componentContext)} onChange={(event) => updateNode((node) => { if (node.asset) node.asset.decorative = event.target.checked; }, "Changed asset accessibility semantics.")} className="size-4 accent-[var(--accent)]" />
+                </label>
+              </>
+            ) : bindableAssets.length === 0 ? <p className="text-[10px] leading-relaxed text-[var(--faint)]">Import a project-owned or licensed local asset before binding content.</p> : null}
+          </Section>
+
           <Section title="Content">
             <TextField
               label="Label"
               value={selectedNode.intent.label ?? ""}
               onCommit={(next) => {
                 if (next && next !== selectedNode.intent.label) {
-                  updateNode((node) => { node.intent.label = next; node.accessibility.label = next; }, "Updated visible and accessible label.");
+                  if (componentContext) onSetComponentOverride({ op: "set-label", target: componentContext.targetId, value: next });
+                  else updateNode((node) => { node.intent.label = next; node.accessibility.label = next; }, "Updated visible and accessible label.");
                 }
               }}
             />
@@ -317,11 +458,12 @@ export function Inspector({
               multiline
               onCommit={(next) => {
                 if (next.length >= 3 && next !== selectedNode.intent.purpose) {
-                  updateNode((node) => { node.intent.purpose = next; }, "Refined the node's intent purpose.");
+                  if (componentContext) onSetComponentOverride({ op: "set-purpose", target: componentContext.targetId, value: next });
+                  else updateNode((node) => { node.intent.purpose = next; }, "Refined the node's intent purpose.");
                 }
               }}
             />
-            <TextField
+            {!componentContext ? <TextField
               label="Accessibility hint"
               value={selectedNode.accessibility.hint ?? ""}
               placeholder="Optional guidance for assistive tech"
@@ -333,30 +475,33 @@ export function Inspector({
                   }, next ? "Added an accessibility hint." : "Removed the accessibility hint.");
                 }
               }}
-            />
+            /> : null}
             <SegmentedControl
               label="Importance"
               value={selectedNode.intent.importance}
               options={[{ value: "primary", label: "Primary" }, { value: "secondary", label: "Secondary" }, { value: "supporting", label: "Support" }]}
-              onChange={(value) => updateNode((node) => { node.intent.importance = value; }, `Marked the node as ${value}.`)}
+              onChange={(value) => componentContext
+                ? onSetComponentOverride({ op: "set-importance", target: componentContext.targetId, value })
+                : updateNode((node) => { node.intent.importance = value; }, `Marked the node as ${value}.`)}
             />
           </Section>
 
           <Section title="Layout">
-            <SegmentedControl label="Axis" value={selectedNode.layout.axis} options={[{ value: "vertical", label: "Vertical" }, { value: "horizontal", label: "Horizontal" }, { value: "overlay", label: "Overlay" }]} onChange={(value) => updateNode((node) => { node.layout.axis = value; }, `Changed layout axis to ${value}.`)} />
-            <SegmentedControl label="Width" value={selectedNode.layout.width} options={[{ value: "hug", label: "Hug" }, { value: "fill", label: "Fill" }, { value: "fixed", label: "Fixed" }]} onChange={(value) => updateNode((node) => { node.layout.width = value; }, `Changed semantic width to ${value}.`)} />
-            <SegmentedControl label="Height" value={selectedNode.layout.height} options={[{ value: "hug", label: "Hug" }, { value: "fill", label: "Fill" }, { value: "fixed", label: "Fixed" }]} onChange={(value) => updateNode((node) => { node.layout.height = value; }, `Changed semantic height to ${value}.`)} />
+            {componentContext ? <p className="rounded-lg bg-[var(--accent-soft)] p-2.5 text-[10px] leading-relaxed text-[var(--accent-text)]">Attached instances own outer sizing and position. Gap and padding become explicit instance overrides; structural layout stays with the definition.</p> : null}
+            <SegmentedControl disabled={Boolean(componentContext)} label="Axis" value={selectedNode.layout.axis} options={[{ value: "vertical", label: "Vertical" }, { value: "horizontal", label: "Horizontal" }, { value: "overlay", label: "Overlay" }]} onChange={(value) => updateNode((node) => { node.layout.axis = value; }, `Changed layout axis to ${value}.`)} />
+            <SegmentedControl disabled={componentNested} label="Width" value={selectedNode.layout.width} options={[{ value: "hug", label: "Hug" }, { value: "fill", label: "Fill" }, { value: "fixed", label: "Fixed" }]} onChange={(value) => updateNode((node) => { node.layout.width = value; }, `Changed semantic width to ${value}.`)} />
+            <SegmentedControl disabled={componentNested} label="Height" value={selectedNode.layout.height} options={[{ value: "hug", label: "Hug" }, { value: "fill", label: "Fill" }, { value: "fixed", label: "Fixed" }]} onChange={(value) => updateNode((node) => { node.layout.height = value; }, `Changed semantic height to ${value}.`)} />
             {selectedNode.layout.width === "fixed" || selectedNode.layout.height === "fixed" ? (
               <div className="grid grid-cols-2 gap-2">
-                {selectedNode.layout.width === "fixed" ? <NumberField label="Fixed width" value={selectedNode.layout.fixedWidth} min={1} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.fixedWidth; else node.layout.fixedWidth = value; }, "Updated the fixed width constraint.")} /> : <span />}
-                {selectedNode.layout.height === "fixed" ? <NumberField label="Fixed height" value={selectedNode.layout.fixedHeight} min={1} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.fixedHeight; else node.layout.fixedHeight = value; }, "Updated the fixed height constraint.")} /> : null}
+                {selectedNode.layout.width === "fixed" ? <NumberField disabled={componentNested} label="Fixed width" value={selectedNode.layout.fixedWidth} min={1} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.fixedWidth; else node.layout.fixedWidth = value; }, "Updated the fixed width constraint.")} /> : <span />}
+                {selectedNode.layout.height === "fixed" ? <NumberField disabled={componentNested} label="Fixed height" value={selectedNode.layout.fixedHeight} min={1} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.fixedHeight; else node.layout.fixedHeight = value; }, "Updated the fixed height constraint.")} /> : null}
               </div>
             ) : null}
             <div className="grid grid-cols-2 gap-2">
-              <NumberField label="Min width" value={selectedNode.layout.minWidth} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.minWidth; else node.layout.minWidth = value; }, "Updated the minimum width.")} />
-              <NumberField label="Max width" value={selectedNode.layout.maxWidth} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.maxWidth; else node.layout.maxWidth = value; }, "Updated the maximum width.")} />
-              <NumberField label="Min height" value={selectedNode.layout.minHeight} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.minHeight; else node.layout.minHeight = value; }, "Updated the minimum height.")} />
-              <NumberField label="Max height" value={selectedNode.layout.maxHeight} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.maxHeight; else node.layout.maxHeight = value; }, "Updated the maximum height.")} />
+              <NumberField disabled={componentNested} label="Min width" value={selectedNode.layout.minWidth} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.minWidth; else node.layout.minWidth = value; }, "Updated the minimum width.")} />
+              <NumberField disabled={componentNested} label="Max width" value={selectedNode.layout.maxWidth} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.maxWidth; else node.layout.maxWidth = value; }, "Updated the maximum width.")} />
+              <NumberField disabled={componentNested} label="Min height" value={selectedNode.layout.minHeight} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.minHeight; else node.layout.minHeight = value; }, "Updated the minimum height.")} />
+              <NumberField disabled={componentNested} label="Max height" value={selectedNode.layout.maxHeight} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.maxHeight; else node.layout.maxHeight = value; }, "Updated the maximum height.")} />
             </div>
             {selectedNode.layout.position ? (
               <div className="grid grid-cols-3 gap-2" data-testid="freeform-position-controls">
@@ -365,6 +510,7 @@ export function Inspector({
                     key={field}
                     label={`Position ${field.toUpperCase()}`}
                     value={selectedNode.layout.position?.[field]}
+                    disabled={componentNested}
                     min={0}
                     max={2_048}
                     onCommit={(value) => {
@@ -377,17 +523,17 @@ export function Inspector({
                 ))}
               </div>
             ) : null}
-            <SegmentedControl label="Align" value={selectedNode.layout.align} options={[{ value: "start", label: "Start" }, { value: "center", label: "Center" }, { value: "end", label: "End" }, { value: "stretch", label: "Stretch" }]} onChange={(value) => updateNode((node) => { node.layout.align = value; }, `Changed cross-axis alignment to ${value}.`)} />
-            <SegmentedControl label="Justify" value={selectedNode.layout.justify} options={[{ value: "start", label: "Start" }, { value: "center", label: "Center" }, { value: "end", label: "End" }, { value: "space-between", label: "Between" }]} onChange={(value) => updateNode((node) => { node.layout.justify = value; }, `Changed main-axis justification to ${value}.`)} />
-            <SegmentedControl label="Overflow" value={selectedNode.layout.overflow} options={[{ value: "visible", label: "Visible" }, { value: "clip", label: "Clip" }, { value: "scroll", label: "Scroll" }]} onChange={(value) => updateNode((node) => { node.layout.overflow = value; }, `Changed overflow behavior to ${value}.`)} />
+            <SegmentedControl disabled={Boolean(componentContext)} label="Align" value={selectedNode.layout.align} options={[{ value: "start", label: "Start" }, { value: "center", label: "Center" }, { value: "end", label: "End" }, { value: "stretch", label: "Stretch" }]} onChange={(value) => updateNode((node) => { node.layout.align = value; }, `Changed cross-axis alignment to ${value}.`)} />
+            <SegmentedControl disabled={Boolean(componentContext)} label="Justify" value={selectedNode.layout.justify} options={[{ value: "start", label: "Start" }, { value: "center", label: "Center" }, { value: "end", label: "End" }, { value: "space-between", label: "Between" }]} onChange={(value) => updateNode((node) => { node.layout.justify = value; }, `Changed main-axis justification to ${value}.`)} />
+            <SegmentedControl disabled={Boolean(componentContext)} label="Overflow" value={selectedNode.layout.overflow} options={[{ value: "visible", label: "Visible" }, { value: "clip", label: "Clip" }, { value: "scroll", label: "Scroll" }]} onChange={(value) => updateNode((node) => { node.layout.overflow = value; }, `Changed overflow behavior to ${value}.`)} />
             <div className="grid grid-cols-2 gap-2">
-              <label className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">Gap token<select value={selectedNode.layout.gapToken} onChange={(event) => updateNode((node) => { node.layout.gapToken = event.target.value; }, `Bound gap to ${event.target.value}.`)} className="select-control font-mono text-[11px] font-normal">{Object.keys(graph.tokens.spacing).map((token) => <option key={token}>{token}</option>)}</select></label>
-              <label className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">Padding token<select value={selectedNode.layout.paddingToken} onChange={(event) => updateNode((node) => { node.layout.paddingToken = event.target.value; }, `Bound padding to ${event.target.value}.`)} className="select-control font-mono text-[11px] font-normal">{Object.keys(graph.tokens.spacing).map((token) => <option key={token}>{token}</option>)}</select></label>
+              <label className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">Gap token<select value={selectedNode.layout.gapToken} onChange={(event) => componentContext ? onSetComponentOverride({ op: "set-gap-token", target: componentContext.targetId, value: event.target.value }) : updateNode((node) => { node.layout.gapToken = event.target.value; }, `Bound gap to ${event.target.value}.`)} className="select-control font-mono text-[11px] font-normal">{Object.keys(resolvedTokens.spacing).map((token) => <option key={token}>{token}</option>)}</select></label>
+              <label className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">Padding token<select value={selectedNode.layout.paddingToken} onChange={(event) => componentContext ? onSetComponentOverride({ op: "set-padding-token", target: componentContext.targetId, value: event.target.value }) : updateNode((node) => { node.layout.paddingToken = event.target.value; }, `Bound padding to ${event.target.value}.`)} className="select-control font-mono text-[11px] font-normal">{Object.keys(resolvedTokens.spacing).map((token) => <option key={token}>{token}</option>)}</select></label>
             </div>
             {isContainerNode(selectedNode) ? (
               <div className="grid grid-cols-2 gap-2">
-                <NumberField label="Columns" value={selectedNode.layout.columns} min={1} max={12} onCommit={(value) => { if (value !== undefined) updateNode((node) => { node.layout.columns = Math.round(value); }, `Set the container to ${Math.round(value)} columns.`); }} />
-                <NumberField label="Split ratio" value={selectedNode.layout.splitRatio} min={0.1} max={0.9} step={0.05} onCommit={(value) => { if (value !== undefined) updateNode((node) => { node.layout.splitRatio = value; }, `Set the split ratio to ${value}.`); }} />
+                <NumberField disabled={Boolean(componentContext)} label="Columns" value={selectedNode.layout.columns} min={1} max={12} onCommit={(value) => { if (value !== undefined) updateNode((node) => { node.layout.columns = Math.round(value); }, `Set the container to ${Math.round(value)} columns.`); }} />
+                <NumberField disabled={Boolean(componentContext)} label="Split ratio" value={selectedNode.layout.splitRatio} min={0.1} max={0.9} step={0.05} onCommit={(value) => { if (value !== undefined) updateNode((node) => { node.layout.splitRatio = value; }, `Set the split ratio to ${value}.`); }} />
               </div>
             ) : null}
             {selectedNode.kind === "adaptive" && selectedNode.layout.adaptive ? (
@@ -395,7 +541,7 @@ export function Inspector({
                 {(["compact", "regular"] as const).map((deviceClass) => (
                   <label key={deviceClass} className="grid gap-1.5 text-[11px] font-medium capitalize text-[var(--muted)]">
                     {deviceClass} mode
-                    <select value={selectedNode.layout.adaptive![deviceClass]} onChange={(event) => updateNode((node) => { if (node.layout.adaptive) node.layout.adaptive[deviceClass] = event.target.value as typeof adaptiveModes[number]; }, `Changed the ${deviceClass} adaptive mode.`)} className="select-control text-[11px] font-normal">
+                    <select disabled={Boolean(componentContext)} value={selectedNode.layout.adaptive![deviceClass]} onChange={(event) => updateNode((node) => { if (node.layout.adaptive) node.layout.adaptive[deviceClass] = event.target.value as typeof adaptiveModes[number]; }, `Changed the ${deviceClass} adaptive mode.`)} className="select-control text-[11px] font-normal disabled:cursor-not-allowed disabled:opacity-45">
                       {adaptiveModes.map((mode) => <option key={mode} value={mode}>{mode}</option>)}
                     </select>
                   </label>
@@ -415,7 +561,7 @@ export function Inspector({
             ) : null}
           </Section>
 
-          {contractStates.length > 0 ? (
+          {!componentContext && contractStates.length > 0 ? (
             <Section title="State visibility">
               <div className="flex flex-wrap gap-1.5">
                 {contractStates.map((state) => {
@@ -443,7 +589,7 @@ export function Inspector({
             </Section>
           ) : null}
 
-          {isAction && contract && contract.events.length > 0 ? (
+          {!componentContext && isAction && contract && contract.events.length > 0 ? (
             <Section title="Interaction">
               <label className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">
                 Emits event
@@ -476,7 +622,7 @@ export function Inspector({
           ) : null}
 
           <Section title="Style">
-            <SegmentedControl label="Emphasis" value={selectedNode.style.emphasis} options={[{ value: "quiet", label: "Quiet" }, { value: "normal", label: "Normal" }, { value: "strong", label: "Strong" }]} onChange={(value) => updateNode((node) => { node.style.emphasis = value; }, `Changed semantic emphasis to ${value}.`)} />
+            <SegmentedControl label="Emphasis" value={selectedNode.style.emphasis} options={[{ value: "quiet", label: "Quiet" }, { value: "normal", label: "Normal" }, { value: "strong", label: "Strong" }]} onChange={(value) => componentContext ? onSetComponentOverride({ op: "set-emphasis", target: componentContext.targetId, value }) : updateNode((node) => { node.style.emphasis = value; }, `Changed semantic emphasis to ${value}.`)} />
             <p className="rounded-lg bg-[var(--accent-soft)] p-3 text-[11px] leading-relaxed text-[var(--accent-text)]">
               Edits change graph properties, never viewport coordinates. React and SwiftUI lower the same relation differently.
             </p>

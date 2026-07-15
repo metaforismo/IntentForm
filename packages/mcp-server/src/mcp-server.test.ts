@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -9,14 +9,23 @@ import { toolDefinitions } from "./index.ts";
 import {
   applyMigration,
   applyPatch,
+  collectProjectAssets,
   compileProject,
+  componentSchema,
   describeProject,
   diffAgainstRevision,
+  exportProjectTokens,
+  importProjectAssetFromInbox,
+  importProjectTokens,
+  instantiateProjectComponent,
+  listTokenModes,
   projectRevisions,
   previewMigration,
   previewPatch,
   replaceGraph,
   revertProject,
+  searchComponents,
+  searchProjectAssets,
   verifyProject,
 } from "./tools.ts";
 import {
@@ -31,6 +40,36 @@ import {
 } from "./store.ts";
 
 let dir: string;
+
+function legacyDemoGraph(version = "0.0.1") {
+  const legacy = structuredClone(demoGraph) as unknown as Record<string, unknown> & {
+    tokens: unknown;
+    assets?: unknown;
+  };
+  legacy.schemaVersion = version;
+  legacy.tokens = structuredClone(demoGraph.tokens.modes[demoGraph.tokens.defaultMode]!.values);
+  delete legacy.assets;
+  return legacy;
+}
+
+function migratedLegacyDemoGraph() {
+  const migrated = structuredClone(demoGraph);
+  migrated.tokens = {
+    defaultMode: "default",
+    activeMode: "default",
+    modes: {
+      default: {
+        name: "Default",
+        values: structuredClone(demoGraph.tokens.modes[demoGraph.tokens.defaultMode]!.values),
+      },
+    },
+    aliases: {},
+    deprecated: {},
+    extensions: {},
+  };
+  migrated.assets = [];
+  return migrated;
+}
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "intentform-mcp-"));
@@ -54,6 +93,23 @@ describe("IntentForm agent project store", () => {
     });
     expect(byName.get("intentform_preview_patch")?.inputSchema)
       .toEqual(byName.get("intentform_apply_patch")?.inputSchema);
+    expect(byName.get("intentform_search_components")?.inputSchema).toMatchObject({ additionalProperties: false });
+    expect(byName.get("intentform_component_schema")?.inputSchema).toMatchObject({ additionalProperties: false });
+    expect(byName.get("intentform_instantiate_component")?.inputSchema).toMatchObject({
+      required: ["definitionId", "instanceId", "screenId"],
+      additionalProperties: false,
+    });
+    expect([...byName.keys()].filter((name) => name.startsWith("intentform_"))).toHaveLength(21);
+    for (const name of [
+      "intentform_list_token_modes",
+      "intentform_import_dtcg",
+      "intentform_export_dtcg",
+      "intentform_search_assets",
+      "intentform_import_asset",
+      "intentform_asset_gc",
+    ]) {
+      expect(byName.get(name)?.inputSchema).toMatchObject({ additionalProperties: false });
+    }
   });
 
   it("seeds a missing project from the verified sample and validates on load", () => {
@@ -66,8 +122,7 @@ describe("IntentForm agent project store", () => {
   });
 
   it("previews an old schema without writing, then checkpoints exact bytes before migration", () => {
-    const legacy = structuredClone(demoGraph) as unknown as Record<string, unknown>;
-    legacy.schemaVersion = "0.0.1";
+    const legacy = legacyDemoGraph();
     const source = `  ${JSON.stringify(legacy, null, 4)}\n`;
     writeFileSync(join(dir, "graph.json"), source, "utf8");
 
@@ -75,7 +130,7 @@ describe("IntentForm agent project store", () => {
     expect(preview).toMatchObject({
       status: "migration-required",
       fromVersion: "0.0.1",
-      toVersion: "0.2.0",
+      toVersion: "0.4.0",
       sourceFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
     expect(readdirSync(dir)).toEqual(["graph.json"]);
@@ -86,20 +141,19 @@ describe("IntentForm agent project store", () => {
     expect(applied).toMatchObject({
       status: "current",
       fromVersion: "0.0.1",
-      toVersion: "0.2.0",
+      toVersion: "0.4.0",
       fingerprint: expect.stringMatching(/^[a-f0-9]{8}$/),
     });
     expect(applied.checkpoint).toMatch(/migration-checkpoints/);
     expect(readFileSync(applied.checkpoint!, "utf8")).toBe(source);
-    expect(JSON.parse(readFileSync(join(dir, "graph.json"), "utf8"))).toEqual(demoGraph);
-    expect(loadProject(dir).graph).toEqual(demoGraph);
+    expect(JSON.parse(readFileSync(join(dir, "graph.json"), "utf8"))).toEqual(migratedLegacyDemoGraph());
+    expect(loadProject(dir).graph).toEqual(migratedLegacyDemoGraph());
     expect(compileProject(dir, "react", false).fileCount).toBeGreaterThan(0);
     expect(compileProject(dir, "swiftui", false).fileCount).toBeGreaterThan(0);
   });
 
   it("leaves the old graph untouched when its checkpoint cannot be written", () => {
-    const legacy = structuredClone(demoGraph) as unknown as Record<string, unknown>;
-    legacy.schemaVersion = "0.0.1";
+    const legacy = legacyDemoGraph();
     const source = JSON.stringify(legacy);
     writeFileSync(join(dir, "graph.json"), source, "utf8");
     writeFileSync(join(dir, "migration-checkpoints"), "not-a-directory", "utf8");
@@ -121,8 +175,7 @@ describe("IntentForm agent project store", () => {
   });
 
   it("rejects a stale migration preview without creating a checkpoint", () => {
-    const legacy = structuredClone(demoGraph) as unknown as Record<string, unknown>;
-    legacy.schemaVersion = "0.0.1";
+    const legacy = legacyDemoGraph();
     writeFileSync(join(dir, "graph.json"), JSON.stringify(legacy), "utf8");
     const preview = previewProjectMigration(dir);
     expect(preview.status).toBe("migration-required");
@@ -147,8 +200,7 @@ describe("IntentForm agent project store", () => {
   });
 
   it("exposes read-only preview and explicit apply operations to MCP callers", () => {
-    const legacy = structuredClone(demoGraph) as unknown as Record<string, unknown>;
-    legacy.schemaVersion = "0.0.1";
+    const legacy = legacyDemoGraph();
     writeFileSync(join(dir, "graph.json"), JSON.stringify(legacy), "utf8");
 
     const preview = previewMigration(dir);
@@ -158,21 +210,21 @@ describe("IntentForm agent project store", () => {
 
     expect(applied).toMatchObject({ status: "current", checkpoint: expect.any(String) });
     expect(applied).not.toHaveProperty("graph");
-    expect(previewMigration(dir)).toMatchObject({ status: "current", fromVersion: "0.2.0" });
+    expect(previewMigration(dir)).toMatchObject({ status: "current", fromVersion: "0.4.0" });
   });
 
   it("writes atomically and rejects a stale writer without losing the winning graph", () => {
     const opened = loadProject(dir);
     const agentGraph = structuredClone(opened.graph);
-    agentGraph.tokens.colors["color.accent"] = "#7a4b9e";
+    agentGraph.tokens.modes.default!.values.colors["color.accent"] = "#7a4b9e";
     const agentSave = saveProject(dir, agentGraph, "agent color change", opened.fingerprint);
 
     const staleStudioGraph = structuredClone(opened.graph);
-    staleStudioGraph.tokens.colors["color.accent"] = "#315fcb";
+    staleStudioGraph.tokens.modes.default!.values.colors["color.accent"] = "#315fcb";
     expect(() => saveProject(dir, staleStudioGraph, "stale studio save", opened.fingerprint))
       .toThrow(ProjectConflictError);
 
-    expect(loadProject(dir).graph.tokens.colors["color.accent"]).toBe("#7a4b9e");
+    expect(loadProject(dir).graph.tokens.modes.default!.values.colors["color.accent"]).toBe("#7a4b9e");
     expect(loadProject(dir).fingerprint).toBe(agentSave.fingerprint);
     expect(projectRevisions(dir).revisions).toHaveLength(1);
     expect(readdirSync(dir).filter((entry) => entry.startsWith(".") && entry.endsWith(".tmp"))).toEqual([]);
@@ -199,7 +251,7 @@ describe("IntentForm agent project store", () => {
     expect(summary.project).toEqual({
       kind: "local",
       root: dir,
-      graphFile: join(dir, ".intentform", "graph.json"),
+      graphFile: join(dir, "graph.json"),
     });
     expect(summary.product.name).toBe("Verdant Pay");
     expect(summary.screens.map((screen) => screen.id)).toEqual(["home", "payment-request", "receipt", "layout-lab"]);
@@ -229,6 +281,100 @@ describe("IntentForm agent project store", () => {
       message: expect.stringMatching(/react target is not enabled/i),
     });
     expect(summary.outputs.swiftui.status).toBe("generated");
+  });
+
+  it("searches component schemas and instantiates one through a revisioned agent transaction", () => {
+    const found = searchComponents(dir, "balance");
+    expect(found).toMatchObject({
+      count: 1,
+      components: [{
+        id: "intent.balance-summary",
+        props: [{ name: "label", type: "string", required: false, default: "Available balance" }],
+      }],
+    });
+    expect(componentSchema(dir, "intent.balance-summary")).toMatchObject({
+      abiVersion: "1.0.0",
+      schemaVersion: "0.4.0",
+      definitions: [{ id: "intent.balance-summary", version: "1.0.0" }],
+    });
+
+    const result = instantiateProjectComponent(dir, {
+      definitionId: "intent.balance-summary",
+      instanceId: "layout-lab.agent-balance",
+      screenId: "layout-lab",
+      props: { label: "Agent balance" },
+    });
+    expect(result.revision?.reason).toBe("instantiate intent.balance-summary as layout-lab.agent-balance");
+    expect(result.changes).not.toHaveLength(0);
+    expect(findGraphNodeLocation(loadProject(dir).graph, "layout-lab.agent-balance")?.node).toMatchObject({
+      intent: { label: "Agent balance" },
+      componentInstance: { definitionId: "intent.balance-summary" },
+    });
+    expect(projectRevisions(dir).revisions).toHaveLength(1);
+
+    expect(() => instantiateProjectComponent(dir, {
+      definitionId: "intent.missing",
+      instanceId: "layout-lab.missing",
+      screenId: "layout-lab",
+    })).toThrow(/unknown component definition/i);
+    expect(projectRevisions(dir).revisions).toHaveLength(1);
+  });
+
+  it("round-trips DTCG tokens through explicit read and revisioned import tools", () => {
+    expect(listTokenModes(dir)).toMatchObject({
+      defaultMode: "default",
+      activeMode: "default",
+      modes: [
+        { id: "default", overrideCount: 11 },
+        { id: "evening", overrideCount: 4 },
+      ],
+    });
+    const exported = exportProjectTokens(dir);
+    expect(exported).toMatchObject({ format: "DTCG", formatVersion: "2025.10", tokenCount: 12 });
+    expect(exported.content).toBe(exportProjectTokens(dir).content);
+
+    const document = JSON.parse(exported.content) as {
+      color: { accent: { $value: { components: number[] } } };
+      $extensions: Record<string, unknown>;
+    };
+    document.color.accent.$value.components = [0.478, 0.294, 0.62];
+    delete document.$extensions["org.intentform.tokens"];
+    const imported = importProjectTokens(dir, document);
+    expect(imported.diagnostics).toContainEqual(expect.objectContaining({ code: "dtcg.imported.2025.10" }));
+    expect(imported.revision?.reason).toBe("import DTCG 2025.10 token document");
+    expect(loadProject(dir).graph.tokens.modes.default?.values.colors["color.accent"]).toBe("#7a4b9e");
+    expect(projectRevisions(dir).revisions).toHaveLength(1);
+  });
+
+  it("imports, searches, compiles, verifies, and garbage-collects licensed assets without leaking source paths", () => {
+    mkdirSync(join(dir, "imports"), { recursive: true });
+    writeFileSync(join(dir, "imports", "mark.svg"), '<svg viewBox="0 0 24 12"><path d="M0 0h24v12H0z"/></svg>');
+    const imported = importProjectAssetFromInbox(dir, {
+      importName: "mark.svg",
+      id: "brand.mark",
+      name: "Brand mark",
+      kind: "icon",
+      license: { name: "Project-owned", spdx: "CC0-1.0", redistribution: "allowed" },
+      exportPolicy: "copy",
+      metadata: { role: "brand" },
+    });
+    expect(imported.asset).toMatchObject({ id: "brand.mark", kind: "icon", mediaType: "image/svg+xml" });
+    expect(JSON.stringify(imported.asset)).not.toContain("mark.svg");
+    expect(searchProjectAssets(dir, "cc0")).toMatchObject({
+      count: 1,
+      assets: [{ id: "brand.mark", diagnostics: [] }],
+    });
+
+    const compiled = compileProject(dir, "react", true);
+    expect(compiled.assetDiagnostics).toEqual([]);
+    expect(compiled.copiedAssets).toEqual([join(dir, "output", "react", "public", imported.asset.storageKey)]);
+    expect(readFileSync(compiled.copiedAssets![0]!, "utf8")).toContain("<svg");
+
+    writeFileSync(join(dir, "assets", "orphan.bin"), "orphan");
+    expect(collectProjectAssets(dir)).toEqual(expect.objectContaining({ apply: false, unused: ["assets/orphan.bin"], removed: [] }));
+    expect(collectProjectAssets(dir, true)).toEqual(expect.objectContaining({ apply: true, removed: ["assets/orphan.bin"] }));
+    expect(readdirSync(join(dir, "assets"))).toEqual([`${imported.asset.digest}.svg`]);
+    expect(projectRevisions(dir).revisions).toHaveLength(1);
   });
 
   it("applies a typed patch atomically, records a revision and re-verifies", () => {
@@ -386,10 +532,10 @@ describe("IntentForm agent project store", () => {
   it("rejects invalid replacement graphs and accepts valid ones with a diff", () => {
     expect(() => replaceGraph(dir, { schemaVersion: "0.2.0" }, "broken")).toThrow();
     const themed = structuredClone(demoGraph);
-    themed.tokens.colors["color.accent"] = "#7a4b9e";
+    themed.tokens.modes.default!.values.colors["color.accent"] = "#7a4b9e";
     const result = replaceGraph(dir, themed, "brand accent change");
     expect(result.changes).toEqual([
-      { path: "tokens.colors.color.accent", before: "#397461", after: "#7a4b9e" },
+      { path: "tokens.modes.default.values.colors.color.accent", before: "#397461", after: "#7a4b9e" },
     ]);
   });
 

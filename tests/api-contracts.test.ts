@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -7,6 +8,7 @@ import { applyGraphPatch } from "../packages/semantic-schema/src/index";
 import { verifyGraph } from "../packages/verifier/src/index";
 import { POST as interpret } from "../apps/studio-web/app/api/interpret/route";
 import { GET as getProject, POST as migrateProjectRoute, PUT as putProject } from "../apps/studio-web/app/api/project/route";
+import { GET as getProjectAsset } from "../apps/studio-web/app/api/project/assets/[digest]/route";
 import { POST as repair } from "../apps/studio-web/app/api/repair/route";
 import { loadProject, saveProject } from "../packages/mcp-server/src/store";
 import {
@@ -38,6 +40,36 @@ function jsonRequest(url: string, body: unknown, method = "POST", headers: Heade
     headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
+}
+
+function legacyDemoGraph() {
+  const legacy = structuredClone(demoGraph) as unknown as Record<string, unknown> & {
+    tokens: unknown;
+    assets?: unknown;
+  };
+  legacy.schemaVersion = "0.0.1";
+  legacy.tokens = structuredClone(demoGraph.tokens.modes[demoGraph.tokens.defaultMode]!.values);
+  delete legacy.assets;
+  return legacy;
+}
+
+function migratedLegacyDemoGraph() {
+  const migrated = structuredClone(demoGraph);
+  migrated.tokens = {
+    defaultMode: "default",
+    activeMode: "default",
+    modes: {
+      default: {
+        name: "Default",
+        values: structuredClone(demoGraph.tokens.modes[demoGraph.tokens.defaultMode]!.values),
+      },
+    },
+    aliases: {},
+    deprecated: {},
+    extensions: {},
+  };
+  migrated.assets = [];
+  return migrated;
 }
 
 describe("strict API request contracts", () => {
@@ -171,6 +203,87 @@ describe("local project trust boundary", () => {
     await expect(probe.json()).resolves.toEqual({ available: false });
   });
 
+  it("serves only manifest-authorized, digest-verified local media and never fonts", async () => {
+    delete process.env.VERCEL;
+    delete process.env.VERCEL_ENV;
+    const projectDir = mkdtempSync(join(tmpdir(), "intentform-api-assets-"));
+    process.env.INTENTFORM_PROJECT_DIR = projectDir;
+    try {
+      const opened = loadProject(projectDir);
+      const graph = structuredClone(opened.graph);
+      const bytes = Buffer.from('<svg viewBox="0 0 8 8"><path d="M0 0h8v8H0z"/></svg>\n');
+      const digest = createHash("sha256").update(bytes).digest("hex");
+      graph.assets.push({
+        id: "brand.mark",
+        name: "Brand mark",
+        kind: "icon",
+        digest,
+        mediaType: "image/svg+xml",
+        byteLength: bytes.byteLength,
+        storageKey: `assets/${digest}.svg`,
+        width: 8,
+        height: 8,
+        variants: [],
+        license: { name: "Project-owned", redistribution: "allowed" },
+        exportPolicy: "copy",
+        metadata: {},
+      });
+      const fontDigest = "b".repeat(64);
+      graph.assets.push({
+        id: "brand.font",
+        name: "Brand font",
+        kind: "font",
+        digest: fontDigest,
+        mediaType: "font/woff2",
+        byteLength: 4,
+        storageKey: `assets/${fontDigest}.woff2`,
+        variants: [],
+        license: { name: "Project-owned", redistribution: "allowed" },
+        exportPolicy: "copy",
+        metadata: {},
+      });
+      saveProject(projectDir, graph, "seed asset route", opened.fingerprint);
+      mkdirSync(join(projectDir, "assets"), { recursive: true });
+      writeFileSync(join(projectDir, "assets", `${digest}.svg`), bytes);
+
+      const response = await getProjectAsset(
+        new Request(`http://localhost/api/project/assets/${digest}`),
+        { params: Promise.resolve({ digest }) },
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("image/svg+xml");
+      expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(response.headers.get("content-security-policy")).toContain("sandbox");
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(bytes);
+
+      const invalid = await getProjectAsset(
+        new Request("http://localhost/api/project/assets/not-a-digest"),
+        { params: Promise.resolve({ digest: "not-a-digest" }) },
+      );
+      expect(invalid.status).toBe(400);
+      const missingDigest = "f".repeat(64);
+      const missing = await getProjectAsset(
+        new Request(`http://localhost/api/project/assets/${missingDigest}`),
+        { params: Promise.resolve({ digest: missingDigest }) },
+      );
+      expect(missing.status).toBe(404);
+      const font = await getProjectAsset(
+        new Request(`http://localhost/api/project/assets/${fontDigest}`),
+        { params: Promise.resolve({ digest: fontDigest }) },
+      );
+      expect(font.status).toBe(404);
+
+      process.env.VERCEL = "1";
+      const hosted = await getProjectAsset(
+        new Request(`https://intentform.example/api/project/assets/${digest}`),
+        { params: Promise.resolve({ digest }) },
+      );
+      expect(hosted.status).toBe(403);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects cross-origin browser requests and invalid save bodies", async () => {
     delete process.env.VERCEL;
     delete process.env.VERCEL_ENV;
@@ -197,11 +310,11 @@ describe("local project trust boundary", () => {
       const openedResponse = await getProject(new Request("http://localhost/api/project"));
       const opened = await openedResponse.json() as { fingerprint: string };
       const agentGraph = structuredClone(demoGraph);
-      agentGraph.tokens.colors["color.accent"] = "#7a4b9e";
+      agentGraph.tokens.modes.default!.values.colors["color.accent"] = "#7a4b9e";
       const agentSave = saveProject(projectDir, agentGraph, "agent edit", opened.fingerprint);
 
       const staleGraph = structuredClone(demoGraph);
-      staleGraph.tokens.colors["color.accent"] = "#315fcb";
+      staleGraph.tokens.modes.default!.values.colors["color.accent"] = "#315fcb";
       const response = await putProject(jsonRequest(
         "http://localhost/api/project",
         { graph: staleGraph, reason: "studio save", expectedFingerprint: opened.fingerprint },
@@ -213,7 +326,7 @@ describe("local project trust boundary", () => {
       expect(response.status).toBe(409);
       expect(payload.currentFingerprint).toBe(agentSave.fingerprint);
       expect(payload.error).toMatch(/changed after it was opened/i);
-      expect(loadProject(projectDir).graph.tokens.colors["color.accent"]).toBe("#7a4b9e");
+      expect(loadProject(projectDir).graph.tokens.modes.default!.values.colors["color.accent"]).toBe("#7a4b9e");
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
     }
@@ -225,8 +338,7 @@ describe("local project trust boundary", () => {
     const projectDir = mkdtempSync(join(tmpdir(), "intentform-api-migration-"));
     process.env.INTENTFORM_PROJECT_DIR = projectDir;
     try {
-      const legacy = structuredClone(demoGraph) as unknown as Record<string, unknown>;
-      legacy.schemaVersion = "0.0.1";
+      const legacy = legacyDemoGraph();
       const original = ` ${JSON.stringify(legacy, null, 2)}\n`;
       writeFileSync(join(projectDir, "graph.json"), original, "utf8");
 
@@ -235,7 +347,7 @@ describe("local project trust boundary", () => {
         migration: { sourceFingerprint: string; fromVersion: string; toVersion: string };
       };
       expect(open.status).toBe(409);
-      expect(blocked.migration).toMatchObject({ fromVersion: "0.0.1", toVersion: "0.2.0" });
+      expect(blocked.migration).toMatchObject({ fromVersion: "0.0.1", toVersion: "0.4.0" });
       expect(readdirSync(projectDir)).toEqual(["graph.json"]);
 
       const stale = await migrateProjectRoute(jsonRequest(
@@ -255,7 +367,7 @@ describe("local project trust boundary", () => {
       ));
       const payload = await applied.json() as { graph: typeof demoGraph; migration: { checkpointCreated: boolean } };
       expect(applied.status).toBe(200);
-      expect(payload.graph).toEqual(demoGraph);
+      expect(payload.graph).toEqual(migratedLegacyDemoGraph());
       expect(payload.migration.checkpointCreated).toBe(true);
       const checkpoints = readdirSync(join(projectDir, "migration-checkpoints"));
       expect(checkpoints).toHaveLength(1);

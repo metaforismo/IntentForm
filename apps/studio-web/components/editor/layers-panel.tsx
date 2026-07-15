@@ -4,6 +4,7 @@ import {
   ArrowDown,
   ArrowUp,
   Copy,
+  DownloadSimple,
   DotsSixVertical,
   Eye,
   EyeSlash,
@@ -15,15 +16,19 @@ import {
   TextT,
   TreeStructure,
   Trash,
+  UploadSimple,
   X,
 } from "@phosphor-icons/react";
 import {
   flattenSemanticNodes,
   isContainerNode,
+  parseGraph,
+  resolveTokenMode,
   type SemanticInterfaceGraph,
   type SemanticNode,
 } from "@intentform/semantic-schema";
 import { buildNodeIndex } from "@intentform/layout-engine";
+import { importDtcg, serializeDtcg, TOKEN_ASSET_LIMITS } from "@intentform/token-assets";
 import { Reorder } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IconButton } from "../ui/controls";
@@ -49,6 +54,7 @@ interface LayersPanelProps {
   onDuplicateScreen(screenId: string): void;
   onDeleteScreen(screenId: string): void;
   onReorderNodes(screenId: string, orderedIds: string[]): void;
+  onInstantiateComponent(definitionId: string): void;
   onUpdateTokens(mutate: (tokens: SemanticInterfaceGraph["tokens"]) => void, notice: string): void;
   onClose(): void;
   onDismissMobile(): void;
@@ -73,10 +79,12 @@ function PanelHeading({ label, action }: { label: string; action?: React.ReactNo
 function TokenNumberField({
   label,
   value,
+  min = 0,
   onCommit,
 }: {
   label: string;
   value: number;
+  min?: number;
   onCommit(next: number): void;
 }) {
   return (
@@ -85,11 +93,11 @@ function TokenNumberField({
       <input
         key={`${label}-${value}`}
         type="number"
-        min={0}
+        min={min}
         defaultValue={value}
         onBlur={(event) => {
           const next = Number(event.target.value);
-          if (Number.isFinite(next) && next >= 0 && next !== value) onCommit(next);
+          if (Number.isFinite(next) && next >= min && next !== value) onCommit(next);
         }}
         onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); }}
         className="min-h-8 rounded-lg border border-[var(--line)] bg-[var(--field)] px-2 text-right font-mono text-[11px] text-[var(--t-strong)] outline-none transition-colors hover:border-[var(--line-strong)] focus:border-[var(--accent)]"
@@ -117,6 +125,7 @@ export function LayersPanel({
   onDuplicateScreen,
   onDeleteScreen,
   onReorderNodes,
+  onInstantiateComponent,
   onUpdateTokens,
   onClose,
   onDismissMobile,
@@ -125,6 +134,8 @@ export function LayersPanel({
   const [pageOrder, setPageOrder] = useState<string[]>(() => graph.screens.map((item) => item.id));
   const pagesListRef = useRef<HTMLDivElement>(null);
   const layersListRef = useRef<HTMLDivElement>(null);
+  const tokenFileRef = useRef<HTMLInputElement>(null);
+  const [tokenTransferStatus, setTokenTransferStatus] = useState<{ kind: "success" | "error"; message: string } | null>(null);
 
   useEffect(() => {
     setOrder(screen.nodes.map((node) => node.id));
@@ -138,6 +149,7 @@ export function LayersPanel({
   const nodesById = useMemo(() => new Map(allNodes.map((node) => [node.id, node])), [allNodes]);
   const nodeIndex = useMemo(() => buildNodeIndex(screen.nodes), [screen.nodes]);
   const query = layerQuery.trim().toLowerCase();
+  const resolvedTokens = useMemo(() => resolveTokenMode(graph.tokens), [graph.tokens]);
   const filteredNodes = query
     ? allNodes.filter((node) => `${node.intent.label ?? ""} ${nodeNames[node.kind]} ${node.id}`.toLowerCase().includes(query))
     : null;
@@ -152,6 +164,42 @@ export function LayersPanel({
     const current = graph.screens.map((item) => item.id);
     if (pageOrder.length === current.length && pageOrder.every((id, index) => id === current[index])) return;
     onReorderScreens(pageOrder);
+  };
+
+  const importTokenFile = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      if (file.size > TOKEN_ASSET_LIMITS.maxDtcgBytes) throw new Error(`Token file exceeds ${TOKEN_ASSET_LIMITS.maxDtcgBytes} bytes.`);
+      const result = importDtcg(JSON.parse(await file.text()));
+      const candidate = structuredClone(graph);
+      candidate.tokens = result.tokens;
+      parseGraph(candidate);
+      onUpdateTokens((tokens) => {
+        tokens.defaultMode = result.tokens.defaultMode;
+        tokens.activeMode = result.tokens.activeMode;
+        tokens.modes = structuredClone(result.tokens.modes);
+        tokens.aliases = structuredClone(result.tokens.aliases);
+        tokens.deprecated = structuredClone(result.tokens.deprecated);
+        tokens.extensions = structuredClone(result.tokens.extensions);
+      }, "Imported DTCG 2025.10 tokens.");
+      setTokenTransferStatus({ kind: "success", message: result.diagnostics[0]?.message ?? "Token import complete." });
+    } catch (error) {
+      setTokenTransferStatus({ kind: "error", message: error instanceof Error ? error.message : "Token import failed." });
+    } finally {
+      if (tokenFileRef.current) tokenFileRef.current.value = "";
+    }
+  };
+
+  const exportTokenFile = () => {
+    const content = serializeDtcg(graph.tokens);
+    const url = URL.createObjectURL(new Blob([content], { type: "application/json" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    const slug = graph.product.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "intentform";
+    anchor.download = `${slug}.tokens.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setTokenTransferStatus({ kind: "success", message: "Exported deterministic DTCG 2025.10 JSON." });
   };
 
   const movePage = (screenId: string, direction: -1 | 1) => {
@@ -208,7 +256,7 @@ export function LayersPanel({
     >
       <div className="flex items-center justify-between border-b border-[var(--line)] px-2 pt-1">
         <div className="flex gap-0.5" role="tablist" aria-label="Left panel sections">
-          {([["layers", "Layers"], ["tokens", "Tokens"]] as const).map(([tab, label]) => (
+          {([["layers", "Layers"], ["components", "Library"], ["assets", "Assets"], ["tokens", "Tokens"]] as const).map(([tab, label], tabIndex, tabs) => (
             <button
               key={tab}
               id={`editor-${tab}-tab`}
@@ -221,11 +269,12 @@ export function LayersPanel({
               onKeyDown={(event) => {
                 if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
                 event.preventDefault();
-                const next = tab === "layers" ? "tokens" : "layers";
+                const delta = event.key === "ArrowRight" ? 1 : -1;
+                const next = tabs[(tabIndex + delta + tabs.length) % tabs.length]![0];
                 onRailTab(next);
                 requestAnimationFrame(() => document.getElementById(`editor-${next}-tab`)?.focus());
               }}
-              className={`min-h-9 border-b-2 px-3 text-[12px] font-medium transition-colors ${railTab === tab ? "border-[var(--accent)] text-[var(--ink)]" : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"}`}
+              className={`min-h-9 border-b-2 px-2 text-[11px] font-medium transition-colors ${railTab === tab ? "border-[var(--accent)] text-[var(--ink)]" : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"}`}
             >
               {label}
             </button>
@@ -319,19 +368,120 @@ export function LayersPanel({
             )}
           </div>
         </div>
+      ) : railTab === "components" ? (
+        <div id="editor-components-tabpanel" role="tabpanel" aria-labelledby="editor-components-tab" className="min-h-0 overflow-y-auto overflow-x-hidden" data-testid="component-library-panel">
+          <section className="border-b border-[var(--line)] px-3 pb-3 pt-2">
+            <PanelHeading label="Local components" />
+            <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--faint)]">Versioned semantic definitions expand deterministically into every enabled compiler.</p>
+          </section>
+          <div className="grid gap-2 p-2">
+            {graph.components.map((definition) => (
+              <article key={definition.id} className="rounded-xl border border-[var(--line)] bg-[var(--field)] p-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <strong className="block truncate text-[12px] font-semibold text-[var(--ink)]">{definition.name}</strong>
+                    <span className="mt-0.5 block font-mono text-[9px] text-[var(--faint)]">v{definition.version}</span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={Boolean(definition.deprecated)}
+                    aria-label={`Insert ${definition.name}`}
+                    onClick={() => onInstantiateComponent(definition.id)}
+                    className="inline-flex min-h-7 shrink-0 items-center gap-1 rounded-lg bg-[var(--accent-soft)] px-2 text-[10px] font-semibold text-[var(--accent-text)] hover:bg-[var(--accent)] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <Plus size={11} /> Insert
+                  </button>
+                </div>
+                <p className="mt-2 text-[11px] leading-relaxed text-[var(--muted)]">{definition.description}</p>
+                <div className="mt-2 flex flex-wrap gap-1 font-mono text-[9px] text-[var(--faint)]">
+                  <span>{definition.properties.length} props</span><span>·</span>
+                  <span>{definition.slots.length} slots</span><span>·</span>
+                  <span>{definition.variants.length} variants</span>
+                </div>
+                {definition.deprecated ? <p className="mt-2 rounded-md bg-[var(--warn-soft)] px-2 py-1.5 text-[10px] leading-relaxed text-[var(--warn)]">Deprecated · {definition.deprecated.message}</p> : null}
+              </article>
+            ))}
+            {graph.components.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-[var(--line-strong)] px-3 py-8 text-center text-[11px] leading-relaxed text-[var(--muted)]">This project has no local component definitions yet.</div>
+            ) : null}
+          </div>
+        </div>
+      ) : railTab === "assets" ? (
+        <div id="editor-assets-tabpanel" role="tabpanel" aria-labelledby="editor-assets-tab" className="min-h-0 overflow-y-auto overflow-x-hidden" data-testid="asset-library-panel">
+          <section className="border-b border-[var(--line)] px-3 pb-3 pt-2">
+            <PanelHeading label="Project assets" />
+            <p className="mt-1 text-[11px] leading-relaxed text-[var(--faint)]">Content-addressed local files. Source paths are never stored in the graph.</p>
+          </section>
+          <div className="grid gap-2 p-2">
+            {graph.assets.map((asset) => (
+              <article key={asset.id} className="rounded-xl border border-[var(--line)] bg-[var(--field)] p-2.5">
+                {["raster", "svg", "icon"].includes(asset.kind) ? <img loading="lazy" decoding="async" src={`/api/project/assets/${asset.digest}`} alt="" className="mb-2 h-20 w-full rounded-lg border border-[var(--line)] bg-[var(--canvas)] object-contain" /> : null}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <strong className="block truncate text-[12px] font-semibold text-[var(--ink)]">{asset.name}</strong>
+                    <span className="mt-0.5 block font-mono text-[9px] text-[var(--faint)]">{asset.kind} · {Math.ceil(asset.byteLength / 1024)} KB</span>
+                  </div>
+                  <span className={`rounded-md px-1.5 py-1 font-mono text-[8px] uppercase ${asset.exportPolicy === "copy" ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : asset.exportPolicy === "blocked" ? "bg-[var(--warn-soft)] text-[var(--warn)]" : "bg-[var(--chip)] text-[var(--muted)]"}`}>{asset.exportPolicy}</span>
+                </div>
+                <p className="mt-2 truncate font-mono text-[9px] text-[var(--faint)]">sha256 {asset.digest.slice(0, 12)}…</p>
+                <p className="mt-2 text-[10px] leading-relaxed text-[var(--muted)]">{asset.license.name} · redistribution {asset.license.redistribution}</p>
+                {asset.variants.length > 0 ? <p className="mt-1 font-mono text-[9px] text-[var(--faint)]">{asset.variants.length} variant{asset.variants.length === 1 ? "" : "s"}</p> : null}
+              </article>
+            ))}
+            {graph.assets.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-[var(--line-strong)] px-3 py-8 text-center text-[11px] leading-relaxed text-[var(--muted)]">No project assets yet. Place a licensed file in <span className="font-mono">.intentform/imports</span>, then use the local agent import tool.</div>
+            ) : null}
+          </div>
+        </div>
       ) : (
         <div id="editor-tokens-tabpanel" role="tabpanel" aria-labelledby="editor-tokens-tab" className="min-h-0 overflow-y-auto overflow-x-hidden">
+          <section className="border-b border-[var(--line)] px-3 pb-3 pt-2">
+            <PanelHeading
+              label="DTCG 2025.10"
+              action={<div className="flex gap-1"><button type="button" onClick={() => tokenFileRef.current?.click()} className="inline-flex min-h-7 items-center gap-1 rounded-lg border border-[var(--line)] px-2 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)]"><UploadSimple size={11} /> Import</button><button type="button" onClick={exportTokenFile} className="inline-flex min-h-7 items-center gap-1 rounded-lg border border-[var(--line)] px-2 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)]"><DownloadSimple size={11} /> Export</button></div>}
+            />
+            <input ref={tokenFileRef} type="file" aria-label="Import DTCG tokens" accept="application/json,.json,.tokens" className="sr-only" onChange={(event) => void importTokenFile(event.target.files?.[0])} />
+            <p className="mt-1 text-[10px] leading-relaxed text-[var(--faint)]">Aliases, modes, deprecation, and vendor extensions round-trip through the stable community format.</p>
+            {tokenTransferStatus ? <p role={tokenTransferStatus.kind === "error" ? "alert" : "status"} className={`mt-2 rounded-lg px-2 py-1.5 text-[10px] leading-relaxed ${tokenTransferStatus.kind === "error" ? "bg-[var(--danger-soft)] text-[var(--danger)]" : "bg-[var(--accent-soft)] text-[var(--accent-text)]"}`}>{tokenTransferStatus.message}</p> : null}
+          </section>
+          <section className="border-b border-[var(--line)] px-3 pb-3 pt-2">
+            <PanelHeading
+              label="Token mode"
+              action={<button type="button" onClick={() => onUpdateTokens((tokens) => {
+                let index = Object.keys(tokens.modes).length + 1;
+                let id = `mode-${index}`;
+                while (tokens.modes[id]) { index += 1; id = `mode-${index}`; }
+                tokens.modes[id] = { name: `Mode ${index}`, values: { colors: {}, spacing: {}, radii: {} } };
+                tokens.activeMode = id;
+              }, "Created a token mode.")} className="rounded-lg border border-[var(--line)] px-2 py-1 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)]">Add mode</button>}
+            />
+            <select
+              aria-label="Active token mode"
+              value={graph.tokens.activeMode}
+              onChange={(event) => onUpdateTokens((tokens) => { tokens.activeMode = event.target.value; }, `Switched to ${event.target.value} token mode.`)}
+              className="select-control mt-2 w-full font-mono text-[11px]"
+            >
+              {Object.entries(graph.tokens.modes).map(([id, mode]) => <option key={id} value={id}>{mode.name} · {id}</option>)}
+            </select>
+            {graph.tokens.activeMode !== graph.tokens.defaultMode ? (
+              <button type="button" onClick={() => onUpdateTokens((tokens) => {
+                const removed = tokens.activeMode;
+                tokens.activeMode = tokens.defaultMode;
+                delete tokens.modes[removed];
+              }, "Removed the active token mode.")} className="mt-2 text-[9px] font-semibold text-[var(--danger)]">Remove active mode</button>
+            ) : null}
+          </section>
           <section className="border-b border-[var(--line)] px-3 pb-3 pt-2">
             <PanelHeading label="Color tokens" />
             <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--faint)]">Bound to every frame and compiled into both platforms.</p>
             <div className="mt-3 grid gap-2">
-              {Object.entries(graph.tokens.colors).map(([key, value]) => (
+              {Object.entries(resolvedTokens.colors).filter(([key]) => !graph.tokens.aliases[key]).map(([key, value]) => (
                 <div key={key} className="grid grid-cols-[28px_1fr_68px] items-center gap-2">
                   <input
                     type="color"
                     aria-label={`Pick ${key}`}
                     value={/^#[0-9a-fA-F]{6}$/.test(value) ? value : "#397461"}
-                    onChange={(event) => onUpdateTokens((tokens) => { tokens.colors[key] = event.target.value; }, `Set ${key}.`)}
+                    onChange={(event) => onUpdateTokens((tokens) => { tokens.modes[tokens.activeMode]!.values.colors[key] = event.target.value; }, `Set ${key}.`)}
                     className="h-8 w-full cursor-pointer rounded-lg border border-[var(--line)] bg-[var(--field)] p-0.5"
                   />
                   <span className="truncate font-mono text-[11px] text-[var(--muted)]">{key}</span>
@@ -341,7 +491,7 @@ export function LayersPanel({
                     defaultValue={value}
                     onBlur={(event) => {
                       const next = event.target.value.trim();
-                      if (/^#[0-9a-fA-F]{3,8}$/.test(next) && next !== value) onUpdateTokens((tokens) => { tokens.colors[key] = next; }, `Set ${key}.`);
+                      if (/^#[0-9a-fA-F]{6}$/.test(next) && next !== value) onUpdateTokens((tokens) => { tokens.modes[tokens.activeMode]!.values.colors[key] = next; }, `Set ${key}.`);
                     }}
                     onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); }}
                     className="min-h-8 rounded-lg border border-[var(--line)] bg-[var(--field)] px-2 font-mono text-[11px] text-[var(--t-strong)] outline-none transition-colors hover:border-[var(--line-strong)] focus:border-[var(--accent)]"
@@ -353,18 +503,19 @@ export function LayersPanel({
           <section className="border-b border-[var(--line)] px-3 pb-3 pt-2">
             <PanelHeading label="Radii" />
             <div className="mt-2 grid gap-2">
-              {Object.entries(graph.tokens.radii).map(([key, value]) => (
-                <TokenNumberField key={key} label={key} value={value} onCommit={(next) => onUpdateTokens((tokens) => { tokens.radii[key] = next; }, `Set ${key} to ${next}.`)} />
+              {Object.entries(resolvedTokens.radii).filter(([key]) => !graph.tokens.aliases[key]).map(([key, value]) => (
+                <TokenNumberField key={key} label={key} value={value} onCommit={(next) => onUpdateTokens((tokens) => { tokens.modes[tokens.activeMode]!.values.radii[key] = next; }, `Set ${key} to ${next}.`)} />
               ))}
             </div>
           </section>
           <section className="px-3 pb-3 pt-2">
             <PanelHeading label="Spacing" />
             <div className="mt-2 grid gap-2">
-              {Object.entries(graph.tokens.spacing).map(([key, value]) => (
-                <TokenNumberField key={key} label={key} value={value} onCommit={(next) => onUpdateTokens((tokens) => { tokens.spacing[key] = next; }, `Set ${key} to ${next}.`)} />
+              {Object.entries(resolvedTokens.spacing).filter(([key]) => !graph.tokens.aliases[key]).map(([key, value]) => (
+                <TokenNumberField key={key} label={key} value={value} min={1} onCommit={(next) => onUpdateTokens((tokens) => { tokens.modes[tokens.activeMode]!.values.spacing[key] = next; }, `Set ${key} to ${next}.`)} />
               ))}
             </div>
+            {Object.keys(graph.tokens.aliases).length > 0 ? <div className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--field)] p-2.5"><strong className="text-[9px] uppercase tracking-[.12em] text-[var(--faint)]">Aliases</strong>{Object.entries(graph.tokens.aliases).map(([key, target]) => <p key={key} className="mt-1 truncate font-mono text-[9px] text-[var(--muted)]">{key} → {target}{graph.tokens.deprecated[key] ? " · deprecated" : ""}</p>)}</div> : null}
             <div className="mt-4 rounded-lg bg-[var(--accent-soft)] p-3 text-[11px] leading-relaxed text-[var(--accent-text)]">
               Token edits are semantic changes: they land in the graph diff and recompile React and SwiftUI deterministically.
             </div>

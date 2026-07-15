@@ -246,6 +246,9 @@ textarea:focus-visible,
 .runtime-preview-root h2 { margin: 0 0 10px; font-size: 17px; }
 .runtime-screen-content { display: grid; gap: 18px; }
 .runtime-node { min-width: 0; padding: var(--runtime-node-padding, 0); }
+.runtime-asset-content { display: grid; gap: var(--runtime-node-gap, 8px); min-width: 0; }
+.runtime-asset-media { display: block; width: 100%; max-width: 100%; min-height: 0; border-radius: var(--runtime-control-radius); }
+.runtime-asset-audio { width: 100%; }
 .runtime-axis-vertical > * { display: grid; gap: var(--runtime-node-gap, 0); }
 .runtime-axis-horizontal > * { display: flex; align-items: center; gap: var(--runtime-node-gap, 0); }
 .runtime-axis-overlay > * { display: grid; gap: 0; }

@@ -17,6 +17,7 @@
     "@intentform/proof-report": "workspace:*",
     "@intentform/repair-planner": "workspace:*",
     "@intentform/semantic-schema": "workspace:*",
+    "@intentform/token-assets": "workspace:*",
     "@intentform/verifier": "workspace:*",
     "@phosphor-icons/react": "^2.1.10",
     "geist": "^1.7.0",

@@ -9,6 +9,7 @@ import {
 } from "@intentform/compiler-react";
 import {
   parseGraph,
+  resolveTokenMode,
   type Expression,
   type SemanticInterfaceGraph,
 } from "@intentform/semantic-schema";
@@ -99,6 +100,16 @@ function RuntimeNode({
       </div>
     );
   }
+  if (node.asset && node.asset.exportPolicy !== "blocked") {
+    const source = `/api/project/assets/${node.asset.digest}`;
+    const position = `${Math.round(node.asset.focalPoint.x * 100)}% ${Math.round(node.asset.focalPoint.y * 100)}%`;
+    const media = node.asset.kind === "video"
+      ? <video className="runtime-asset-media" src={source} controls preload="metadata" aria-label={node.asset.decorative ? undefined : node.accessibility.label} />
+      : node.asset.kind === "audio"
+        ? <audio className="runtime-asset-audio" src={source} controls preload="metadata" aria-label={node.asset.decorative ? undefined : node.accessibility.label} />
+        : <img className="runtime-asset-media" src={source} loading="lazy" decoding="async" alt={node.asset.decorative ? "" : node.accessibility.label} style={{ objectFit: node.asset.fit, objectPosition: position }} />;
+    content = <div className="runtime-asset-content" data-asset-id={node.asset.id}>{media}{content}</div>;
+  }
   const semantics = {
     "--runtime-node-gap": `${node.layout.gap}px`,
     "--runtime-node-padding": `${node.layout.padding}px`,
@@ -134,8 +145,9 @@ function RuntimeScreen({
   navigate: (screenId: string) => void;
 }) {
   const data = screen.defaultFixture.data;
-  const colors = preview.graph.tokens.colors;
-  const radii = preview.graph.tokens.radii;
+  const resolvedTokens = resolveTokenMode(preview.graph.tokens);
+  const colors = resolvedTokens.colors;
+  const radii = resolvedTokens.radii;
   const style = {
     "--runtime-accent": colors["color.accent"] ?? "#397461",
     "--runtime-ink": colors["color.ink"] ?? "#181c1a",
@@ -153,6 +165,7 @@ function RuntimeScreen({
       data-screen-id={screen.id}
       data-screen-purpose={screen.purpose}
       data-screen-route={screen.route}
+      data-if-token-mode={preview.ir.activeTokenMode}
       style={style}
     >
       <header><span className="runtime-eyebrow">{preview.ir.productName}</span><h1>{screen.title}</h1></header>

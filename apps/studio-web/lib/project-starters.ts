@@ -42,22 +42,35 @@ export function createStarterGraph(input: StarterProjectInput): SemanticInterfac
   const copy = starterCopy[input.projectType];
 
   return parseGraph({
-    schemaVersion: "0.2.0",
+    schemaVersion: "0.4.0",
     product: {
       name,
       audience: [audience],
       principles: [copy.principle, `The first interface should ${purpose.toLowerCase()}`],
     },
     tokens: {
-      colors: {
-        "color.accent": "#397461",
-        "color.ink": "#181c1a",
-        "color.canvas": "#f3f5f1",
-        "color.surface": "#fbfcf9",
+      defaultMode: "default",
+      activeMode: "default",
+      modes: {
+        default: {
+          name: "Default",
+          values: {
+            colors: {
+              "color.accent": "#397461",
+              "color.ink": "#181c1a",
+              "color.canvas": "#f3f5f1",
+              "color.surface": "#fbfcf9",
+            },
+            spacing: { "space.8": 8, "space.12": 12, "space.16": 16, "space.20": 20, "space.24": 24 },
+            radii: { "radius.control": 18, "radius.surface": 28 },
+          },
+        },
       },
-      spacing: { "space.8": 8, "space.12": 12, "space.16": 16, "space.20": 20, "space.24": 24 },
-      radii: { "radius.control": 18, "radius.surface": 28 },
+      aliases: {},
+      deprecated: {},
+      extensions: {},
     },
+    assets: [],
     platforms: [
       { target: "react", enabled: input.targets.includes("react"), capabilities: ["responsive-layout", "aria", "sticky-actions"] },
       { target: "swiftui", enabled: input.targets.includes("swiftui"), capabilities: ["safe-area", "dynamic-type", "native-controls"] },

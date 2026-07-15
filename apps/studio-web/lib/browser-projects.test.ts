@@ -19,6 +19,36 @@ class MemoryStorage implements Storage {
   setItem(key: string, value: string) { this.values.set(key, value); }
 }
 
+function legacyDemoGraph() {
+  const legacy = structuredClone(demoGraph) as unknown as Record<string, unknown> & {
+    tokens: unknown;
+    assets?: unknown;
+  };
+  legacy.schemaVersion = "0.0.1";
+  legacy.tokens = structuredClone(demoGraph.tokens.modes[demoGraph.tokens.defaultMode]!.values);
+  delete legacy.assets;
+  return legacy;
+}
+
+function migratedLegacyDemoGraph() {
+  const migrated = structuredClone(demoGraph);
+  migrated.tokens = {
+    defaultMode: "default",
+    activeMode: "default",
+    modes: {
+      default: {
+        name: "Default",
+        values: structuredClone(demoGraph.tokens.modes[demoGraph.tokens.defaultMode]!.values),
+      },
+    },
+    aliases: {},
+    deprecated: {},
+    extensions: {},
+  };
+  migrated.assets = [];
+  return migrated;
+}
+
 describe("browser project recovery", () => {
   it("round-trips a versioned project envelope with local bridge identity", () => {
     const storage = new MemoryStorage();
@@ -59,15 +89,14 @@ describe("browser project recovery", () => {
 
   it("upgrades a 0.0.1 browser draft and preserves the exact original source", () => {
     const storage = new MemoryStorage();
-    const legacy = structuredClone(demoGraph) as unknown as Record<string, unknown>;
-    legacy.schemaVersion = "0.0.1";
+    const legacy = legacyDemoGraph();
     const source = ` ${JSON.stringify(legacy)}\n`;
     storage.setItem(LEGACY_DRAFT_KEY, source);
 
     const loaded = loadBrowserProject(storage);
     expect(loaded).toEqual({
       status: "ready",
-      project: expect.objectContaining({ graph: demoGraph, source: "recovery" }),
+      project: expect.objectContaining({ graph: migratedLegacyDemoGraph(), source: "recovery" }),
     });
     expect(storage.getItem(BROWSER_MIGRATION_BACKUP_KEY)).toBe(source);
   });

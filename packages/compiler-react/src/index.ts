@@ -114,6 +114,18 @@ const componentForNode = (node: PlatformIRNode): string => {
       source = `<div>${label}</div>`;
   }
 
+  if (node.asset && node.asset.exportPolicy !== "blocked") {
+    const sourcePath = `/${node.asset.storageKey}`;
+    const alt = node.asset.decorative ? "" : node.intent.label;
+    const position = `${Math.round(node.asset.focalPoint.x * 100)}% ${Math.round(node.asset.focalPoint.y * 100)}%`;
+    const assetSource = node.asset.kind === "video"
+      ? `<video className="if-asset-media" src=${JSON.stringify(sourcePath)} controls preload="metadata"${accessibility} />`
+      : node.asset.kind === "audio"
+        ? `<audio className="if-asset-audio" src=${JSON.stringify(sourcePath)} controls preload="metadata"${accessibility} />`
+        : `<img className="if-asset-media" src=${JSON.stringify(sourcePath)} alt={${JSON.stringify(alt)}} style={{ objectFit: ${JSON.stringify(node.asset.fit)}, objectPosition: ${JSON.stringify(position)} }} />`;
+    source = `<div className="if-asset-content" data-asset-id="${node.asset.id}">${assetSource}${source}</div>`;
+  }
+
   const styleEntries = [
     node.layout.fixedWidth !== undefined ? `width: ${node.layout.fixedWidth}` : null,
     node.layout.fixedHeight !== undefined ? `height: ${node.layout.fixedHeight}` : null,
@@ -177,7 +189,7 @@ export interface ${name}Props {
 
 export function ${name}({ data, events }: ${name}Props) {
   return (
-    <main className="screen" data-screen-id="${screen.id}" data-screen-route={${JSON.stringify(screen.route)}} data-screen-purpose={${JSON.stringify(screen.purpose)}}>
+    <main className="screen" data-if-token-mode=${JSON.stringify(ir.activeTokenMode)} data-screen-id="${screen.id}" data-screen-route={${JSON.stringify(screen.route)}} data-screen-purpose={${JSON.stringify(screen.purpose)}}>
       <header><span className="eyebrow">{${JSON.stringify(ir.productName)}}</span><h1>{${JSON.stringify(screen.title)}}</h1></header>
       <div className="screen-content">
 ${body}
@@ -260,13 +272,16 @@ const cssVarName = (key: string): string => `--if-${key.replace(/[^a-zA-Z0-9]+/g
    semantic classes consume them. Editing a token in the graph deterministically
    changes the generated stylesheet on the next compile. */
 function stylesSource(ir: PlatformIR): string {
-  const declarations = [
-    ...Object.entries(ir.tokens.colors).map(([key, value]) => [cssVarName(key), value] as const),
-    ...Object.entries(ir.tokens.spacing).map(([key, value]) => [cssVarName(key), `${value}px`] as const),
-    ...Object.entries(ir.tokens.radii).map(([key, value]) => [cssVarName(key), `${value}px`] as const),
-  ]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([name, value]) => `  ${name}: ${value};`)
+  const declarationsForMode = (mode: PlatformIR["tokens"], indentation = "  ") => [
+    ...Object.entries(mode.colors).map(([key, value]) => [cssVarName(key), value] as const),
+    ...Object.entries(mode.spacing).map(([key, value]) => [cssVarName(key), `${value}px`] as const),
+    ...Object.entries(mode.radii).map(([key, value]) => [cssVarName(key), `${value}px`] as const),
+  ].sort(([a], [b]) => a.localeCompare(b)).map(([name, value]) => `${indentation}${name}: ${value};`).join("\n");
+  const declarations = declarationsForMode(ir.tokenModes[ir.tokenCollection.defaultMode] ?? ir.tokens);
+  const modeDeclarations = Object.entries(ir.tokenModes)
+    .filter(([modeId]) => modeId !== ir.tokenCollection.defaultMode)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([modeId, mode]) => `.screen[data-if-token-mode=${JSON.stringify(modeId)}] {\n${declarationsForMode(mode)}\n}`)
     .join("\n");
   const spacingClasses = Object.keys(ir.tokens.spacing)
     .sort()
@@ -291,6 +306,7 @@ ${declarations}
   --if-control-radius: var(--if-radius-control, 18px);
   --if-surface-radius: var(--if-radius-surface, 28px);
 }
+${modeDeclarations}
 * { box-sizing: border-box; }
 body { margin: 0; color: var(--if-ink); background: var(--if-canvas); }
 .screen { min-height: 100dvh; max-width: 440px; margin: auto; padding: 28px 22px 110px; background: var(--if-surface); }
@@ -298,6 +314,9 @@ body { margin: 0; color: var(--if-ink); background: var(--if-canvas); }
 h1 { margin: 8px 0 28px; font-size: 32px; letter-spacing: -.04em; }
 .screen-content { display: grid; gap: 18px; }
 .if-node { min-width: 0; padding: var(--if-node-padding, 0); }
+.if-asset-content { display: grid; gap: var(--if-node-gap, 8px); min-width: 0; }
+.if-asset-media { display: block; width: 100%; max-width: 100%; min-height: 0; border-radius: var(--if-control-radius); }
+.if-asset-audio { width: 100%; }
 .if-axis-vertical > * { display: grid; gap: var(--if-node-gap, 0); }
 .if-axis-horizontal > * { display: flex; align-items: center; gap: var(--if-node-gap, 0); }
 .if-axis-overlay > * { display: grid; gap: 0; }
@@ -389,6 +408,21 @@ export class ReactCompiler implements CompilerBackend {
       ...ir.screens.map((_, index) => ({ path: `src/generated/contracts/${ir.screens[index]?.id}.ts`, content: contractSource(ir, index) })),
       { path: "src/generated/styles.css", content: stylesSource(ir) },
       { path: "src/generated/App.tsx", content: appSource(ir) },
+      ...(ir.assets.length > 0 ? [{
+        path: "assets.manifest.json",
+        content: `${JSON.stringify({
+          version: 1,
+          assets: ir.assets.map((asset) => ({
+            id: asset.id,
+            kind: asset.kind,
+            digest: asset.digest,
+            storageKey: asset.storageKey,
+            exportPolicy: asset.exportPolicy,
+            license: asset.license,
+            variants: asset.variants.map((variant) => ({ id: variant.id, digest: variant.digest, storageKey: variant.storageKey })),
+          })),
+        }, null, 2)}\n`,
+      }] : []),
     ];
     return { target: this.id, files, fingerprint: fingerprintFiles(files), diagnostics: ir.diagnostics };
   }

@@ -8,6 +8,10 @@ import {
   stableSerialize,
   type SemanticInterfaceGraph,
 } from "@intentform/semantic-schema";
+import {
+  instantiateComponent,
+  setComponentProperty,
+} from "@intentform/semantic-schema/component-library";
 import { demoGraph } from "./demo";
 import { buildProofReport } from "./index";
 import { verifyGraph, verifyRenderedPrimaryAction } from "@intentform/verifier";
@@ -24,6 +28,26 @@ describe("IntentForm proof pipeline", () => {
   it("produces byte-equivalent output for the same graph", () => {
     expect(compileReact(demoGraph)).toEqual(compileReact(demoGraph));
     expect(compileSwiftUI(demoGraph)).toEqual(compileSwiftUI(demoGraph));
+  });
+
+  it("expands component bindings before both compilers and updates both fingerprints", () => {
+    const inserted = parseGraph(instantiateComponent(demoGraph, {
+      definitionId: "intent.balance-summary",
+      instanceId: "layout-lab.library-balance",
+      screenId: "layout-lab",
+      props: { label: "Library balance" },
+    }));
+    const edited = parseGraph(setComponentProperty(
+      inserted,
+      "layout-lab.library-balance",
+      "label",
+      "Updated library balance",
+    ));
+
+    expect(findGraphNode(inserted, "layout-lab.library-balance")?.intent.label).toBe("Library balance");
+    expect(findGraphNode(edited, "layout-lab.library-balance")?.intent.label).toBe("Updated library balance");
+    expect(compileReact(edited).fingerprint).not.toBe(compileReact(inserted).fingerprint);
+    expect(compileSwiftUI(edited).fingerprint).not.toBe(compileSwiftUI(inserted).fingerprint);
   });
 
   it("preserves the recursive layout hierarchy in IR and both generated targets", () => {
@@ -85,8 +109,8 @@ describe("IntentForm proof pipeline", () => {
     ["style emphasis", (graph) => { graph.screens[1]!.nodes[1]!.style.emphasis = "strong"; }],
     ["accessibility hint", (graph) => { graph.screens[1]!.nodes[1]!.accessibility.hint = "Verify the recipient before continuing"; }],
     ["accessibility live mode", (graph) => { graph.screens[1]!.nodes[2]!.accessibility.live = "assertive"; }],
-    ["spacing token", (graph) => { graph.tokens.spacing["space.16"] = 19; }],
-    ["surface color token", (graph) => { graph.tokens.colors["color.surface"] = "#f7f2e8"; }],
+    ["spacing token", (graph) => { graph.tokens.modes.default!.values.spacing["space.16"] = 19; }],
+    ["surface color token", (graph) => { graph.tokens.modes.default!.values.colors["color.surface"] = "#f7f2e8"; }],
   ];
 
   it.each(editableParityCases)("lowers editable %s changes into both target outputs", (_name, mutate) => {
@@ -407,8 +431,8 @@ describe("IntentForm proof pipeline", () => {
 
   it("resolves design tokens into both platform outputs", () => {
     const themed = structuredClone(demoGraph);
-    themed.tokens.colors["color.accent"] = "#7a4b9e";
-    themed.tokens.radii["radius.control"] = 12;
+    themed.tokens.modes.default!.values.colors["color.accent"] = "#7a4b9e";
+    themed.tokens.modes.default!.values.radii["radius.control"] = 12;
     const graph = parseGraph(themed);
 
     const css = compileReact(graph).files.find((file) => file.path.endsWith("styles.css"));
@@ -422,6 +446,105 @@ describe("IntentForm proof pipeline", () => {
 
     expect(compileReact(graph).fingerprint).not.toBe(compileReact(demoGraph).fingerprint);
     expect(compileSwiftUI(graph).fingerprint).not.toBe(compileSwiftUI(demoGraph).fingerprint);
+  });
+
+  it("emits deterministic token-mode selectors and native mode metadata", () => {
+    const react = compileReact(demoGraph);
+    const reactScreen = react.files.find((file) => file.path.endsWith("home.tsx"));
+    const styles = react.files.find((file) => file.path.endsWith("styles.css"));
+    expect(reactScreen?.content).toContain('data-if-token-mode="default"');
+    expect(styles?.content).toContain('.screen[data-if-token-mode="evening"]');
+    expect(styles?.content).toContain("--if-color-canvas: #111714;");
+
+    const swift = compileSwiftUI(demoGraph);
+    const components = swift.files.find((file) => file.path.endsWith("IntentFormComponents.swift"));
+    expect(components?.content).toContain('static let activeMode = "default"');
+    expect(components?.content).toContain('static let availableModes = ["default", "evening"]');
+  });
+
+  it("lowers licensed raster assets into both targets and emits machine-readable manifests", () => {
+    const draft = structuredClone(demoGraph);
+    const digest = "c".repeat(64);
+    draft.assets.push({
+      id: "brand.hero",
+      name: "Brand hero",
+      kind: "raster",
+      digest,
+      mediaType: "image/png",
+      byteLength: 256,
+      storageKey: `assets/${digest}.png`,
+      width: 1200,
+      height: 800,
+      variants: [],
+      license: { name: "Project-owned", spdx: "CC0-1.0", redistribution: "allowed" },
+      exportPolicy: "copy",
+      metadata: { role: "hero" },
+    });
+    findGraphNode(draft, "receipt.summary")!.asset = {
+      assetId: "brand.hero",
+      fit: "cover",
+      focalPoint: { x: 0.4, y: 0.25 },
+      decorative: false,
+    };
+    const graph = parseGraph(draft);
+
+    const react = compileReact(graph);
+    const reactScreen = react.files.find((file) => file.path.endsWith("receipt.tsx"));
+    const reactManifest = react.files.find((file) => file.path === "assets.manifest.json");
+    expect(reactScreen?.content).toContain(`<img className="if-asset-media" src="/assets/${digest}.png"`);
+    expect(reactScreen?.content).toContain('objectFit: "cover"');
+    expect(JSON.parse(reactManifest!.content)).toMatchObject({
+      version: 1,
+      assets: [{ id: "brand.hero", digest, exportPolicy: "copy", license: { spdx: "CC0-1.0" } }],
+    });
+
+    const swift = compileSwiftUI(graph);
+    const swiftScreen = swift.files.find((file) => file.path.endsWith("receipt.swift"));
+    const swiftManifest = swift.files.find((file) => file.path === "Generated/Assets.manifest.json");
+    expect(swiftScreen?.content).toContain(`Image("${digest}")`);
+    expect(swiftScreen?.content).toContain("IntentForm focal point: 0.4, 0.25");
+    expect(JSON.parse(swiftManifest!.content)).toMatchObject({ assets: [{ id: "brand.hero", digest }] });
+  });
+
+  it("diagnoses blocked, reference-only, and unsupported native asset policies", () => {
+    const makeAssetGraph = (kind: "raster" | "svg", exportPolicy: "blocked" | "reference") => {
+      const draft = structuredClone(demoGraph);
+      const digest = "d".repeat(64);
+      draft.assets.push({
+        id: "brand.media",
+        name: "Brand media",
+        kind,
+        digest,
+        mediaType: kind === "svg" ? "image/svg+xml" : "image/png",
+        byteLength: 128,
+        storageKey: `assets/${digest}.${kind === "svg" ? "svg" : "png"}`,
+        variants: [],
+        license: { name: "Reference license", redistribution: "restricted" },
+        exportPolicy,
+        metadata: {},
+      });
+      findGraphNode(draft, "receipt.summary")!.asset = {
+        assetId: "brand.media",
+        fit: "contain",
+        focalPoint: { x: 0.5, y: 0.5 },
+        decorative: true,
+      };
+      return parseGraph(draft);
+    };
+
+    const blocked = compileReact(makeAssetGraph("raster", "blocked"));
+    expect(blocked.diagnostics).toContainEqual(expect.objectContaining({ message: expect.stringMatching(/blocked from generated output/i) }));
+    expect(blocked.files.find((file) => file.path.endsWith("receipt.tsx"))?.content).not.toContain("if-asset-media");
+
+    const referenced = compileReact(makeAssetGraph("raster", "reference"));
+    expect(referenced.diagnostics).toContainEqual(expect.objectContaining({ message: expect.stringMatching(/reference-only/i) }));
+
+    const swiftSvg = compileSwiftUI(makeAssetGraph("svg", "reference"));
+    expect(swiftSvg.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ message: expect.stringMatching(/reference-only/i) }),
+      expect.objectContaining({ message: expect.stringMatching(/raw svg assets require a platform adapter/i) }),
+    ]));
+    expect(swiftSvg.files.find((file) => file.path.endsWith("receipt.swift"))?.content).not.toContain("Image(");
   });
 
   it("lowers fixture values and visibility into both generated targets", () => {
@@ -537,9 +660,9 @@ describe("IntentForm proof pipeline", () => {
 
   it("surfaces token edits in the semantic diff", () => {
     const themed = structuredClone(demoGraph);
-    themed.tokens.colors["color.accent"] = "#7a4b9e";
+    themed.tokens.modes.default!.values.colors["color.accent"] = "#7a4b9e";
     expect(semanticDiff(demoGraph, parseGraph(themed))).toEqual([
-      { path: "tokens.colors.color.accent", before: "#397461", after: "#7a4b9e" },
+      { path: "tokens.modes.default.values.colors.color.accent", before: "#397461", after: "#7a4b9e" },
     ]);
   });
 

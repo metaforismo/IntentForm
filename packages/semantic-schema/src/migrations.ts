@@ -5,8 +5,8 @@ import {
   type SemanticInterfaceGraph,
 } from "./index";
 
-export const CURRENT_SCHEMA_VERSION = "0.2.0" as const;
-export const SUPPORTED_SCHEMA_VERSIONS = ["0.0.1", "0.1.0", CURRENT_SCHEMA_VERSION] as const;
+export const CURRENT_SCHEMA_VERSION = "0.4.0" as const;
+export const SUPPORTED_SCHEMA_VERSIONS = ["0.0.1", "0.1.0", "0.2.0", "0.3.0", CURRENT_SCHEMA_VERSION] as const;
 
 export type SupportedSchemaVersion = typeof SUPPORTED_SCHEMA_VERSIONS[number];
 export type MigrationDiagnosticSeverity = "info" | "warning" | "error";
@@ -51,8 +51,86 @@ const migrationSteps: Partial<Record<SupportedSchemaVersion, MigrationStep>> = {
     convert: (input) => ({ ...structuredClone(input), schemaVersion: "0.1.0" }),
   },
   "0.1.0": {
+    toVersion: "0.2.0",
+    convert: (input) => ({ ...structuredClone(input), schemaVersion: "0.2.0" }),
+  },
+  "0.2.0": {
+    toVersion: "0.3.0",
+    convert: (input) => {
+      const next = structuredClone(input) as Record<string, unknown>;
+      const components = Array.isArray(next.components) ? next.components : [];
+      const spacing = next.tokens && typeof next.tokens === "object"
+        && "spacing" in next.tokens && next.tokens.spacing && typeof next.tokens.spacing === "object"
+        ? Object.keys(next.tokens.spacing)
+        : [];
+      const gapToken = spacing[0] ?? "space.16";
+      const paddingToken = spacing[1] ?? gapToken;
+      next.components = components.map((value, index) => {
+        if (!value || typeof value !== "object" || !("kind" in value)) return value;
+        const legacy = value as Record<string, unknown>;
+        const id = typeof legacy.id === "string" ? legacy.id : `component-${index + 1}`;
+        const kind = typeof legacy.kind === "string" ? legacy.kind : "stack";
+        const description = typeof legacy.description === "string"
+          ? legacy.description
+          : `Migrated ${id} component`;
+        const rootId = `${id.slice(0, 89)}.root`;
+        const name = id.split(/[.-]/).filter(Boolean).map((part) =>
+          `${part.charAt(0).toUpperCase()}${part.slice(1)}`).join(" ") || `Component ${index + 1}`;
+        return {
+          id,
+          name,
+          description,
+          version: "1.0.0",
+          template: {
+            id: rootId,
+            kind,
+            intent: { purpose: description, label: name, importance: "supporting" },
+            layout: { axis: "vertical", width: "fill", gapToken, paddingToken },
+            style: { role: kind, emphasis: "normal" },
+            accessibility: { label: name, live: "off" },
+            states: [],
+            interactions: [],
+            provenance: { author: "system", revision: 0 },
+            children: [],
+          },
+          properties: [],
+          slots: [],
+          variants: [],
+          states: [],
+        };
+      });
+      next.schemaVersion = "0.3.0";
+      return next;
+    },
+  },
+  "0.3.0": {
     toVersion: CURRENT_SCHEMA_VERSION,
-    convert: (input) => ({ ...structuredClone(input), schemaVersion: CURRENT_SCHEMA_VERSION }),
+    convert: (input) => {
+      const next = structuredClone(input) as Record<string, unknown>;
+      const legacyTokens = next.tokens && typeof next.tokens === "object"
+        ? next.tokens as Record<string, unknown>
+        : {};
+      next.tokens = {
+        defaultMode: "default",
+        activeMode: "default",
+        modes: {
+          default: {
+            name: "Default",
+            values: {
+              colors: structuredClone(legacyTokens.colors ?? {}),
+              spacing: structuredClone(legacyTokens.spacing ?? {}),
+              radii: structuredClone(legacyTokens.radii ?? {}),
+            },
+          },
+        },
+        aliases: {},
+        deprecated: {},
+        extensions: {},
+      };
+      next.assets = [];
+      next.schemaVersion = CURRENT_SCHEMA_VERSION;
+      return next;
+    },
   },
 };
 

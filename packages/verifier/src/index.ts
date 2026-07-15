@@ -2,6 +2,7 @@ import {
   classifyDevice,
   flattenSemanticNodes,
   isTransactionalScreen,
+  resolveTokenMode,
   type PlatformTarget,
   type SemanticInterfaceGraph,
 } from "@intentform/semantic-schema";
@@ -149,6 +150,7 @@ function verifyTokenContrast(
   target: PlatformTarget,
 ): VerificationFinding[] {
   const findings: VerificationFinding[] = [];
+  const tokens = resolveTokenMode(graph.tokens);
   const checks: Array<{
     id: string;
     token: string;
@@ -161,15 +163,15 @@ function verifyTokenContrast(
       id: "tokens.contrast.primary-action",
       token: "color.accent",
       foreground: "#ffffff",
-      background: graph.tokens.colors["color.accent"] ?? "#397461",
+      background: tokens.colors["color.accent"] ?? "#397461",
       minimum: 3,
       violatedIntent: "The primary action's white label must stay legible on color.accent (WCAG ≥ 3:1).",
     },
     {
       id: "tokens.contrast.body-text",
       token: "color.ink",
-      foreground: graph.tokens.colors["color.ink"] ?? "#181c1a",
-      background: graph.tokens.colors["color.surface"] ?? "#fbfcf9",
+      foreground: tokens.colors["color.ink"] ?? "#181c1a",
+      background: tokens.colors["color.surface"] ?? "#fbfcf9",
       minimum: 4.5,
       violatedIntent: "Body copy in color.ink must stay legible on color.surface (WCAG ≥ 4.5:1).",
     },
@@ -188,7 +190,7 @@ function verifyTokenContrast(
         { kind: "rule", label: "Contrast ratio", value: Number(ratio.toFixed(2)) },
         { kind: "rule", label: "Required minimum", value: check.minimum },
         { kind: "rule", label: "Token", value: check.token },
-        { kind: "rule", label: "Token value", value: graph.tokens.colors[check.token] ?? "" },
+        { kind: "rule", label: "Token value", value: tokens.colors[check.token] ?? "" },
       ],
       responsibleLayer: "tokens",
       status: "open",

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { synchronizeComponentInstances } from "./component-library.ts";
 
 export type DeviceClass = "compact" | "regular";
 
@@ -28,6 +29,11 @@ export const GRAPH_LIMITS = {
   maxTotalNodesPerScreen: 512,
   maxTotalNodes: 4_096,
   maxComponents: 128,
+  maxComponentProperties: 32,
+  maxComponentSlots: 16,
+  maxComponentVariants: 32,
+  maxComponentStates: 16,
+  maxComponentInstanceDepth: 16,
   maxFlows: 32,
   maxStepsPerFlow: 128,
   maxContracts: 32,
@@ -37,6 +43,10 @@ export const GRAPH_LIMITS = {
   maxInteractionsPerNode: 16,
   maxPatchOperations: 64,
   maxTokensPerGroup: 128,
+  maxTokenModes: 16,
+  maxTokenAliases: 256,
+  maxAssets: 256,
+  maxAssetVariants: 16,
   maxExpressionDepth: 12,
 } as const;
 
@@ -79,6 +89,15 @@ const radiusTokenKeySchema = tokenKeySchema.refine(
   "Radius token keys must start with radius.",
 );
 const colorValueSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
+const assetStorageKeySchema = z.string()
+  .min(72)
+  .max(112)
+  .regex(/^assets\/[a-f0-9]{64}\.[a-z0-9]{2,8}$/);
+const jsonExtensionsSchema = z.record(
+  z.string().min(1).max(160).refine((key) => !key.startsWith("$"), "Extension keys cannot start with $"),
+  z.json(),
+).refine((record) => Object.keys(record).length <= 64, "Extensions must contain at most 64 entries");
 const visualStateSchema = z.enum(["idle", "loading", "empty", "failed", "completed"]);
 const fixtureValueSchema = z.union([
   boundedStringSchema(GRAPH_LIMITS.maxFixtureStringLength),
@@ -86,11 +105,158 @@ const fixtureValueSchema = z.union([
   z.boolean(),
 ]);
 
-const boundedRecord = <T extends z.ZodType>(valueSchema: T, maximum: number) =>
-  z.record(tokenKeySchema, valueSchema).refine(
-    (record) => Object.keys(record).length <= maximum,
-    `Record must contain at most ${maximum} entries`,
-  );
+const componentValueTypeSchema = z.enum(["string", "number", "boolean"]);
+const componentBindingFieldSchema = z.enum([
+  "intent.label",
+  "intent.purpose",
+  "accessibility.label",
+  "accessibility.hint",
+  "layout.fixedWidth",
+  "layout.fixedHeight",
+  "visible",
+]);
+
+const tokenModeValuesSchema = z.strictObject({
+  colors: z.record(colorTokenKeySchema, colorValueSchema).refine(
+    (record) => Object.keys(record).length <= GRAPH_LIMITS.maxTokensPerGroup,
+    `Colors must contain at most ${GRAPH_LIMITS.maxTokensPerGroup} entries`,
+  ),
+  spacing: z.record(spacingTokenKeySchema, z.number().positive().max(512)).refine(
+    (record) => Object.keys(record).length <= GRAPH_LIMITS.maxTokensPerGroup,
+    `Spacing must contain at most ${GRAPH_LIMITS.maxTokensPerGroup} entries`,
+  ),
+  radii: z.record(radiusTokenKeySchema, z.number().nonnegative().max(256)).refine(
+    (record) => Object.keys(record).length <= GRAPH_LIMITS.maxTokensPerGroup,
+    `Radii must contain at most ${GRAPH_LIMITS.maxTokensPerGroup} entries`,
+  ),
+});
+
+export const tokenCollectionSchema = z.strictObject({
+  defaultMode: idSchema,
+  activeMode: idSchema,
+  modes: z.record(idSchema, z.strictObject({
+    name: safeTextSchema(120),
+    description: safeTextSchema(500).optional(),
+    values: tokenModeValuesSchema,
+  })).refine(
+    (record) => Object.keys(record).length > 0 && Object.keys(record).length <= GRAPH_LIMITS.maxTokenModes,
+    `Tokens require 1 through ${GRAPH_LIMITS.maxTokenModes} modes`,
+  ),
+  aliases: z.record(tokenKeySchema, tokenKeySchema).refine(
+    (record) => Object.keys(record).length <= GRAPH_LIMITS.maxTokenAliases,
+    `Tokens must contain at most ${GRAPH_LIMITS.maxTokenAliases} aliases`,
+  ).default({}),
+  deprecated: z.record(tokenKeySchema, z.union([z.boolean(), safeTextSchema(500)])).refine(
+    (record) => Object.keys(record).length <= GRAPH_LIMITS.maxTokenAliases,
+    `Tokens must contain at most ${GRAPH_LIMITS.maxTokenAliases} deprecation entries`,
+  ).default({}),
+  extensions: jsonExtensionsSchema.default({}),
+});
+
+export type TokenCollection = z.infer<typeof tokenCollectionSchema>;
+export type ResolvedTokenMode = z.infer<typeof tokenModeValuesSchema>;
+
+const tokenGroupForKey = (key: string): keyof ResolvedTokenMode => {
+  if (key.startsWith("color.")) return "colors";
+  if (key.startsWith("space.")) return "spacing";
+  if (key.startsWith("radius.")) return "radii";
+  throw new Error(`Unsupported token group: ${key}`);
+};
+
+export function resolveTokenMode(tokens: TokenCollection, requestedMode = tokens.activeMode): ResolvedTokenMode {
+  const fallback = tokens.modes[tokens.defaultMode];
+  const selected = tokens.modes[requestedMode];
+  if (!fallback) throw new Error(`Unknown default token mode: ${tokens.defaultMode}`);
+  if (!selected) throw new Error(`Unknown active token mode: ${requestedMode}`);
+  const concrete: ResolvedTokenMode = {
+    colors: { ...fallback.values.colors, ...selected.values.colors },
+    spacing: { ...fallback.values.spacing, ...selected.values.spacing },
+    radii: { ...fallback.values.radii, ...selected.values.radii },
+  };
+  const resolving = new Set<string>();
+  const resolvedAliases = new Map<string, string | number>();
+  const resolveAlias = (key: string): string | number => {
+    const cached = resolvedAliases.get(key);
+    if (cached !== undefined) return cached;
+    if (resolving.has(key)) throw new Error(`Token alias cycle: ${[...resolving, key].join(" -> ")}`);
+    resolving.add(key);
+    const target = tokens.aliases[key];
+    if (!target) throw new Error(`Unknown token alias: ${key}`);
+    if (tokenGroupForKey(key) !== tokenGroupForKey(target)) {
+      throw new Error(`Token alias type mismatch: ${key} -> ${target}`);
+    }
+    const group = tokenGroupForKey(target);
+    const value = Object.hasOwn(concrete[group], target)
+      ? concrete[group][target as never] as string | number
+      : resolveAlias(target);
+    resolving.delete(key);
+    resolvedAliases.set(key, value);
+    return value;
+  };
+  for (const key of Object.keys(tokens.aliases).sort()) {
+    const group = tokenGroupForKey(key);
+    (concrete[group] as Record<string, string | number>)[key] = resolveAlias(key);
+  }
+  return {
+    colors: Object.fromEntries(Object.entries(concrete.colors).sort(([left], [right]) => left.localeCompare(right))),
+    spacing: Object.fromEntries(Object.entries(concrete.spacing).sort(([left], [right]) => left.localeCompare(right))),
+    radii: Object.fromEntries(Object.entries(concrete.radii).sort(([left], [right]) => left.localeCompare(right))),
+  };
+}
+
+export const assetKindSchema = z.enum(["raster", "svg", "icon", "video", "audio", "font"]);
+const assetMediaTypes: Record<z.infer<typeof assetKindSchema>, readonly string[]> = {
+  raster: ["image/png", "image/jpeg", "image/gif", "image/webp"],
+  svg: ["image/svg+xml"],
+  icon: ["image/svg+xml"],
+  video: ["video/mp4", "video/webm"],
+  audio: ["audio/mpeg", "audio/ogg", "audio/wav"],
+  font: ["font/woff", "font/woff2", "font/ttf", "font/otf"],
+};
+const assetMediaExtensions: Record<string, readonly string[]> = {
+  "image/png": [".png"],
+  "image/jpeg": [".jpg", ".jpeg"],
+  "image/gif": [".gif"],
+  "image/webp": [".webp"],
+  "image/svg+xml": [".svg"],
+  "video/mp4": [".mp4"],
+  "video/webm": [".webm"],
+  "audio/mpeg": [".mp3"],
+  "audio/ogg": [".ogg"],
+  "audio/wav": [".wav"],
+  "font/woff": [".woff"],
+  "font/woff2": [".woff2"],
+  "font/ttf": [".ttf"],
+  "font/otf": [".otf"],
+};
+const assetFileSchema = z.strictObject({
+  digest: sha256Schema,
+  mediaType: safeTextSchema(120),
+  byteLength: z.number().int().positive().max(100_000_000),
+  storageKey: assetStorageKeySchema,
+  width: z.number().int().positive().max(100_000).optional(),
+  height: z.number().int().positive().max(100_000).optional(),
+  durationMs: z.number().int().positive().max(86_400_000).optional(),
+});
+
+export const assetDefinitionSchema = assetFileSchema.extend({
+  id: idSchema,
+  name: safeTextSchema(160),
+  kind: assetKindSchema,
+  variants: z.array(assetFileSchema.extend({ id: idSchema, label: safeTextSchema(120) }))
+    .max(GRAPH_LIMITS.maxAssetVariants).default([]),
+  license: z.strictObject({
+    name: safeTextSchema(160),
+    spdx: z.string().min(1).max(80).regex(/^[A-Za-z0-9.+-]+$/).optional(),
+    sourceUrl: z.url().max(2_000).optional(),
+    attribution: safeTextSchema(1_000).optional(),
+    redistribution: z.enum(["allowed", "restricted", "unknown"]),
+  }),
+  exportPolicy: z.enum(["copy", "reference", "blocked"]),
+  metadata: jsonExtensionsSchema.default({}),
+});
+
+export type AssetDefinition = z.infer<typeof assetDefinitionSchema>;
 
 export function classifyDevice(viewport: { width: number; height: number }): DeviceClass {
   if (!Number.isFinite(viewport.width) || !Number.isFinite(viewport.height)
@@ -192,6 +358,35 @@ export const semanticLayoutSchema = z.strictObject({
   }
 });
 
+export const componentOverrideSchema = z.discriminatedUnion("op", [
+  z.strictObject({ op: z.literal("set-label"), target: idSchema, value: safeTextSchema(240) }),
+  z.strictObject({ op: z.literal("set-purpose"), target: idSchema, value: safeTextSchema().min(3) }),
+  z.strictObject({
+    op: z.literal("set-importance"),
+    target: idSchema,
+    value: z.enum(["primary", "secondary", "supporting"]),
+  }),
+  z.strictObject({
+    op: z.literal("set-emphasis"),
+    target: idSchema,
+    value: z.enum(["quiet", "normal", "strong"]),
+  }),
+  z.strictObject({ op: z.literal("set-gap-token"), target: idSchema, value: spacingTokenKeySchema }),
+  z.strictObject({ op: z.literal("set-padding-token"), target: idSchema, value: spacingTokenKeySchema }),
+  z.strictObject({ op: z.literal("set-included"), target: idSchema, value: z.boolean() }),
+]);
+
+const componentInstanceBaseSchema = z.strictObject({
+  definitionId: idSchema,
+  variant: identifierSchema.optional(),
+  state: identifierSchema.optional(),
+  props: z.record(identifierSchema, fixtureValueSchema).refine(
+    (record) => Object.keys(record).length <= GRAPH_LIMITS.maxComponentProperties,
+    `Component instance props must contain at most ${GRAPH_LIMITS.maxComponentProperties} entries`,
+  ).default({}),
+  overrides: z.array(componentOverrideSchema).max(GRAPH_LIMITS.maxPatchOperations).default([]),
+});
+
 export const expressionSchema: z.ZodType<Expression> = z.lazy(() =>
   z.discriminatedUnion("op", [
     z.strictObject({ op: z.literal("value"), value: fixtureValueSchema }),
@@ -225,6 +420,16 @@ const semanticNodeBaseSchema = z.strictObject({
     hint: safeTextSchema(500).optional(),
     live: z.enum(["off", "polite", "assertive"]).default("off"),
   }),
+  asset: z.strictObject({
+    assetId: idSchema,
+    variantId: idSchema.optional(),
+    fit: z.enum(["contain", "cover", "fill", "none"]).default("contain"),
+    focalPoint: z.strictObject({
+      x: z.number().finite().min(0).max(1),
+      y: z.number().finite().min(0).max(1),
+    }).default({ x: 0.5, y: 0.5 }),
+    decorative: z.boolean().default(false),
+  }).optional(),
   states: z.array(z.strictObject({ name: visualStateSchema, visibleWhen: expressionSchema.optional() })).max(5).default([]),
   interactions: z.array(
     z.strictObject({
@@ -250,13 +455,27 @@ const semanticNodeBaseSchema = z.strictObject({
 
 type SemanticNodeBase = z.infer<typeof semanticNodeBaseSchema>;
 
+export interface ComponentInstance extends z.infer<typeof componentInstanceBaseSchema> {
+  slots: Record<string, SemanticNode[]>;
+}
+
 export interface SemanticNode extends SemanticNodeBase {
   children: SemanticNode[];
+  componentInstance?: ComponentInstance | undefined;
 }
 
 export const semanticNodeSchema: z.ZodType<SemanticNode> = z.lazy(() =>
   semanticNodeBaseSchema.extend({
     children: z.array(semanticNodeSchema).max(GRAPH_LIMITS.maxChildrenPerNode).default([]),
+    componentInstance: componentInstanceBaseSchema.extend({
+      slots: z.record(
+        identifierSchema,
+        z.array(semanticNodeSchema).max(GRAPH_LIMITS.maxChildrenPerNode),
+      ).refine(
+        (record) => Object.keys(record).length <= GRAPH_LIMITS.maxComponentSlots,
+        `Component instance slots must contain at most ${GRAPH_LIMITS.maxComponentSlots} entries`,
+      ).default({}),
+    }).optional(),
   }).superRefine((node, context) => {
     const container = (CONTAINER_NODE_KINDS as readonly string[]).includes(node.kind);
     if (!container && node.children.length > 0) {
@@ -286,6 +505,88 @@ export const semanticNodeSchema: z.ZodType<SemanticNode> = z.lazy(() =>
     }
   }),
 );
+
+const componentPropertySchema = z.strictObject({
+  name: identifierSchema,
+  type: componentValueTypeSchema,
+  required: z.boolean().default(false),
+  default: fixtureValueSchema.optional(),
+  bindings: z.array(z.strictObject({
+    target: idSchema,
+    field: componentBindingFieldSchema,
+  })).min(1).max(16),
+}).superRefine((property, context) => {
+  if (property.default !== undefined && typeof property.default !== property.type) {
+    context.addIssue({ code: "custom", path: ["default"], message: `Default value must be ${property.type}` });
+  }
+  for (const [index, binding] of property.bindings.entries()) {
+    const expected = binding.field === "layout.fixedWidth" || binding.field === "layout.fixedHeight"
+      ? "number"
+      : binding.field === "visible" ? "boolean" : "string";
+    if (property.type !== expected) {
+      context.addIssue({
+        code: "custom",
+        path: ["bindings", index, "field"],
+        message: `${binding.field} requires a ${expected} property`,
+      });
+    }
+  }
+});
+
+const componentSlotSchema = z.strictObject({
+  name: identifierSchema,
+  target: idSchema,
+  allowedKinds: z.array(semanticNodeKindSchema).min(1).max(LEAF_NODE_KINDS.length + CONTAINER_NODE_KINDS.length),
+  required: z.boolean().default(false),
+  maxChildren: z.number().int().min(1).max(GRAPH_LIMITS.maxChildrenPerNode).default(GRAPH_LIMITS.maxChildrenPerNode),
+});
+
+const componentModeSchema = z.strictObject({
+  id: identifierSchema,
+  label: safeTextSchema(120),
+  overrides: z.array(componentOverrideSchema).max(GRAPH_LIMITS.maxPatchOperations).default([]),
+});
+
+export const componentDefinitionSchema = z.strictObject({
+  id: idSchema,
+  name: safeTextSchema(120),
+  description: safeTextSchema(500),
+  version: z.string().regex(/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/),
+  template: semanticNodeSchema,
+  properties: z.array(componentPropertySchema).max(GRAPH_LIMITS.maxComponentProperties).default([]),
+  slots: z.array(componentSlotSchema).max(GRAPH_LIMITS.maxComponentSlots).default([]),
+  variants: z.array(componentModeSchema).max(GRAPH_LIMITS.maxComponentVariants).default([]),
+  defaultVariant: identifierSchema.optional(),
+  states: z.array(componentModeSchema).max(GRAPH_LIMITS.maxComponentStates).default([]),
+  defaultState: identifierSchema.optional(),
+  deprecated: z.strictObject({
+    message: safeTextSchema(500),
+    replacementId: idSchema.optional(),
+  }).optional(),
+});
+
+export const localComponentLibrarySchema = z.strictObject({
+  abiVersion: z.literal("1.0.0"),
+  id: idSchema,
+  name: safeTextSchema(120),
+  version: z.string().regex(/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/),
+  definitions: z.array(componentDefinitionSchema).min(1).max(GRAPH_LIMITS.maxComponents),
+}).superRefine((library, context) => {
+  const seen = new Set<string>();
+  library.definitions.forEach((definition, index) => {
+    if (seen.has(definition.id)) {
+      context.addIssue({ code: "custom", path: ["definitions", index, "id"], message: `Duplicate component id: ${definition.id}` });
+    }
+    seen.add(definition.id);
+  });
+});
+
+export type ComponentOverride = z.infer<typeof componentOverrideSchema>;
+export type ComponentDefinition = z.infer<typeof componentDefinitionSchema>;
+
+export function parseLocalComponentLibrary(input: unknown) {
+  return localComponentLibrarySchema.parse(input);
+}
 
 export interface SemanticNodeVisit {
   node: SemanticNode;
@@ -415,35 +716,14 @@ export function isTransactionalScreen(
 
 export const semanticInterfaceGraphSchema = z
   .strictObject({
-    schemaVersion: z.literal("0.2.0"),
+    schemaVersion: z.literal("0.4.0"),
     product: z.strictObject({
       name: safeTextSchema(120),
       audience: z.array(safeTextSchema(240)).min(1).max(20),
       principles: z.array(safeTextSchema(500)).min(1).max(20),
     }),
-    tokens: z.strictObject({
-      colors: z.record(
-        colorTokenKeySchema,
-        colorValueSchema,
-      ).refine(
-        (record) => Object.keys(record).length <= GRAPH_LIMITS.maxTokensPerGroup,
-        `Colors must contain at most ${GRAPH_LIMITS.maxTokensPerGroup} entries`,
-      ),
-      spacing: z.record(
-        spacingTokenKeySchema,
-        z.number().positive().max(512),
-      ).refine(
-        (record) => Object.keys(record).length <= GRAPH_LIMITS.maxTokensPerGroup,
-        `Spacing must contain at most ${GRAPH_LIMITS.maxTokensPerGroup} entries`,
-      ),
-      radii: z.record(
-        radiusTokenKeySchema,
-        z.number().nonnegative().max(256),
-      ).refine(
-        (record) => Object.keys(record).length <= GRAPH_LIMITS.maxTokensPerGroup,
-        `Radii must contain at most ${GRAPH_LIMITS.maxTokensPerGroup} entries`,
-      ),
-    }),
+    tokens: tokenCollectionSchema,
+    assets: z.array(assetDefinitionSchema).max(GRAPH_LIMITS.maxAssets).default([]),
     platforms: z.array(
       z.strictObject({
         target: platformTargetSchema,
@@ -451,11 +731,7 @@ export const semanticInterfaceGraphSchema = z
         capabilities: z.array(tokenKeySchema).max(32),
       }),
     ).max(5),
-    components: z.array(z.strictObject({
-      id: idSchema,
-      kind: tokenKeySchema,
-      description: safeTextSchema(500),
-    })).max(GRAPH_LIMITS.maxComponents),
+    components: z.array(componentDefinitionSchema).max(GRAPH_LIMITS.maxComponents),
     screens: z.array(screenSchema).min(1).max(GRAPH_LIMITS.maxScreens),
     flows: z.array(
       z.strictObject({
@@ -493,12 +769,300 @@ export const semanticInterfaceGraphSchema = z
     checkUnique(graph.flows.map((flow) => flow.id), "flow id", ["flows"]);
     checkUnique(graph.contracts.map((contract) => contract.screenId), "contract screen", ["contracts"]);
     checkUnique(graph.fixtures.map((fixture) => fixture.id), "fixture id", ["fixtures"]);
+    checkUnique(graph.assets.map((asset) => asset.id), "asset id", ["assets"]);
+
+    let activeTokens: ResolvedTokenMode = { colors: {}, spacing: {}, radii: {} };
+    if (!graph.tokens.modes[graph.tokens.defaultMode]) {
+      addIssue(`Unknown default token mode: ${graph.tokens.defaultMode}`, ["tokens", "defaultMode"]);
+    }
+    if (!graph.tokens.modes[graph.tokens.activeMode]) {
+      addIssue(`Unknown active token mode: ${graph.tokens.activeMode}`, ["tokens", "activeMode"]);
+    }
+    for (const modeId of Object.keys(graph.tokens.modes).sort()) {
+      try {
+        const resolved = resolveTokenMode(graph.tokens, modeId);
+        if (modeId === graph.tokens.activeMode) activeTokens = resolved;
+      } catch (error) {
+        addIssue(error instanceof Error ? error.message : "Token mode resolution failed", ["tokens", "modes", modeId]);
+      }
+    }
+    const allConcreteTokenKeys = new Set(Object.values(graph.tokens.modes).flatMap((mode) => [
+      ...Object.keys(mode.values.colors),
+      ...Object.keys(mode.values.spacing),
+      ...Object.keys(mode.values.radii),
+    ]));
+    for (const key of Object.keys(graph.tokens.aliases)) {
+      if (allConcreteTokenKeys.has(key)) {
+        addIssue(`Token cannot be both concrete and an alias: ${key}`, ["tokens", "aliases", key]);
+      }
+    }
+    for (const key of Object.keys(graph.tokens.deprecated)) {
+      if (!allConcreteTokenKeys.has(key) && !Object.hasOwn(graph.tokens.aliases, key)) {
+        addIssue(`Deprecated token does not exist: ${key}`, ["tokens", "deprecated", key]);
+      }
+    }
+
+    const assetById = new Map(graph.assets.map((asset) => [asset.id, asset]));
+    graph.assets.forEach((asset, assetIndex) => {
+      const assetPath: Array<string | number> = ["assets", assetIndex];
+      const validateFileMetadata = (
+        file: Pick<AssetDefinition, "mediaType" | "storageKey">,
+        path: Array<string | number>,
+      ) => {
+        if (!assetMediaTypes[asset.kind].includes(file.mediaType)) {
+          addIssue(`Asset media type ${file.mediaType} does not match kind ${asset.kind}`, [...path, "mediaType"]);
+        }
+        const extensions = assetMediaExtensions[file.mediaType] ?? [];
+        if (!extensions.some((extension) => file.storageKey.endsWith(extension))) {
+          addIssue(`Asset storage extension does not match media type ${file.mediaType}`, [...path, "storageKey"]);
+        }
+      };
+      validateFileMetadata(asset, assetPath);
+      if (!asset.storageKey.includes(asset.digest)) {
+        addIssue("Asset storage key must contain its SHA-256 digest", [...assetPath, "storageKey"]);
+      }
+      if (asset.exportPolicy === "copy" && asset.license.redistribution !== "allowed") {
+        addIssue("Copy export requires a license that allows redistribution", [...assetPath, "exportPolicy"]);
+      }
+      checkUnique(asset.variants.map((variant) => variant.id), "asset variant id", [...assetPath, "variants"]);
+      asset.variants.forEach((variant, variantIndex) => {
+        validateFileMetadata(variant, [...assetPath, "variants", variantIndex]);
+        if (!variant.storageKey.includes(variant.digest)) {
+          addIssue("Asset variant storage key must contain its SHA-256 digest", [...assetPath, "variants", variantIndex, "storageKey"]);
+        }
+      });
+    });
 
     const screenById = new Map(graph.screens.map((screen) => [screen.id, screen]));
     const contractByScreen = new Map(graph.contracts.map((contract) => [contract.screenId, contract]));
     const fixtureById = new Map(graph.fixtures.map((fixture) => [fixture.id, fixture]));
     const platformTargets = new Set(graph.platforms.map((platform) => platform.target));
     const nodeIds = new Set<string>();
+    const componentById = new Map(graph.components.map((component) => [component.id, component]));
+
+    const validateNodeAsset = (node: SemanticNode, path: Array<string | number>) => {
+      if (!node.asset) return;
+      const asset = assetById.get(node.asset.assetId);
+      if (!asset) {
+        addIssue(`Node references unknown asset: ${node.asset.assetId}`, [...path, "asset", "assetId"]);
+        return;
+      }
+      if (node.asset.variantId && !asset.variants.some((variant) => variant.id === node.asset?.variantId)) {
+        addIssue(`Node references unknown asset variant: ${node.asset.assetId}.${node.asset.variantId}`, [...path, "asset", "variantId"]);
+      }
+      if (asset.kind === "font") {
+        addIssue("Font assets cannot be bound as node content", [...path, "asset", "assetId"]);
+      }
+    };
+
+    const validateOverrideTargets = (
+      overrides: readonly ComponentOverride[],
+      nodesById: Map<string, SemanticNode>,
+      rootId: string,
+      path: Array<string | number>,
+    ) => {
+      overrides.forEach((override, index) => {
+        if (!nodesById.has(override.target)) {
+          addIssue(`Component override references unknown template node: ${override.target}`, [...path, index, "target"]);
+        }
+        if (override.op === "set-included" && override.target === rootId) {
+          addIssue("A component override cannot remove the template root", [...path, index]);
+        }
+        if ((override.op === "set-gap-token" || override.op === "set-padding-token")
+          && !Object.hasOwn(activeTokens.spacing, override.value)) {
+          addIssue(`Unknown component spacing token: ${override.value}`, [...path, index, "value"]);
+        }
+      });
+    };
+
+    const validateComponentInstance = (
+      instance: ComponentInstance,
+      path: Array<string | number>,
+      instanceDepth = 1,
+    ) => {
+      if (instanceDepth > GRAPH_LIMITS.maxComponentInstanceDepth) {
+        addIssue(`Component instance nesting exceeds ${GRAPH_LIMITS.maxComponentInstanceDepth} levels`, path);
+        return;
+      }
+      const definition = componentById.get(instance.definitionId);
+      if (!definition) {
+        addIssue(`Component instance references unknown definition: ${instance.definitionId}`, [...path, "definitionId"]);
+        return;
+      }
+      const propertyByName = new Map(definition.properties.map((property) => [property.name, property]));
+      for (const [name, value] of Object.entries(instance.props)) {
+        const property = propertyByName.get(name);
+        if (!property) {
+          addIssue(`Component instance provides unknown property: ${instance.definitionId}.${name}`, [...path, "props", name]);
+        } else if (typeof value !== property.type) {
+          addIssue(`Component property ${instance.definitionId}.${name} must be ${property.type}`, [...path, "props", name]);
+        }
+      }
+      definition.properties.forEach((property) => {
+        if (property.required && property.default === undefined && instance.props[property.name] === undefined) {
+          addIssue(`Component instance is missing required property: ${instance.definitionId}.${property.name}`, [...path, "props"]);
+        }
+      });
+      if (instance.variant && !definition.variants.some((variant) => variant.id === instance.variant)) {
+        addIssue(`Unknown component variant: ${instance.definitionId}.${instance.variant}`, [...path, "variant"]);
+      }
+      if (instance.state && !definition.states.some((state) => state.id === instance.state)) {
+        addIssue(`Unknown component state: ${instance.definitionId}.${instance.state}`, [...path, "state"]);
+      }
+      const slotByName = new Map(definition.slots.map((slot) => [slot.name, slot]));
+      for (const [name, children] of Object.entries(instance.slots)) {
+        const slot = slotByName.get(name);
+        if (!slot) {
+          addIssue(`Component instance provides unknown slot: ${instance.definitionId}.${name}`, [...path, "slots", name]);
+          continue;
+        }
+        if (children.length > slot.maxChildren) {
+          addIssue(`Component slot ${instance.definitionId}.${name} exceeds ${slot.maxChildren} children`, [...path, "slots", name]);
+        }
+        children.forEach((child, childIndex) => {
+          if (!slot.allowedKinds.includes(child.kind)) {
+            addIssue(`Component slot ${instance.definitionId}.${name} does not accept ${child.kind}`, [...path, "slots", name, childIndex, "kind"]);
+          }
+          const visitNestedInstance = (node: SemanticNode, nestedPath: Array<string | number>) => {
+            if (node.componentInstance) {
+              validateComponentInstance(node.componentInstance, [...nestedPath, "componentInstance"], instanceDepth + 1);
+            }
+            node.children.forEach((nestedChild, nestedIndex) =>
+              visitNestedInstance(nestedChild, [...nestedPath, "children", nestedIndex]));
+          };
+          visitNestedInstance(child, [...path, "slots", name, childIndex]);
+        });
+      }
+      definition.slots.forEach((slot) => {
+        if (slot.required && (instance.slots[slot.name]?.length ?? 0) === 0) {
+          addIssue(`Component instance is missing required slot: ${instance.definitionId}.${slot.name}`, [...path, "slots"]);
+        }
+      });
+      const templateNodes = flattenSemanticNodes([definition.template]);
+      validateOverrideTargets(
+        instance.overrides,
+        new Map(templateNodes.map((node) => [node.id, node])),
+        definition.template.id,
+        [...path, "overrides"],
+      );
+    };
+
+    const componentDependencies = new Map<string, Set<string>>();
+    for (const [componentIndex, component] of graph.components.entries()) {
+      const componentPath: Array<string | number> = ["components", componentIndex];
+      const templateNodes = flattenSemanticNodes([component.template]);
+      const templateById = new Map(templateNodes.map((node) => [node.id, node]));
+      checkUnique(templateNodes.map((node) => node.id), "component template node id", [...componentPath, "template"]);
+      checkUnique(component.properties.map((property) => property.name), "component property", [...componentPath, "properties"]);
+      checkUnique(component.slots.map((slot) => slot.name), "component slot", [...componentPath, "slots"]);
+      checkUnique(component.variants.map((variant) => variant.id), "component variant", [...componentPath, "variants"]);
+      checkUnique(component.states.map((state) => state.id), "component state", [...componentPath, "states"]);
+      if (templateNodes.length > GRAPH_LIMITS.maxTotalNodesPerScreen) {
+        addIssue(`Component ${component.id} exceeds ${GRAPH_LIMITS.maxTotalNodesPerScreen} template nodes`, [...componentPath, "template"]);
+      }
+      if (component.defaultVariant && !component.variants.some((variant) => variant.id === component.defaultVariant)) {
+        addIssue(`Unknown default component variant: ${component.id}.${component.defaultVariant}`, [...componentPath, "defaultVariant"]);
+      }
+      if (component.defaultState && !component.states.some((state) => state.id === component.defaultState)) {
+        addIssue(`Unknown default component state: ${component.id}.${component.defaultState}`, [...componentPath, "defaultState"]);
+      }
+      component.properties.forEach((property, propertyIndex) => {
+        property.bindings.forEach((binding, bindingIndex) => {
+          if (!templateById.has(binding.target)) {
+            addIssue(`Component property binding references unknown template node: ${binding.target}`, [...componentPath, "properties", propertyIndex, "bindings", bindingIndex, "target"]);
+          }
+        });
+      });
+      component.slots.forEach((slot, slotIndex) => {
+        const target = templateById.get(slot.target);
+        if (!target) {
+          addIssue(`Component slot references unknown template node: ${slot.target}`, [...componentPath, "slots", slotIndex, "target"]);
+        } else if (!isContainerNode(target)) {
+          addIssue(`Component slot target must be a container: ${slot.target}`, [...componentPath, "slots", slotIndex, "target"]);
+        }
+      });
+      component.variants.forEach((variant, variantIndex) => validateOverrideTargets(
+        variant.overrides,
+        templateById,
+        component.template.id,
+        [...componentPath, "variants", variantIndex, "overrides"],
+      ));
+      component.states.forEach((state, stateIndex) => validateOverrideTargets(
+        state.overrides,
+        templateById,
+        component.template.id,
+        [...componentPath, "states", stateIndex, "overrides"],
+      ));
+      walkSemanticNodes([component.template], ({ node, parent, depth, indexPath }) => {
+        const nodePath = [...componentPath, "template", ...indexPath.flatMap((index, depthIndex) =>
+          depthIndex === 0 ? [index] : ["children", index])];
+        if (depth > GRAPH_LIMITS.maxNodeDepth) {
+          addIssue(`Component template exceeds maximum node depth ${GRAPH_LIMITS.maxNodeDepth}`, nodePath);
+        }
+        validateNodeAsset(node, nodePath);
+        if (!Object.hasOwn(activeTokens.spacing, node.layout.gapToken)) {
+          addIssue(`Unknown spacing token: ${node.layout.gapToken}`, [...nodePath, "layout", "gapToken"]);
+        }
+        if (!Object.hasOwn(activeTokens.spacing, node.layout.paddingToken)) {
+          addIssue(`Unknown spacing token: ${node.layout.paddingToken}`, [...nodePath, "layout", "paddingToken"]);
+        }
+        const parentResolvesToFreeform = parent?.kind === "freeform"
+          || (parent?.kind === "adaptive" && (
+            parent.layout.adaptive?.compact === "freeform"
+            || parent.layout.adaptive?.regular === "freeform"
+          ));
+        if (node.layout.position && !parentResolvesToFreeform) {
+          addIssue(`Node ${node.id} has a position outside a freeform relation`, [...nodePath, "layout", "position"]);
+        }
+        for (const target of Object.keys(node.platformOverrides ?? {})) {
+          if (!platformTargets.has(target as PlatformTarget)) {
+            addIssue(`Unknown platform override target: ${target}`, [...nodePath, "platformOverrides", target]);
+          }
+        }
+      });
+      if (component.deprecated?.replacementId) {
+        if (component.deprecated.replacementId === component.id) {
+          addIssue("A deprecated component cannot replace itself", [...componentPath, "deprecated", "replacementId"]);
+        } else if (!componentById.has(component.deprecated.replacementId)) {
+          addIssue(`Unknown component replacement: ${component.deprecated.replacementId}`, [...componentPath, "deprecated", "replacementId"]);
+        }
+      }
+      const dependencies = new Set<string>();
+      const visitAuthored = (node: SemanticNode, path: Array<string | number>) => {
+        if (node.componentInstance) {
+          dependencies.add(node.componentInstance.definitionId);
+          validateComponentInstance(node.componentInstance, [...path, "componentInstance"]);
+          Object.values(node.componentInstance.slots).flat().forEach((child, index) => visitAuthored(child, [...path, "componentInstance", "slots", index]));
+        }
+        node.children.forEach((child, index) => visitAuthored(child, [...path, "children", index]));
+      };
+      visitAuthored(component.template, [...componentPath, "template"]);
+      componentDependencies.set(component.id, dependencies);
+    }
+
+    const visiting = new Set<string>();
+    const visited = new Set<string>();
+    const visitComponentDependency = (componentId: string, trail: string[]) => {
+      if (trail.length >= GRAPH_LIMITS.maxComponentInstanceDepth) {
+        addIssue(
+          `Component dependency nesting exceeds ${GRAPH_LIMITS.maxComponentInstanceDepth} levels: ${[...trail, componentId].join(" -> ")}`,
+          ["components"],
+        );
+        return;
+      }
+      if (visiting.has(componentId)) {
+        addIssue(`Component dependency cycle: ${[...trail, componentId].join(" -> ")}`, ["components"]);
+        return;
+      }
+      if (visited.has(componentId)) return;
+      visiting.add(componentId);
+      for (const dependency of componentDependencies.get(componentId) ?? []) {
+        if (componentById.has(dependency)) visitComponentDependency(dependency, [...trail, componentId]);
+      }
+      visiting.delete(componentId);
+      visited.add(componentId);
+    };
+    graph.components.forEach((component) => visitComponentDependency(component.id, []));
 
     for (const [contractIndex, contract] of graph.contracts.entries()) {
       if (!screenById.has(contract.screenId)) {
@@ -586,6 +1150,9 @@ export const semanticInterfaceGraphSchema = z
         }
         if (nodeIds.has(node.id)) addIssue(`Duplicate node id: ${node.id}`, [...nodePath, "id"]);
         nodeIds.add(node.id);
+        if (node.componentInstance) {
+          validateComponentInstance(node.componentInstance, [...nodePath, "componentInstance"]);
+        }
 
         const parentResolvesToFreeform = parent?.kind === "freeform"
           || (parent?.kind === "adaptive" && (
@@ -599,10 +1166,11 @@ export const semanticInterfaceGraphSchema = z
           );
         }
 
-        if (!Object.hasOwn(graph.tokens.spacing, node.layout.gapToken)) {
+        validateNodeAsset(node, nodePath);
+        if (!Object.hasOwn(activeTokens.spacing, node.layout.gapToken)) {
           addIssue(`Unknown spacing token: ${node.layout.gapToken}`, [...nodePath, "layout", "gapToken"]);
         }
-        if (!Object.hasOwn(graph.tokens.spacing, node.layout.paddingToken)) {
+        if (!Object.hasOwn(activeTokens.spacing, node.layout.paddingToken)) {
           addIssue(`Unknown spacing token: ${node.layout.paddingToken}`, [...nodePath, "layout", "paddingToken"]);
         }
         for (const target of Object.keys(node.platformOverrides ?? {})) {
@@ -808,6 +1376,23 @@ export const graphPatchSchema = z.strictObject({
         value: colorValueSchema,
       }),
       z.strictObject({
+        op: z.literal("set-token-mode"),
+        mode: idSchema,
+      }),
+      z.strictObject({
+        op: z.literal("bind-asset"),
+        target: idSchema,
+        assetId: idSchema,
+        variantId: idSchema.optional(),
+        fit: z.enum(["contain", "cover", "fill", "none"]).default("contain"),
+        focalPoint: z.strictObject({
+          x: z.number().finite().min(0).max(1),
+          y: z.number().finite().min(0).max(1),
+        }).default({ x: 0.5, y: 0.5 }),
+        decorative: z.boolean().default(false),
+      }),
+      z.strictObject({ op: z.literal("clear-asset"), target: idSchema }),
+      z.strictObject({
         op: z.literal("set-fixture-value"),
         screenId: z.string().min(1).max(64).regex(/^[a-z][a-z0-9-]*$/),
         state: visualStateSchema,
@@ -831,7 +1416,8 @@ export function parseGraph(input: unknown): SemanticInterfaceGraph {
   if (new TextEncoder().encode(serialized).byteLength > GRAPH_LIMITS.maxSerializedBytes) {
     throw new Error(`Graph input exceeds ${GRAPH_LIMITS.maxSerializedBytes} serialized bytes`);
   }
-  return semanticInterfaceGraphSchema.parse(input);
+  const authored = semanticInterfaceGraphSchema.parse(input);
+  return semanticInterfaceGraphSchema.parse(synchronizeComponentInstances(authored));
 }
 
 export function setFixtureValue(
@@ -892,10 +1478,20 @@ export function applyGraphPatch(
 
   for (const operation of patch.operations) {
     if (operation.op === "set-color-token") {
-      if (!Object.hasOwn(clone.tokens.colors, operation.token)) {
+      const resolved = resolveTokenMode(clone.tokens);
+      if (!Object.hasOwn(resolved.colors, operation.token)) {
         throw new Error(`Unknown color token: ${operation.token}`);
       }
-      clone.tokens.colors[operation.token] = operation.value;
+      if (Object.hasOwn(clone.tokens.aliases, operation.token)) {
+        throw new Error(`Color token is an alias and cannot be assigned directly: ${operation.token}`);
+      }
+      clone.tokens.modes[clone.tokens.activeMode]!.values.colors[operation.token] = operation.value;
+      continue;
+    }
+
+    if (operation.op === "set-token-mode") {
+      if (!clone.tokens.modes[operation.mode]) throw new Error(`Unknown token mode: ${operation.mode}`);
+      clone.tokens.activeMode = operation.mode;
       continue;
     }
 
@@ -974,6 +1570,16 @@ export function applyGraphPatch(
         if (operation.position === null) delete node.layout.position;
         else if (operation.position !== undefined) node.layout.position = operation.position;
       }
+    } else if (operation.op === "bind-asset") {
+      node.asset = {
+        assetId: operation.assetId,
+        ...(operation.variantId ? { variantId: operation.variantId } : {}),
+        fit: operation.fit,
+        focalPoint: operation.focalPoint,
+        decorative: operation.decorative,
+      };
+    } else if (operation.op === "clear-asset") {
+      delete node.asset;
     } else if (operation.op === "set-placement") {
       node.layout.placement = { compact: operation.compact, regular: operation.regular };
     } else if (operation.op === "set-label") {
@@ -983,12 +1589,12 @@ export function applyGraphPatch(
     } else if (operation.op === "set-emphasis") {
       node.style.emphasis = operation.emphasis;
     } else if (operation.op === "set-gap-token") {
-      if (!Object.hasOwn(clone.tokens.spacing, operation.token)) {
+      if (!Object.hasOwn(resolveTokenMode(clone.tokens).spacing, operation.token)) {
         throw new Error(`Unknown spacing token: ${operation.token}`);
       }
       node.layout.gapToken = operation.token;
     } else if (operation.op === "set-padding-token") {
-      if (!Object.hasOwn(clone.tokens.spacing, operation.token)) {
+      if (!Object.hasOwn(resolveTokenMode(clone.tokens).spacing, operation.token)) {
         throw new Error(`Unknown spacing token: ${operation.token}`);
       }
       node.layout.paddingToken = operation.token;
@@ -1011,13 +1617,58 @@ export function semanticDiff(
 ): SemanticChange[] {
   const changes: SemanticChange[] = [];
 
-  for (const group of ["colors", "spacing", "radii"] as const) {
-    const beforeTokens: Record<string, unknown> = before.tokens[group];
-    const afterTokens: Record<string, unknown> = after.tokens[group];
-    for (const key of new Set([...Object.keys(beforeTokens), ...Object.keys(afterTokens)])) {
-      if (beforeTokens[key] !== afterTokens[key]) {
-        changes.push({ path: `tokens.${group}.${key}`, before: beforeTokens[key], after: afterTokens[key] });
+  if (before.tokens.defaultMode !== after.tokens.defaultMode) {
+    changes.push({ path: "tokens.defaultMode", before: before.tokens.defaultMode, after: after.tokens.defaultMode });
+  }
+  if (before.tokens.activeMode !== after.tokens.activeMode) {
+    changes.push({ path: "tokens.activeMode", before: before.tokens.activeMode, after: after.tokens.activeMode });
+  }
+  for (const modeId of new Set([...Object.keys(before.tokens.modes), ...Object.keys(after.tokens.modes)])) {
+    const beforeMode = before.tokens.modes[modeId];
+    const afterMode = after.tokens.modes[modeId];
+    if (!beforeMode || !afterMode) {
+      changes.push({ path: `tokens.modes.${modeId}`, before: beforeMode, after: afterMode });
+      continue;
+    }
+    if (beforeMode.name !== afterMode.name) {
+      changes.push({ path: `tokens.modes.${modeId}.name`, before: beforeMode.name, after: afterMode.name });
+    }
+    if (beforeMode.description !== afterMode.description) {
+      changes.push({ path: `tokens.modes.${modeId}.description`, before: beforeMode.description, after: afterMode.description });
+    }
+    for (const group of ["colors", "spacing", "radii"] as const) {
+      const beforeTokens: Record<string, unknown> = beforeMode.values[group];
+      const afterTokens: Record<string, unknown> = afterMode.values[group];
+      for (const key of new Set([...Object.keys(beforeTokens), ...Object.keys(afterTokens)])) {
+        if (beforeTokens[key] !== afterTokens[key]) {
+          changes.push({ path: `tokens.modes.${modeId}.values.${group}.${key}`, before: beforeTokens[key], after: afterTokens[key] });
+        }
       }
+    }
+  }
+  for (const field of ["aliases", "deprecated", "extensions"] as const) {
+    if (JSON.stringify(before.tokens[field]) !== JSON.stringify(after.tokens[field])) {
+      changes.push({ path: `tokens.${field}`, before: before.tokens[field], after: after.tokens[field] });
+    }
+  }
+
+  const beforeAssets = new Map(before.assets.map((asset) => [asset.id, asset]));
+  const afterAssets = new Map(after.assets.map((asset) => [asset.id, asset]));
+  for (const id of new Set([...beforeAssets.keys(), ...afterAssets.keys()])) {
+    const previous = beforeAssets.get(id);
+    const next = afterAssets.get(id);
+    if (JSON.stringify(previous) !== JSON.stringify(next)) {
+      changes.push({ path: `assets.${id}`, before: previous, after: next });
+    }
+  }
+
+  const beforeComponents = new Map(before.components.map((definition) => [definition.id, definition]));
+  const afterComponents = new Map(after.components.map((definition) => [definition.id, definition]));
+  for (const id of new Set([...beforeComponents.keys(), ...afterComponents.keys()])) {
+    const previous = beforeComponents.get(id);
+    const next = afterComponents.get(id);
+    if (JSON.stringify(previous) !== JSON.stringify(next)) {
+      changes.push({ path: `components.${id}`, before: previous, after: next });
     }
   }
 
@@ -1068,6 +1719,16 @@ export function semanticDiff(
     }
     if (previous.style.emphasis !== node.style.emphasis) {
       changes.push({ path: `${node.id}.style.emphasis`, before: previous.style.emphasis, after: node.style.emphasis });
+    }
+    if (JSON.stringify(previous.componentInstance) !== JSON.stringify(node.componentInstance)) {
+      changes.push({
+        path: `${node.id}.componentInstance`,
+        before: previous.componentInstance,
+        after: node.componentInstance,
+      });
+    }
+    if (JSON.stringify(previous.asset) !== JSON.stringify(node.asset)) {
+      changes.push({ path: `${node.id}.asset`, before: previous.asset, after: node.asset });
     }
     if (previous.layout.gapToken !== node.layout.gapToken) {
       changes.push({ path: `${node.id}.layout.gapToken`, before: previous.layout.gapToken, after: node.layout.gapToken });

@@ -78,6 +78,9 @@ importers:
       '@intentform/semantic-schema':
         specifier: workspace:*
         version: link:../../packages/semantic-schema
+      '@intentform/token-assets':
+        specifier: workspace:*
+        version: link:../../packages/token-assets
       '@intentform/verifier':
         specifier: workspace:*
         version: link:../../packages/verifier
@@ -178,6 +181,9 @@ importers:
       '@intentform/semantic-schema':
         specifier: workspace:*
         version: link:../semantic-schema
+      '@intentform/token-assets':
+        specifier: workspace:*
+        version: link:../token-assets
       '@intentform/verifier':
         specifier: workspace:*
         version: link:../verifier
@@ -230,6 +236,19 @@ importers:
       zod:
         specifier: ^4.3.6
         version: 4.4.3
+
+  packages/token-assets:
+    dependencies:
+      '@intentform/semantic-schema':
+        specifier: workspace:*
+        version: link:../semantic-schema
+    devDependencies:
+      '@types/node':
+        specifier: ^25.0.0
+        version: 25.9.5
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
 
   packages/verifier:
     dependencies:

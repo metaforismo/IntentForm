@@ -9,9 +9,21 @@ import {
 
 const graph = {
   tokens: {
-    colors: {},
-    spacing: { "space.8": 8, "space.16": 16 },
-    radii: {},
+    defaultMode: "default",
+    activeMode: "default",
+    modes: {
+      default: {
+        name: "Default",
+        values: {
+          colors: {},
+          spacing: { "space.8": 8, "space.16": 16 },
+          radii: {},
+        },
+      },
+    },
+    aliases: {},
+    deprecated: {},
+    extensions: {},
   },
 } as Pick<SemanticInterfaceGraph, "tokens">;
 

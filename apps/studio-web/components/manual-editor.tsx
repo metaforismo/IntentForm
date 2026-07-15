@@ -42,9 +42,19 @@ import {
   flattenSemanticNodes,
   findSemanticNode,
   parseGraph,
+  type ComponentOverride,
   type SemanticInterfaceGraph,
   type SemanticNode,
 } from "@intentform/semantic-schema";
+import {
+  detachComponentInstance,
+  instantiateComponent,
+  resetComponentInstance,
+  setComponentOverride,
+  setComponentProperty,
+  setComponentState,
+  setComponentVariant,
+} from "@intentform/semantic-schema/component-library";
 import type { VerificationFinding } from "@intentform/verifier";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CanvasStage, type CanvasApi } from "./editor/canvas";
@@ -147,6 +157,43 @@ const newNodeLayout = (kind: SemanticNode["kind"]): SemanticNode["layout"] => ({
   paddingToken: "space.20",
   ...(kind === "primary-action" ? { placement: { compact: "inline" as const, regular: "inline" as const } } : {}),
 });
+
+interface EditorComponentContext {
+  rootId: string;
+  targetId: string;
+  definitionId: string;
+}
+
+function componentContextForNode(
+  graph: SemanticInterfaceGraph,
+  screen: SemanticInterfaceGraph["screens"][number],
+  nodeId: string,
+): EditorComponentContext | null {
+  const visit = (nodes: readonly SemanticNode[], owner: EditorComponentContext | null): EditorComponentContext | null => {
+    for (const node of nodes) {
+      let current = owner;
+      if (node.componentInstance) {
+        const definition = graph.components.find((candidate) => candidate.id === node.componentInstance!.definitionId);
+        if (definition) {
+          current = { rootId: node.id, targetId: definition.template.id, definitionId: definition.id };
+        }
+      }
+      if (node.id === nodeId) {
+        if (!current) return null;
+        return {
+          ...current,
+          targetId: node.id === current.rootId
+            ? current.targetId
+            : node.id.startsWith(`${current.rootId}.`) ? node.id.slice(current.rootId.length + 1) : current.targetId,
+        };
+      }
+      const nested = visit(node.children, current);
+      if (nested) return nested;
+    }
+    return null;
+  };
+  return visit(screen.nodes, null);
+}
 
 export function ManualEditor({
   graph,
@@ -307,6 +354,9 @@ export function ManualEditor({
   const screen = graph.screens.find((item) => item.id === selectedScreen) ?? graph.screens[0];
   const selectedNode = screen && selectedNodeId ? findSemanticNode(screen.nodes, selectedNodeId) ?? null : null;
   const selectedLocation = selectedNodeId ? locateEditorNode(graph, selectedNodeId) : null;
+  const componentContext = screen && selectedNodeId
+    ? componentContextForNode(graph, screen, selectedNodeId)
+    : null;
   const activeProfile = deviceProfiles.find((profile) => profile.id === deviceId) ?? deviceProfiles[0]!;
 
   useEffect(() => {
@@ -376,10 +426,29 @@ export function ManualEditor({
     const draft = structuredClone(graph);
     const found = locateEditorNode(draft, nodeId);
     if (!found) return;
+    const binding = componentContextForNode(draft, found.screen, nodeId);
+    const before = structuredClone(found.node);
     mutate(found.node);
+    if (binding) {
+      const definitionLayout = (layout: SemanticNode["layout"]) => {
+        const copy = structuredClone(layout) as Record<string, unknown>;
+        for (const field of [
+          "width", "height", "fixedWidth", "fixedHeight", "minWidth", "maxWidth", "minHeight", "maxHeight", "position", "placement",
+        ] as const) delete copy[field];
+        return copy;
+      };
+      const changesDefinitionOwnedFields = [
+        "intent", "style", "accessibility", "states", "interactions", "children", "componentInstance",
+      ].some((field) => JSON.stringify(before[field as keyof SemanticNode]) !== JSON.stringify(found.node[field as keyof SemanticNode]))
+        || JSON.stringify(definitionLayout(before.layout)) !== JSON.stringify(definitionLayout(found.node.layout));
+      if (nodeId !== binding.rootId || changesDefinitionOwnedFields) {
+        onNotice("This layer belongs to an attached component. Use its component controls or detach it before changing definition-owned fields.");
+        return;
+      }
+    }
     found.node.provenance = { author: "human", revision: found.node.provenance.revision + 1 };
     commitDraft(draft, notice);
-  }, [commitDraft, graph]);
+  }, [commitDraft, graph, onNotice]);
 
   const updateNode = (mutate: (node: SemanticNode) => void, notice: string) => {
     if (!selectedNode) return;
@@ -583,6 +652,46 @@ export function ManualEditor({
       setInsertOpen(false);
     }
   };
+
+  const insertLibraryComponent = useCallback((definitionId: string) => {
+    if (!screen) return;
+    const definition = graph.components.find((candidate) => candidate.id === definitionId);
+    if (!definition) return;
+    const stem = definition.id.split(".").at(-1)?.replace(/[^a-z0-9-]/g, "-") || "component";
+    const ids = new Set(flattenGraphNodes(graph).map((node) => node.id));
+    let count = 1;
+    let instanceId = `${screen.id}.instance-${stem}-${count}`;
+    while (ids.has(instanceId)) {
+      count += 1;
+      instanceId = `${screen.id}.instance-${stem}-${count}`;
+    }
+    try {
+      const next = instantiateComponent(graph, {
+        definitionId,
+        instanceId,
+        screenId: screen.id,
+      });
+      const committed = commitDraft(next, `Inserted ${definition.name} from the local component library.`);
+      if (committed) {
+        onSelectNode(instanceId);
+        setInsertOpen(false);
+      }
+    } catch (error) {
+      onNotice(editorTransactionError(error));
+    }
+  }, [commitDraft, graph, onNotice, onSelectNode, screen]);
+
+  const mutateComponent = useCallback((
+    mutate: (source: SemanticInterfaceGraph, instanceId: string) => SemanticInterfaceGraph,
+    notice: string,
+  ) => {
+    if (!componentContext) return;
+    try {
+      commitDraft(mutate(graph, componentContext.rootId), notice);
+    } catch (error) {
+      onNotice(editorTransactionError(error));
+    }
+  }, [commitDraft, componentContext, graph, onNotice]);
 
   const reorderScreens = useCallback((orderedIds: string[]) => {
     const draft = structuredClone(graph);
@@ -904,6 +1013,8 @@ export function ManualEditor({
     { label: "Toggle pages and layers", shortcut: "⌥L", section: "Panels", icon: Stack, action: () => toggleEditorPanel("structure") },
     { label: "Toggle design inspector", shortcut: "⌥I", section: "Panels", icon: Selection, action: () => toggleEditorPanel("inspector") },
     { label: "Show design tokens", section: "Panels", icon: PaintBrush, action: () => { setRailTab("tokens"); setDesktopPanels((current) => ({ ...current, structure: true })); setMobilePanel("structure"); } },
+    { label: "Show component library", section: "Panels", icon: Stack, action: () => { setRailTab("components"); setDesktopPanels((current) => ({ ...current, structure: true })); setMobilePanel("structure"); } },
+    { label: "Show project assets", section: "Panels", icon: Stack, action: () => { setRailTab("assets"); setDesktopPanels((current) => ({ ...current, structure: true })); setMobilePanel("structure"); } },
     { label: "Add semantic screen", section: "Edit", icon: FrameCorners, action: addScreen },
     { label: "Duplicate current screen", section: "Edit", icon: Copy, action: () => { if (screen) duplicateScreen(screen.id); } },
     ...(graph.screens.length > 1 && screen ? [
@@ -990,6 +1101,7 @@ export function ManualEditor({
         onDuplicateScreen={duplicateScreen}
         onDeleteScreen={deleteScreen}
         onReorderNodes={reorderNodes}
+        onInstantiateComponent={insertLibraryComponent}
         onUpdateTokens={updateTokens}
         onClose={() => closeEditorPanel("structure")}
         onDismissMobile={() => setMobilePanel(null)}
@@ -1111,6 +1223,13 @@ export function ManualEditor({
                       </button>
                     );
                   })}
+                  {graph.components.length > 0 ? <span className="mt-1 block border-t border-[var(--line)] px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[.12em] text-[var(--faint)]">Local library</span> : null}
+                  {graph.components.map((definition) => (
+                    <button key={definition.id} type="button" role="menuitem" disabled={Boolean(definition.deprecated)} onClick={() => insertLibraryComponent(definition.id)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-[var(--hover)] disabled:cursor-not-allowed disabled:opacity-45">
+                      <span className="grid size-8 shrink-0 place-items-center rounded-md border border-[var(--line)] bg-[var(--chip)] text-[var(--t-strong)]"><Stack size={14} /></span>
+                      <span className="min-w-0"><strong className="block text-[11px] font-semibold">{definition.name}</strong><small className="block truncate text-[11px] text-[var(--muted)]">v{definition.version} · {definition.variants.length} variants</small></span>
+                    </button>
+                  ))}
                 </div>
               ) : null}
             </div>
@@ -1191,12 +1310,31 @@ export function ManualEditor({
         graph={graph}
         screen={screen}
         selectedNode={normalizedSelection.length === 1 ? selectedNode : null}
+        componentContext={normalizedSelection.length === 1 ? componentContext : null}
         selectionCount={normalizedSelection.length}
         profile={activeProfile}
         visualState={activeVisualState}
         visible={mobilePanel === "inspector"}
         desktopVisible={desktopPanels.inspector}
         updateNode={updateNode}
+        onSetComponentProperty={(name, value) => mutateComponent(
+          (source, instanceId) => setComponentProperty(source, instanceId, name, value),
+          `Updated the ${name} component property.`,
+        )}
+        onSetComponentVariant={(variant) => mutateComponent(
+          (source, instanceId) => setComponentVariant(source, instanceId, variant),
+          variant ? `Applied the ${variant} component variant.` : "Restored the default component variant.",
+        )}
+        onSetComponentState={(state) => mutateComponent(
+          (source, instanceId) => setComponentState(source, instanceId, state),
+          state ? `Applied the ${state} component state.` : "Restored the default component state.",
+        )}
+        onSetComponentOverride={(override: ComponentOverride) => mutateComponent(
+          (source, instanceId) => setComponentOverride(source, instanceId, override),
+          "Updated an instance override.",
+        )}
+        onResetComponent={() => mutateComponent(resetComponentInstance, "Reset the component instance to its definition defaults.")}
+        onDetachComponent={() => mutateComponent(detachComponentInstance, "Detached the component while preserving its rendered semantic tree.")}
         onUpdateFixture={updateFixture}
         onSetActionEvent={setActionEvent}
         onSetFlowTarget={setFlowTarget}

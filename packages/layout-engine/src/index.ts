@@ -2,6 +2,7 @@ import {
   classifyDevice,
   flattenSemanticNodes,
   isContainerNode,
+  resolveTokenMode,
   walkSemanticNodes,
   type ContainerNodeKind,
   type ScreenDefinition,
@@ -94,7 +95,7 @@ function resolvedHeight(node: SemanticNode, available: number, intrinsic: number
 }
 
 interface LayoutContext {
-  graph: Pick<SemanticInterfaceGraph, "tokens">;
+  spacing: Record<string, number>;
   viewport: { width: number; height: number };
   byId: Map<string, NeutralLayoutNode>;
 }
@@ -136,8 +137,8 @@ function layoutNode(
 ): NeutralLayoutNode {
   const mode = resolvedContainerMode(node, context.viewport);
   const width = resolvedWidth(node, available.width);
-  const padding = context.graph.tokens.spacing[node.layout.paddingToken] ?? 0;
-  const gap = context.graph.tokens.spacing[node.layout.gapToken] ?? 0;
+  const padding = context.spacing[node.layout.paddingToken] ?? 0;
+  const gap = context.spacing[node.layout.gapToken] ?? 0;
   const safeTop = mode === "safe-area" ? 16 : 0;
   const safeBottom = mode === "safe-area" ? 24 : 0;
   const contentX = origin.x + padding;
@@ -278,10 +279,11 @@ export function computeNeutralLayout(
   viewport: { width: number; height: number },
 ): NeutralScreenLayout {
   const byId = new Map<string, NeutralLayoutNode>();
+  const spacing = resolveTokenMode(graph.tokens).spacing;
   const roots: NeutralLayoutNode[] = [];
   let cursorY = 0;
   for (const root of screen.nodes) {
-    const laidOut = layoutNode(root, { x: 0, y: cursorY }, viewport, 1, { graph, viewport, byId });
+    const laidOut = layoutNode(root, { x: 0, y: cursorY }, viewport, 1, { spacing, viewport, byId });
     roots.push(laidOut);
     cursorY += laidOut.frame.height + 16;
   }
