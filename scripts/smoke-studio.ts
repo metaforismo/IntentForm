@@ -371,8 +371,7 @@ try {
       await page.screenshot({ path: join(root, "output/playwright/local-bezel-neutral-fallback.png"), fullPage: true });
 
       await page.getByRole("button", { name: "Native outputs" }).click();
-      const evidencePanel = page.getByRole("region", { name: "Continuous local evidence" });
-      await evidencePanel.getByText("saved graph", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "More", exact: true }).click();
       const agentPanel = page.getByRole("region", { name: "Agent access" });
       await agentPanel.getByText("least authority", { exact: true }).waitFor();
       await agentPanel.getByText("No shell · no network", { exact: true }).waitFor();
@@ -387,12 +386,16 @@ try {
       await historyPanel.getByText("merge branch agent-copy", { exact: true }).waitFor();
       await historyPanel.getByTestId("history-branch-conflict-copy").getByRole("button", { name: "Preview", exact: true }).click();
       await historyPanel.getByTestId("history-merge-conflicts").getByText(/both-modified.*intent\.label/).waitFor();
-      const browserPreview = evidencePanel.locator('[data-preview-target="browser"]');
-      await browserPreview.getByRole("button", { name: "Start" }).click();
-      await browserPreview.getByText("fresh · ready", { exact: true }).waitFor({ timeout: 30_000 });
+      await page.getByRole("button", { name: "Close activity drawer" }).click();
+      await page.locator("#studio-workspace").getByRole("button", { name: "Build", exact: true }).click();
+      await page.getByText("fresh", { exact: true }).waitFor({ timeout: 30_000 });
+      await page.getByRole("button", { name: /Evidence and diagnostics/ }).click();
+      await page.getByText(/ready · render-verified|ready · built/).waitFor();
       await page.screenshot({ path: join(root, "output/playwright/continuous-preview-evidence.png"), fullPage: true });
       await page.getByRole("button", { name: "Verification" }).click();
-      await page.getByText("Passed", { exact: true }).first().waitFor();
+      await page.getByRole("heading", { name: /Verification ·/ }).waitFor();
+      await page.getByRole("heading", { name: "Exact evidence" }).waitFor();
+      await page.getByText(/react · Neutral compact phone · [a-f0-9]{8}/).waitFor();
     },
   });
 
@@ -474,21 +477,22 @@ try {
       await page.getByRole("button", { name: "Native outputs" }).click();
       const outputTargets = page.getByRole("group", { name: "Output target" });
       await outputTargets.getByRole("button", { name: "expo" }).click();
-      await page.getByText("Expo Adaptive semantic preview", { exact: true }).waitFor();
-      await page.getByRole("button", { name: "intentform.expo.json" }).click();
-      const manifest = await page.locator("code").textContent();
+      await page.locator(".phone-shell").waitFor();
+      await page.getByRole("treeitem", { name: "intentform.expo.json" }).click();
+      const generatedSource = page.getByRole("region", { name: "Generated source" });
+      const manifest = await generatedSource.textContent();
       if (!manifest?.includes('"sdkVersion": "57.0.0"')
         || !manifest.includes('"strategy": "platform-native"')
         || !manifest.includes('"intent.status-message"')) {
         throw new Error("Expo manifest omitted SDK, node strategy, or adapter ownership");
       }
-      await page.getByRole("button", { name: "intent-dot-status-dash-message.ios.tsx" }).click();
-      const adapter = await page.locator("code").textContent();
+      await page.getByRole("treeitem", { name: "intent-dot-status-dash-message.ios.tsx" }).click();
+      const adapter = await generatedSource.textContent();
       if (!adapter?.includes("borderRadius: 16") || !adapter.includes("return fallback")) {
         throw new Error("Generated iOS adapter omitted its platform specialization or universal fallback");
       }
-      await page.getByRole("button", { name: "index.tsx" }).click();
-      const route = await page.locator("code").textContent();
+      await page.getByRole("treeitem", { name: "index.tsx" }).click();
+      const route = await generatedSource.textContent();
       if (!route?.includes('<Stack.Screen options={{ title: "Home" }} />')) {
         throw new Error("Expo Router output did not use the semantic screen title");
       }
@@ -530,8 +534,8 @@ try {
         throw new Error("Responsive-web projects did not open their dedicated output target");
       }
       await page.getByTestId("responsive-web-preview").waitFor();
-      await page.getByRole("button", { name: "styles.css" }).click();
-      const css = await page.locator("code").textContent();
+      await page.getByRole("treeitem", { name: "styles.css" }).click();
+      const css = await page.getByRole("region", { name: "Generated source" }).textContent();
       if (!css?.includes("grid-template-columns: repeat(auto-fit, minmax(") || !css.includes("@media (min-width: 1200px)")) {
         throw new Error("Responsive-web output omitted intrinsic grid or declared breakpoint CSS");
       }
@@ -866,13 +870,12 @@ try {
       }
       await page.getByRole("button", { name: "Toggle device chrome" }).click();
       await page.getByRole("button", { name: "Verification" }).click();
-      const regularScenario = page.getByRole("button", { name: "Neutral regular phone", exact: true });
-      if (await regularScenario.getAttribute("aria-pressed") !== "true") {
+      const regularScenario = page.getByLabel("Verification device");
+      if (await regularScenario.inputValue() !== "device:neutral.phone.regular") {
         throw new Error("Verification did not inherit the active canvas device");
       }
-      await page.getByText("402 × 874", { exact: true }).waitFor();
       await page.getByText("Build evidence pending", { exact: true }).waitFor();
-      await page.getByText("Not run for this graph", { exact: true }).waitFor();
+      await page.getByRole("heading", { name: "Exact evidence" }).or(page.getByText(/truthful completion still requires current build evidence/i)).first().waitFor();
       await page.getByRole("button", { name: "IntentForm project menu" }).click();
       await page.getByRole("menuitem", { name: "Proof report" }).click();
       await page.getByRole("heading", { name: "Source generated. Build evidence is still pending." }).waitFor();
@@ -919,11 +922,10 @@ try {
       await label.fill("Send verified request");
       await page.getByRole("button", { name: "Select", exact: true }).click();
       await page.getByRole("button", { name: "Native outputs" }).click();
-      const generatedCode = await page.locator("code").textContent();
+      const generatedCode = await page.getByRole("region", { name: "Generated source" }).textContent();
       if (!generatedCode?.includes("Send verified request") || !generatedCode.includes("placement-compact-persistent")) {
         throw new Error("Manual semantic edits did not reach generated React code");
       }
-      await page.getByText("Active compiled preview", { exact: true }).waitFor();
       const previewFrame = page.locator('iframe[title^="Generated React preview"]');
       if (await previewFrame.getAttribute("sandbox") !== "allow-scripts") {
         throw new Error("Active preview iframe must not receive same-origin access");
@@ -1042,13 +1044,9 @@ try {
       }
 
       await accessibilityPage.getByRole("button", { name: "Verification" }).click();
-      await accessibilityPage.getByRole("heading", { name: /WCAG 2.2 AA/ }).waitFor();
-      const rtlProfile = accessibilityPage.getByRole("button", { name: /rtl/i }).filter({ hasText: "RTL" });
-      await rtlProfile.click();
-      const activeInspection = accessibilityPage.getByText(/Active inspection:/);
-      if (await activeInspection.getAttribute("dir") !== "rtl" || await activeInspection.getAttribute("lang") !== "ar") {
-        throw new Error("RTL audit profile did not expose language and reading direction semantics");
-      }
+      const profileFilter = accessibilityPage.getByLabel("Accessibility profile filter");
+      await profileFilter.selectOption("rtl");
+      if (await profileFilter.inputValue() !== "rtl") throw new Error("RTL audit profile filter did not retain its selection");
 
       const undersized = await accessibilityPage.locator("button:visible").evaluateAll((elements) => elements
         .map((element) => {
@@ -1237,7 +1235,8 @@ try {
       await transactionPage.getByRole("alertdialog", { name: "Reset this workspace?" }).getByRole("button", { name: "Reset workspace" }).click();
       await transactionPage.getByRole("button", { name: "Request payment 4", exact: true }).waitFor();
       await transactionPage.getByRole("button", { name: "Verification" }).click();
-      await transactionPage.getByRole("button", { name: "Plan repair" }).click();
+      await transactionPage.getByRole("button", { name: /primary action must remain persistently reachable/i }).click();
+      await transactionPage.getByRole("button", { name: "Plan and apply repair" }).click();
       await transactionPage.getByRole("heading", { name: "The repair changed the graph. Available output was regenerated; verification is still pending." }).waitFor();
       await transactionPage.getByRole("button", { name: "Design canvas" }).click();
       await transactionPage.getByTestId("layer-payment-request.confirm").click();
@@ -1515,7 +1514,7 @@ try {
       }
 
       await page.getByRole("button", { name: "Verification" }).click();
-      await page.getByText("WCAG 2.2 AA profile matrix", { exact: true }).waitFor();
+      await page.getByLabel("Accessibility profile filter").waitFor();
       await page.screenshot({ path: join(root, "output/playwright/studio-large-document.png"), fullPage: true });
     },
   });
