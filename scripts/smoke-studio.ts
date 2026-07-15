@@ -200,6 +200,19 @@ try {
       assertSecurityHeaders(rootResponse, "Project launcher");
       await page.getByRole("heading", { name: "Open intent. Build native interfaces." }).waitFor();
       await page.getByText("No browser project yet", { exact: true }).waitFor();
+      await page.keyboard.press("Control+k");
+      const projectSearch = page.getByLabel("Search projects");
+      await projectSearch.fill("aster original");
+      await page.getByRole("button", { name: /Aster Sound creator platform/ }).waitFor();
+      await page.getByRole("button", { name: /Adaptive payment flow/ }).waitFor({ state: "detached" });
+      await page.getByText(/No recent project matches/).waitFor();
+      await page.getByRole("button", { name: "Recents", exact: true }).click();
+      await page.getByText("Open a working copy", { exact: true }).waitFor({ state: "detached" });
+      await page.getByRole("button", { name: "Examples", exact: true }).click();
+      await page.getByText("Recent and recovery", { exact: true }).waitFor({ state: "detached" });
+      await page.getByRole("button", { name: "Projects", exact: true }).click();
+      await projectSearch.fill("");
+      await page.getByRole("button", { name: /Adaptive payment flow/ }).waitFor();
       await page.getByRole("button", { name: "Open local project" }).click();
       await page.getByText("Schema update required", { exact: true }).waitFor();
       await page.getByRole("button", { name: "Checkpoint and update" }).waitFor();
@@ -255,10 +268,20 @@ try {
       await page.getByLabel("Primary audience").fill("Distributed research teams");
       await page.getByLabel("First outcome").fill("Review and organize field observations");
       await page.getByLabel("SwiftUI").uncheck();
-      await page.getByRole("button", { name: "Create blank canvas" }).click();
+      await page.getByLabel("Start from").selectOption("example");
+      await page.getByLabel("Theme").selectOption("dark");
+      await page.getByRole("button", { name: "Create project" }).click();
       await page.waitForURL(`${origin}/studio`);
       await page.getByText("Northline Field Notes", { exact: true }).first().waitFor();
-      await page.getByTestId("canvas-node-home.start").waitFor();
+      await page.getByTestId("canvas-node-home.example").waitFor();
+      const createdTheme = await page.evaluate(() => {
+        const manifest = JSON.parse(localStorage.getItem("intentform-browser-project-v2-manifest") ?? "null") as { generation?: string; chunkCount?: number } | null;
+        if (!manifest?.generation || !manifest.chunkCount) return null;
+        const source = Array.from({ length: manifest.chunkCount }, (_, index) => localStorage.getItem(`intentform-browser-project-v2-chunk:${manifest.generation}:${String(index).padStart(3, "0")}`) ?? "").join("");
+        const project = JSON.parse(source) as { graph?: { tokens?: { activeMode?: string; modes?: Record<string, unknown> } } };
+        return { activeMode: project.graph?.tokens?.activeMode, modes: Object.keys(project.graph?.tokens?.modes ?? {}) };
+      });
+      if (createdTheme?.activeMode !== "dark" || !createdTheme.modes.includes("dark")) throw new Error("Dark starter theme was not persisted");
 
       await page.getByRole("button", { name: "IntentForm project menu" }).click();
       await page.getByRole("menuitem", { name: "Back to project launcher" }).click();
@@ -356,7 +379,7 @@ try {
       await page.getByLabel("First outcome").fill("Record a verified field observation");
       const expoTarget = page.getByRole("checkbox", { name: "Expo Adaptive" });
       if (!await expoTarget.isChecked()) throw new Error("Expo Adaptive was not enabled for a new native project");
-      await page.getByRole("button", { name: "Create blank canvas" }).click();
+      await page.getByRole("button", { name: "Create project" }).click();
       await page.waitForURL(`${origin}/studio`);
       await page.getByTestId("canvas-node-home.start").waitFor();
       const renderStrategy = page.getByLabel("Render strategy");
@@ -412,7 +435,7 @@ try {
       if (!await page.getByRole("checkbox", { name: "Responsive web" }).isChecked()) {
         throw new Error("Responsive-web compiler target was not enabled by default");
       }
-      await page.getByRole("button", { name: "Create blank canvas" }).click();
+      await page.getByRole("button", { name: "Create project" }).click();
       await page.waitForURL(`${origin}/studio`);
       await page.getByText("Northline Journal", { exact: true }).first().waitFor();
       await page.getByLabel("Preview device").selectOption("web:desktop-browser");

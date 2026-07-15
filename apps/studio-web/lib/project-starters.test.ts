@@ -86,6 +86,41 @@ describe("project starters", () => {
     ]);
   });
 
+  it.each([
+    ["empty", ["home.start"]],
+    ["patterns", ["home.start", "home.primary-input", "home.primary-action"]],
+    ["example", ["home.example"]],
+  ] as const)("creates the selected %s starter content", (startFrom, nodeIds) => {
+    const graph = createStarterGraph({
+      name: "Starter content",
+      audience: "Product teams",
+      purpose: "Test a complete onboarding choice",
+      projectType: "application",
+      targets: ["react"],
+      startFrom,
+    });
+    expect(graph.screens[0]?.nodes.map((node) => node.id)).toEqual(nodeIds);
+    if (startFrom === "example") expect(graph.screens[0]?.nodes[0]?.children).toHaveLength(4);
+  });
+
+  it.each([
+    ["light", ["default"], "default"],
+    ["dark", ["default", "dark"], "dark"],
+    ["both", ["default", "dark"], "default"],
+  ] as const)("creates the selected %s token modes", (theme, modes, activeMode) => {
+    const graph = createStarterGraph({
+      name: "Starter theme",
+      audience: "Product teams",
+      purpose: "Test deterministic token modes",
+      projectType: "application",
+      targets: ["react"],
+      theme,
+    });
+    expect(Object.keys(graph.tokens.modes)).toEqual(modes);
+    expect(graph.tokens.activeMode).toBe(activeMode);
+    expect(parseGraph(graph)).toEqual(graph);
+  });
+
   it("ships multiple validated examples as copy-only source graphs", () => {
     expect(projectExamples.length).toBeGreaterThanOrEqual(3);
     expect(new Set(projectExamples.map((example) => example.graph.product.name)).size).toBe(projectExamples.length);

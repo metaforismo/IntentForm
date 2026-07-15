@@ -16,7 +16,12 @@ export interface StarterProjectInput {
   purpose: string;
   projectType: ProjectType;
   targets: Array<Extract<PlatformTarget, "react" | "swiftui" | "expo" | "web">>;
+  startFrom?: StarterContent;
+  theme?: StarterTheme;
 }
+
+export type StarterContent = "empty" | "patterns" | "example";
+export type StarterTheme = "light" | "dark" | "both";
 
 const starterCopy: Record<ProjectType, { title: string; nodeLabel: string; principle: string }> = {
   application: {
@@ -41,12 +46,83 @@ const starterCopy: Record<ProjectType, { title: string; nodeLabel: string; princ
   },
 };
 
+const lightTokens = {
+  colors: {
+    "color.accent": "#397461",
+    "color.ink": "#181c1a",
+    "color.canvas": "#f3f5f1",
+    "color.surface": "#fbfcf9",
+  },
+  spacing: { "space.8": 8, "space.12": 12, "space.16": 16, "space.20": 20, "space.24": 24 },
+  radii: { "radius.control": 18, "radius.surface": 28 },
+};
+
+const darkTokens = {
+  colors: {
+    "color.accent": "#72b89f",
+    "color.ink": "#f1f6f3",
+    "color.canvas": "#111713",
+    "color.surface": "#1a231e",
+  },
+  spacing: { "space.8": 8, "space.12": 12, "space.16": 16, "space.20": 20, "space.24": 24 },
+  radii: { "radius.control": 18, "radius.surface": 28 },
+};
+
+function starterNode(
+  id: string,
+  kind: SemanticNode["kind"],
+  label: string,
+  purpose: string,
+  children: SemanticNode[] = [],
+): SemanticNode {
+  return {
+    id,
+    kind,
+    intent: { purpose, label, importance: kind === "action" ? "primary" : "supporting" },
+    layout: {
+      ...structuredClone(demoGraph.screens[0]!.nodes[0]!.layout),
+      axis: "vertical",
+      width: "fill",
+      gapToken: "space.16",
+      paddingToken: "space.20",
+    },
+    style: { role: kind === "frame" ? "starter-section" : kind, emphasis: kind === "action" ? "strong" : "quiet" },
+    accessibility: { label, live: kind === "status-message" ? "polite" : "off" },
+    states: [],
+    interactions: [],
+    provenance: { author: "system", revision: 0 },
+    children,
+  };
+}
+
+function starterNodes(content: StarterContent, copy: (typeof starterCopy)[ProjectType]): SemanticNode[] {
+  const startingPoint = starterNode("home.start", "status-message", copy.nodeLabel, "Mark the canvas starting point");
+  if (content === "empty") return [startingPoint];
+  const primaryInput = starterNode("home.primary-input", "input", "Primary input", "Capture the first piece of user intent");
+  const primaryAction = starterNode("home.primary-action", "action", "Continue", "Advance the primary product workflow");
+  if (content === "patterns") return [startingPoint, primaryInput, primaryAction];
+  return [starterNode(
+    "home.example",
+    "frame",
+    "First workflow",
+    "Provide a complete editable example section",
+    [
+      starterNode("home.example.title", "text", copy.title, "Explain the first user outcome"),
+      primaryInput,
+      primaryAction,
+      starterNode("home.example.status", "status-message", "Ready for review", "Confirm the example workflow state"),
+    ],
+  )];
+}
+
 export function createStarterGraph(input: StarterProjectInput): SemanticInterfaceGraph {
   if (input.targets.length === 0) throw new Error("Select at least one target compiler.");
   const name = input.name.trim();
   const audience = input.audience.trim();
   const purpose = input.purpose.trim();
   const copy = starterCopy[input.projectType];
+  const startFrom = input.startFrom ?? "empty";
+  const theme = input.theme ?? "both";
   const expoSlug = name.normalize("NFKD").toLowerCase()
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
@@ -63,21 +139,13 @@ export function createStarterGraph(input: StarterProjectInput): SemanticInterfac
     },
     tokens: {
       defaultMode: "default",
-      activeMode: "default",
+      activeMode: theme === "dark" ? "dark" : "default",
       modes: {
         default: {
-          name: "Default",
-          values: {
-            colors: {
-              "color.accent": "#397461",
-              "color.ink": "#181c1a",
-              "color.canvas": "#f3f5f1",
-              "color.surface": "#fbfcf9",
-            },
-            spacing: { "space.8": 8, "space.12": 12, "space.16": 16, "space.20": 20, "space.24": 24 },
-            radii: { "radius.control": 18, "radius.surface": 28 },
-          },
+          name: "Light",
+          values: lightTokens,
         },
+        ...(theme !== "light" ? { dark: { name: "Dark", values: darkTokens } } : {}),
       },
       aliases: {},
       deprecated: {},
@@ -126,35 +194,21 @@ export function createStarterGraph(input: StarterProjectInput): SemanticInterfac
       title: copy.title,
       purpose,
       route: "/",
-      nodes: [{
-        id: "home.start",
-        kind: "status-message",
-        intent: {
-          purpose: "Mark the blank canvas starting point",
-          label: copy.nodeLabel,
-          importance: "supporting",
+      nodes: starterNodes(startFrom, copy).map((node) => input.projectType === "responsive-web" && node.id === "home.start" ? {
+        ...node,
+        web: {
+          display: "grid",
+          direction: "column",
+          wrap: "wrap",
+          position: "static",
+          overflowX: "visible",
+          overflowY: "visible",
+          containerType: "inline-size",
+          gridMinColumnWidth: 260,
+          gridMaxColumns: 3,
+          breakpointOverrides: { large: { gridMinColumnWidth: 320, gridMaxColumns: 4 } },
         },
-        layout: { axis: "vertical", width: "fill", gapToken: "space.16", paddingToken: "space.20" },
-        style: { role: "empty-state", emphasis: "quiet" },
-        accessibility: { label: copy.nodeLabel, live: "off" },
-        ...(input.projectType === "responsive-web" ? {
-          web: {
-            display: "grid",
-            direction: "column",
-            wrap: "wrap",
-            position: "static",
-            overflowX: "visible",
-            overflowY: "visible",
-            containerType: "inline-size",
-            gridMinColumnWidth: 260,
-            gridMaxColumns: 3,
-            breakpointOverrides: { large: { gridMinColumnWidth: 320, gridMaxColumns: 4 } },
-          },
-        } : {}),
-        states: [],
-        interactions: [],
-        provenance: { author: "system", revision: 0 },
-      }],
+      } : node),
     }],
     flows: [],
     contracts: [],

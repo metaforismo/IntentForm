@@ -14,10 +14,7 @@ import {
   Plus,
   ShieldCheck,
   Sparkle,
-  Archive,
   ClockCounterClockwise,
-  Gear,
-  GraduationCap,
   House,
   MagnifyingGlass,
   Warning,
@@ -37,6 +34,7 @@ import {
   type ProjectType,
 } from "../lib/browser-projects";
 import { createStarterGraph, projectExamples } from "../lib/project-starters";
+import { filterProjectExamples, projectMatchesQuery, type LauncherSection } from "../lib/launcher-model";
 
 const MAX_IMPORT_BYTES = 512_000;
 
@@ -78,6 +76,8 @@ export function Launcher() {
   const importInput = useRef<HTMLInputElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
   const [view, setView] = useState<LauncherView>("projects");
+  const [section, setSection] = useState<LauncherSection>("projects");
+  const [projectQuery, setProjectQuery] = useState("");
   const [recovery, setRecovery] = useState<BrowserProjectLoadResult | null>(null);
   const [bridge, setBridge] = useState<BridgeStatus>("checking");
   const [localMigration, setLocalMigration] = useState<LocalMigrationState | null>(null);
@@ -222,9 +222,7 @@ export function Launcher() {
     try {
       const targets = [reactTarget ? "react" : null, swiftTarget ? "swiftui" : null, expoTarget ? "expo" : null, projectType === "responsive-web" && webTarget ? "web" : null]
         .filter((target): target is "react" | "swiftui" | "expo" | "web" => target !== null);
-      const graph = createStarterGraph({ name, audience, purpose, projectType, targets });
-      const preferredMode = projectTheme === "dark" ? Object.keys(graph.tokens.modes).find((mode) => /dark/i.test(mode)) : undefined;
-      if (preferredMode) graph.tokens.activeMode = preferredMode;
+      const graph = createStarterGraph({ name, audience, purpose, projectType, targets, startFrom, theme: projectTheme });
       persistAndOpen(graph, { projectType, source: "created" }, "create");
     } catch (cause) {
       setError(validationMessage(cause));
@@ -259,6 +257,19 @@ export function Launcher() {
     }
   };
 
+  const visibleExamples = filterProjectExamples(projectExamples, projectQuery);
+  const recoveryMatches = recovery?.status === "ready"
+    ? projectMatchesQuery(projectQuery, [recovery.project.graph.product.name, recovery.project.projectType, recovery.project.source])
+    : projectQuery.trim().length === 0;
+  const showRecents = section !== "examples";
+  const showExamples = section !== "recents";
+
+  const selectSection = (next: LauncherSection) => {
+    setView("projects");
+    setSection(next);
+    setError(null);
+  };
+
   return (
     <main className="studio-grain flex min-h-[100dvh] bg-[var(--surface)] text-[var(--ink)]">
       <aside className="hidden w-[248px] shrink-0 flex-col border-r border-[var(--line)] bg-[var(--chrome)] p-3 lg:flex" aria-label="Project launcher navigation">
@@ -267,13 +278,12 @@ export function Launcher() {
           <strong className="text-[13px] tracking-[-.025em]">IntentForm</strong>
         </div>
         <nav className="mt-5 grid gap-1 text-[12px]">
-          {[
-            { label: "Recents", icon: ClockCounterClockwise },
-            { label: "Projects", icon: House },
-            { label: "Examples", icon: Sparkle },
-            { label: "Learn", icon: GraduationCap },
-          ].map(({ label, icon: Icon }, index) => (
-            <button key={label} type="button" onClick={() => { setView("projects"); setError(null); }} className={`flex h-8 items-center gap-2 rounded-[7px] px-2 text-left ${index === 0 ? "bg-[var(--control-active,var(--hover))] text-[var(--ink)]" : "text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"}`}>
+          {([
+            { id: "projects", label: "Projects", icon: House },
+            { id: "recents", label: "Recents", icon: ClockCounterClockwise },
+            { id: "examples", label: "Examples", icon: Sparkle },
+          ] satisfies Array<{ id: LauncherSection; label: string; icon: typeof House }>).map(({ id, label, icon: Icon }) => (
+            <button key={id} type="button" aria-current={section === id ? "page" : undefined} onClick={() => selectSection(id)} className={`flex h-8 items-center gap-2 rounded-[7px] px-2 text-left ${section === id ? "bg-[var(--control-active,var(--hover))] text-[var(--ink)]" : "text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"}`}>
               <Icon size={15} /><span>{label}</span>
             </button>
           ))}
@@ -281,8 +291,6 @@ export function Launcher() {
         <span className="mt-6 px-2 text-[10px] font-semibold uppercase tracking-[.1em] text-[var(--faint)]">Workspace</span>
         <nav className="mt-2 grid gap-1 text-[12px]">
           <button type="button" onClick={() => importInput.current?.click()} className="flex h-8 items-center gap-2 rounded-[7px] px-2 text-left text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"><FolderOpen size={15} /> Files</button>
-          <button type="button" className="flex h-8 items-center gap-2 rounded-[7px] px-2 text-left text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"><Archive size={15} /> Archive</button>
-          <button type="button" className="flex h-8 items-center gap-2 rounded-[7px] px-2 text-left text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"><Gear size={15} /> Settings</button>
         </nav>
         <div className="mt-auto rounded-[9px] border border-[var(--line)] bg-[var(--field)] p-3">
           <div className="flex items-center gap-2 text-[11px] font-medium"><span className={`size-1.5 rounded-full ${bridge === "available" ? "bg-[var(--success,#55c58b)]" : "bg-[var(--text-muted,var(--faint))]"}`} />{bridge === "available" ? "Agent bridge ready" : "Local workspace"}</div>
@@ -301,7 +309,7 @@ export function Launcher() {
             </div>
           </div>
           <div className="hidden items-center gap-2 text-[10px] text-[var(--muted)] sm:flex" aria-label="Workspace capabilities">
-            <label className="relative hidden xl:block"><MagnifyingGlass size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2" /><input ref={searchInput} aria-label="Search projects" placeholder="Search projects" className="h-8 w-48 rounded-[7px] border border-[var(--line)] bg-[var(--field)] pl-8 pr-3 outline-none focus:border-[var(--select)]" /></label>
+            <label className="relative hidden xl:block"><MagnifyingGlass size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2" /><input ref={searchInput} value={projectQuery} onChange={(event) => { setProjectQuery(event.target.value); selectSection("projects"); }} aria-label="Search projects" placeholder="Search projects" className="h-8 w-48 rounded-[7px] border border-[var(--line)] bg-[var(--field)] pl-8 pr-3 outline-none focus:border-[var(--select)]" /></label>
             <span className="inline-flex items-center gap-1.5"><Code size={13} /> React + SwiftUI + Expo</span>
             <span className="inline-flex items-center gap-1.5"><ShieldCheck size={13} /> Validated graph</span>
             <span className="inline-flex items-center gap-1.5">
@@ -380,7 +388,7 @@ export function Launcher() {
               </section>
               <div className="mt-7 flex items-center justify-between gap-4 border-t border-[var(--line)] pt-5">
                 <span className="text-[10px] leading-relaxed text-[var(--muted)]">Saved to browser recovery until you connect a local project.</span>
-                <button type="submit" disabled={opening !== null} className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl bg-[var(--accent)] px-5 text-xs font-semibold text-white transition-transform active:scale-[.98] disabled:opacity-60">Create blank canvas <ArrowRight size={14} /></button>
+                <button type="submit" disabled={opening !== null} className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl bg-[var(--accent)] px-5 text-xs font-semibold text-white transition-transform active:scale-[.98] disabled:opacity-60">Create project <ArrowRight size={14} /></button>
               </div>
             </form>
           </motion.section>
@@ -401,32 +409,35 @@ export function Launcher() {
                 <input ref={importInput} type="file" accept="application/json,.json,.intentform" onChange={(event) => importProject(event.target.files?.[0])} className="sr-only" aria-label="Import IntentForm project" />
               </div>
 
-              <div className="mt-10 border-t border-[var(--line)] pt-5">
+              {showRecents ? <div className="mt-10 border-t border-[var(--line)] pt-5">
                 <div className="flex items-center justify-between gap-4"><div><h2 className="text-sm font-semibold">Recent and recovery</h2><p className="mt-1 text-[10px] text-[var(--muted)]">One local browser project, never hidden behind an account.</p></div>{recovery?.status === "ready" ? <button type="button" onClick={discardRecovery} className="text-[10px] font-semibold text-[var(--muted)] hover:text-[var(--danger)]">Discard recovery</button> : null}</div>
                 {recovery === null ? (
                   <div className="mt-4 animate-pulse rounded-[22px] border border-[var(--line)] p-5"><div className="h-3 w-32 rounded bg-[var(--chip)]" /><div className="mt-4 h-7 w-64 rounded bg-[var(--chip)]" /></div>
-                ) : recovery.status === "ready" ? (
+                ) : recovery.status === "ready" && recoveryMatches ? (
                   <button type="button" disabled={opening !== null} onClick={() => persistAndOpen(recovery.project.graph, { projectType: recovery.project.projectType, source: "recovery", ...(recovery.project.localFingerprint ? { localFingerprint: recovery.project.localFingerprint } : {}) }, "recovery")} className="group mt-4 grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 rounded-[22px] border border-[var(--line)] bg-[var(--surface-strong)] p-4 text-left transition-[border,transform] hover:border-[var(--accent)] active:scale-[.995] disabled:opacity-60">
                     <span className="grid size-11 place-items-center rounded-[14px] bg-[var(--accent-soft)] text-[var(--accent-dark)]"><HardDrives size={18} /></span>
                     <span className="min-w-0"><strong className="block truncate text-sm">{recovery.project.graph.product.name}</strong><span className="mt-1 block truncate text-[10px] text-[var(--muted)]">{projectTypeLabel(recovery.project.projectType)} · saved {new Date(recovery.project.savedAt).toLocaleString()}</span></span>
                     <ArrowRight size={15} className="text-[var(--muted)] transition-transform group-hover:translate-x-1" />
                   </button>
-                ) : recovery.status === "invalid" ? (
+                ) : recovery.status === "invalid" && projectQuery.trim().length === 0 ? (
                   <div className="mt-4 flex items-start gap-3 rounded-[22px] border border-amber-400/35 bg-amber-50 p-4 text-amber-950"><Warning size={17} weight="fill" className="mt-0.5 shrink-0 text-amber-600" /><span className="min-w-0 flex-1 text-xs leading-relaxed"><strong className="block">Recovery needs attention</strong><span className="mt-1 block">{recovery.message}</span></span><button type="button" onClick={discardRecovery} className="rounded-lg border border-amber-300 px-2.5 py-1.5 text-[10px] font-semibold">Discard</button></div>
+                ) : projectQuery.trim().length > 0 ? (
+                  <div role="status" className="mt-4 rounded-[22px] border border-dashed border-[var(--line)] px-5 py-7"><strong className="text-xs">No recent project matches “{projectQuery.trim()}”</strong><p className="mt-1 text-[10px] text-[var(--muted)]">Try a project name, type, or source.</p></div>
                 ) : (
                   <div className="mt-4 rounded-[22px] border border-dashed border-[var(--line)] px-5 py-7"><strong className="text-xs">No browser project yet</strong><p className="mt-1 text-[10px] text-[var(--muted)]">Create, import, or copy an example. IntentForm will recover it here.</p></div>
                 )}
-              </div>
+              </div> : null}
             </section>
 
-            <aside className="min-w-0 lg:border-l lg:border-[var(--line)] lg:pl-8">
+            {showExamples ? <aside className="min-w-0 lg:border-l lg:border-[var(--line)] lg:pl-8">
               <div className="flex items-end justify-between gap-4"><div><span className="font-mono text-[10px] uppercase tracking-[.14em] text-[var(--faint)]">Examples</span><h2 className="mt-2 text-xl font-semibold tracking-[-.04em]">Open a working copy</h2></div><span className="text-[10px] text-[var(--muted)]">Sources stay unchanged</span></div>
               <div className="mt-5 divide-y divide-[var(--line)] border-y border-[var(--line)]">
-                {projectExamples.map((example, index) => (
+                {visibleExamples.map((example, index) => (
                   <button key={example.id} type="button" disabled={opening !== null} onClick={() => persistAndOpen(structuredClone(example.graph), { projectType: example.projectType, source: "example" }, example.id)} className="group grid w-full grid-cols-[32px_minmax(0,1fr)_auto] gap-3 py-5 text-left transition-transform active:scale-[.995] disabled:opacity-60">
                     <span className="font-mono text-[10px] text-[var(--faint)]">0{index + 1}</span><span><strong className="block text-sm">{example.label}</strong><span className="mt-1.5 block text-[10px] leading-relaxed text-[var(--muted)]">{example.summary}</span><span className="mt-3 inline-flex rounded-md bg-[var(--chip)] px-2 py-1 font-mono text-[9px] text-[var(--faint)]">{example.graph.product.name}</span></span><ArrowRight size={14} className="mt-1 text-[var(--faint)] transition-transform group-hover:translate-x-1" />
                   </button>
                 ))}
+                {visibleExamples.length === 0 ? <div role="status" className="py-8 text-center"><strong className="text-xs">No examples match “{projectQuery.trim()}”</strong><p className="mt-1 text-[10px] text-[var(--muted)]">Clear the search to see every verified starter.</p></div> : null}
               </div>
 
               <div className="mt-8 rounded-[22px] bg-[var(--inset)] p-5">
@@ -450,7 +461,7 @@ export function Launcher() {
                   </div>
                 ) : null}
               </div>
-            </aside>
+            </aside> : null}
           </motion.div>
         )}
       </div>
