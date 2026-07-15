@@ -19,6 +19,11 @@ import {
   type SemanticNode,
 } from "@intentform/semantic-schema";
 import { IconButton } from "../ui/controls";
+import {
+  CompositionSafeField as TextField,
+  NumericScrubField as NumberField,
+  SearchablePicker,
+} from "../ui/editor-controls";
 import { nodeNames, type DeviceProfile, type VisualState } from "./support";
 
 export function SegmentedControl<T extends string>({
@@ -52,91 +57,6 @@ export function SegmentedControl<T extends string>({
         ))}
       </div>
     </div>
-  );
-}
-
-function TextField({
-  label,
-  value,
-  placeholder,
-  multiline,
-  onCommit,
-}: {
-  label: string;
-  value: string;
-  placeholder?: string;
-  multiline?: boolean;
-  onCommit(next: string): void;
-}) {
-  const shared = "rounded-lg border border-[var(--line)] bg-[var(--field)] px-2.5 text-[12px] text-[var(--t-strong)] outline-none transition-colors hover:border-[var(--line-strong)] focus:border-[var(--accent)] focus:shadow-[0_0_0_3px_color-mix(in_oklab,var(--accent)_12%,transparent)] placeholder:text-[var(--faint)]";
-  return (
-    <label className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">
-      {label}
-      {multiline ? (
-        <textarea
-          key={label + value}
-          defaultValue={value}
-          placeholder={placeholder}
-          rows={2}
-          onBlur={(event) => onCommit(event.target.value.trim())}
-          className={`${shared} resize-none py-2 font-normal leading-relaxed`}
-        />
-      ) : (
-        <input
-          key={label + value}
-          defaultValue={value}
-          placeholder={placeholder}
-          onBlur={(event) => onCommit(event.target.value.trim())}
-          onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); }}
-          className={`${shared} min-h-8 font-normal`}
-        />
-      )}
-    </label>
-  );
-}
-
-function NumberField({
-  label,
-  value,
-  min = 0,
-  max = 10_000,
-  step = 1,
-  disabled = false,
-  onCommit,
-}: {
-  label: string;
-  value: number | undefined;
-  min?: number;
-  max?: number;
-  step?: number;
-  disabled?: boolean;
-  onCommit(next: number | undefined): void;
-}) {
-  return (
-    <label className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">
-      {label}
-      <input
-        key={`${label}-${value ?? "auto"}`}
-        type="number"
-        min={min}
-        max={max}
-        step={step}
-        disabled={disabled}
-        defaultValue={value}
-        placeholder="Auto"
-        onBlur={(event) => {
-          const source = event.target.value.trim();
-          if (!source) {
-            if (value !== undefined) onCommit(undefined);
-            return;
-          }
-          const next = Number(source);
-          if (Number.isFinite(next) && next >= min && next <= max && next !== value) onCommit(next);
-        }}
-        onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); }}
-        className="min-h-8 rounded-lg border border-[var(--line)] bg-[var(--field)] px-2.5 font-mono text-[11px] font-normal text-[var(--t-strong)] outline-none transition-colors hover:border-[var(--line-strong)] focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-45"
-      />
-    </label>
   );
 }
 
@@ -527,7 +447,7 @@ export function Inspector({
                     label={`Position ${field.toUpperCase()}`}
                     value={selectedNode.layout.position?.[field]}
                     disabled={componentNested}
-                    min={0}
+                    min={-2_048}
                     max={2_048}
                     onCommit={(value) => {
                       if (value === undefined) return;
@@ -542,10 +462,8 @@ export function Inspector({
             <SegmentedControl disabled={Boolean(componentContext)} label="Align" value={selectedNode.layout.align} options={[{ value: "start", label: "Start" }, { value: "center", label: "Center" }, { value: "end", label: "End" }, { value: "stretch", label: "Stretch" }]} onChange={(value) => updateNode((node) => { node.layout.align = value; }, `Changed cross-axis alignment to ${value}.`)} />
             <SegmentedControl disabled={Boolean(componentContext)} label="Justify" value={selectedNode.layout.justify} options={[{ value: "start", label: "Start" }, { value: "center", label: "Center" }, { value: "end", label: "End" }, { value: "space-between", label: "Between" }]} onChange={(value) => updateNode((node) => { node.layout.justify = value; }, `Changed main-axis justification to ${value}.`)} />
             <SegmentedControl disabled={Boolean(componentContext)} label="Overflow" value={selectedNode.layout.overflow} options={[{ value: "visible", label: "Visible" }, { value: "clip", label: "Clip" }, { value: "scroll", label: "Scroll" }]} onChange={(value) => updateNode((node) => { node.layout.overflow = value; }, `Changed overflow behavior to ${value}.`)} />
-            <div className="grid grid-cols-2 gap-2">
-              <label className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">Gap token<select value={selectedNode.layout.gapToken} onChange={(event) => componentContext ? onSetComponentOverride({ op: "set-gap-token", target: componentContext.targetId, value: event.target.value }) : updateNode((node) => { node.layout.gapToken = event.target.value; }, `Bound gap to ${event.target.value}.`)} className="select-control font-mono text-[11px] font-normal">{Object.keys(resolvedTokens.spacing).map((token) => <option key={token}>{token}</option>)}</select></label>
-              <label className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">Padding token<select value={selectedNode.layout.paddingToken} onChange={(event) => componentContext ? onSetComponentOverride({ op: "set-padding-token", target: componentContext.targetId, value: event.target.value }) : updateNode((node) => { node.layout.paddingToken = event.target.value; }, `Bound padding to ${event.target.value}.`)} className="select-control font-mono text-[11px] font-normal">{Object.keys(resolvedTokens.spacing).map((token) => <option key={token}>{token}</option>)}</select></label>
-            </div>
+            <SearchablePicker label="Gap token" token value={selectedNode.layout.gapToken} options={Object.entries(resolvedTokens.spacing).map(([token, resolved]) => ({ value: token, resolved }))} onChange={(value) => componentContext ? onSetComponentOverride({ op: "set-gap-token", target: componentContext.targetId, value }) : updateNode((node) => { node.layout.gapToken = value; }, `Bound gap to ${value}.`)} />
+            <SearchablePicker label="Padding token" token value={selectedNode.layout.paddingToken} options={Object.entries(resolvedTokens.spacing).map(([token, resolved]) => ({ value: token, resolved }))} onChange={(value) => componentContext ? onSetComponentOverride({ op: "set-padding-token", target: componentContext.targetId, value }) : updateNode((node) => { node.layout.paddingToken = value; }, `Bound padding to ${value}.`)} />
             {isContainerNode(selectedNode) ? (
               <div className="grid grid-cols-2 gap-2">
                 <NumberField disabled={Boolean(componentContext)} label="Columns" value={selectedNode.layout.columns} min={1} max={12} onCommit={(value) => { if (value !== undefined) updateNode((node) => { node.layout.columns = Math.round(value); }, `Set the container to ${Math.round(value)} columns.`); }} />
