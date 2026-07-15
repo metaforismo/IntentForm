@@ -88,6 +88,42 @@ function safeImportPath(projectDir: string, importName: string): string {
   return path;
 }
 
+/**
+ * Stages browser-provided bytes inside the guarded project inbox. The caller
+ * receives an opaque filename and never controls a filesystem path.
+ */
+export function stageProjectAssetImport(
+  projectDir: string,
+  suggestedName: string,
+  bytes: Uint8Array,
+  nonce = `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+): string {
+  if (bytes.byteLength <= 0 || bytes.byteLength > ASSET_IMPORT_LIMITS.maxBytes) {
+    throw new Error(`Asset import must contain 1 through ${ASSET_IMPORT_LIMITS.maxBytes} bytes`);
+  }
+  const extension = extname(basename(suggestedName)).toLowerCase() as SupportedExtension;
+  if (!formats[extension]) throw new Error(`Unsupported asset extension: ${extension || "none"}`);
+  const safeNonce = nonce.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80);
+  if (!safeNonce) throw new Error("Asset staging nonce is invalid");
+  const importName = `studio-${safeNonce}${extension === ".jpeg" ? ".jpg" : extension}`;
+  const root = join(projectDir, "imports");
+  assertDirectoryBoundary(root, "Asset imports directory");
+  mkdirSync(root, { recursive: true });
+  assertDirectoryBoundary(root, "Asset imports directory");
+  atomicWrite(safeImportPath(projectDir, importName), bytes);
+  return importName;
+}
+
+export function discardProjectAssetImport(projectDir: string, importName: string): void {
+  const path = safeImportPath(projectDir, importName);
+  if (!existsSync(path)) return;
+  const stat = lstatSync(path);
+  if (!stat.isFile() || stat.isSymbolicLink()) {
+    throw new Error("Staged asset import must be a regular file");
+  }
+  rmSync(path);
+}
+
 function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }

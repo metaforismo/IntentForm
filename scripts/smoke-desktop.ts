@@ -210,12 +210,22 @@ async function runPackagedDesktopSmoke(executable: string): Promise<void> {
       for (let attempt = 0; attempt < 40 && document.activeElement?.getAttribute("aria-label") !== "Close desktop services"; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
+      let snapshot = await api.snapshot();
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const ready = snapshot.project.granted
+          && snapshot.toolchains.length === 6
+          && snapshot.git?.repository === true
+          && snapshot.services.find((service) => service.id === "mcp")?.phase === "ready";
+        if (ready) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        snapshot = await api.snapshot();
+      }
       return {
         nodeProcess: typeof globalThis.process,
         require: typeof globalThis.require,
         apiKeys: Object.keys(api).sort(),
         runtimeSecurity: api.runtimeSecurity,
-        snapshot: await api.snapshot(),
+        snapshot,
         closeFocused: document.activeElement?.getAttribute("aria-label") === "Close desktop services",
       };
       })()`, mainContext);

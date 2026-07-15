@@ -149,6 +149,9 @@ export function Inspector({
   const boundAsset = selectedNode?.asset
     ? graph.assets.find((asset) => asset.id === selectedNode.asset?.assetId)
     : undefined;
+  const boundAssetFile = selectedNode?.asset?.variantId
+    ? boundAsset?.variants.find((variant) => variant.id === selectedNode.asset?.variantId) ?? boundAsset
+    : boundAsset;
   const updateWeb = (mutate: (web: NonNullable<SemanticNode["web"]>) => void, notice: string) => updateNode((node) => {
     const display = isContainerNode(node) ? node.kind === "grid" ? "grid" : "flex" : "block";
     node.web ??= {
@@ -348,6 +351,20 @@ export function Inspector({
             </label>
             {boundAsset && selectedNode.asset ? (
               <>
+                {boundAssetFile && ["raster", "svg", "icon"].includes(boundAsset.kind) ? (
+                  <div className="relative h-32 overflow-hidden rounded-lg border border-[var(--line)] bg-[repeating-conic-gradient(var(--canvas)_0_25%,var(--field)_0_50%)_50%/12px_12px]" data-testid="asset-crop-preview">
+                    <img
+                      src={`/api/project/assets/${boundAssetFile.digest}`}
+                      alt=""
+                      className="size-full"
+                      style={{
+                        objectFit: selectedNode.asset.fit,
+                        objectPosition: `${Math.round(selectedNode.asset.focalPoint.x * 100)}% ${Math.round(selectedNode.asset.focalPoint.y * 100)}%`,
+                      }}
+                    />
+                    {selectedNode.asset.fit === "cover" ? <span className="pointer-events-none absolute left-2 top-2 rounded bg-black/70 px-1.5 py-1 text-[8px] font-semibold uppercase tracking-[.08em] text-white">Crop preview</span> : null}
+                  </div>
+                ) : null}
                 <div className="rounded-lg border border-[var(--line)] bg-[var(--field)] p-2.5 text-[10px] leading-relaxed text-[var(--muted)]">
                   <span className="block font-mono text-[9px] text-[var(--faint)]">{boundAsset.digest.slice(0, 16)}…</span>
                   <span className="mt-1 block">{boundAsset.license.name} · export {boundAsset.exportPolicy}</span>
@@ -364,7 +381,17 @@ export function Inspector({
                     </select>
                   </label>
                 ) : null}
-                <SegmentedControl disabled={Boolean(componentContext)} label="Fit" value={selectedNode.asset.fit} options={[{ value: "contain", label: "Contain" }, { value: "cover", label: "Cover" }, { value: "fill", label: "Fill" }, { value: "none", label: "None" }]} onChange={(value) => updateNode((node) => { if (node.asset) node.asset.fit = value; }, `Changed asset fit to ${value}.`)} />
+                <SegmentedControl disabled={Boolean(componentContext)} label="Image sizing" value={selectedNode.asset.fit} options={[{ value: "contain", label: "Fit" }, { value: "cover", label: "Crop" }, { value: "fill", label: "Stretch" }, { value: "none", label: "Original" }]} onChange={(value) => updateNode((node) => { if (node.asset) node.asset.fit = value; }, `Changed asset fit to ${value}.`)} />
+                {selectedNode.asset.fit === "cover" ? (
+                  <div className="grid gap-2 rounded-lg border border-[var(--line)] bg-[var(--field)] p-2.5">
+                    <label className="grid gap-1 text-[10px] font-medium text-[var(--muted)]">Horizontal focal point
+                      <input type="range" min={0} max={1} step={0.01} value={selectedNode.asset.focalPoint.x} disabled={Boolean(componentContext)} onChange={(event) => updateNode((node) => { if (node.asset) node.asset.focalPoint.x = Number(event.target.value); }, "Adjusted asset crop focal point.")} className="w-full accent-[var(--accent)]" />
+                    </label>
+                    <label className="grid gap-1 text-[10px] font-medium text-[var(--muted)]">Vertical focal point
+                      <input type="range" min={0} max={1} step={0.01} value={selectedNode.asset.focalPoint.y} disabled={Boolean(componentContext)} onChange={(event) => updateNode((node) => { if (node.asset) node.asset.focalPoint.y = Number(event.target.value); }, "Adjusted asset crop focal point.")} className="w-full accent-[var(--accent)]" />
+                    </label>
+                  </div>
+                ) : null}
                 <div className="grid grid-cols-2 gap-2">
                   <NumberField disabled={Boolean(componentContext)} label="Focal X" value={selectedNode.asset.focalPoint.x} min={0} max={1} step={0.05} onCommit={(value) => { if (value !== undefined) updateNode((node) => { if (node.asset) node.asset.focalPoint.x = value; }, "Changed asset focal X."); }} />
                   <NumberField disabled={Boolean(componentContext)} label="Focal Y" value={selectedNode.asset.focalPoint.y} min={0} max={1} step={0.05} onCommit={(value) => { if (value !== undefined) updateNode((node) => { if (node.asset) node.asset.focalPoint.y = value; }, "Changed asset focal Y."); }} />
