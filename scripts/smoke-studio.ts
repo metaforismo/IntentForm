@@ -1513,6 +1513,50 @@ try {
   });
 
   await runSmokeScenario(browser, {
+    name: "synchronized multi-device comparison",
+    run: async (comparisonPage) => {
+      await gotoStudio(comparisonPage, origin);
+      const toggle = comparisonPage.getByRole("button", { name: "Toggle responsive comparison" });
+      await toggle.click();
+      if (await toggle.getAttribute("aria-pressed") !== "true") throw new Error("Comparison toggle did not expose its active state");
+
+      const board = comparisonPage.getByRole("region", { name: "Multi-device comparison" });
+      await board.waitFor();
+      const projections = board.locator("[data-comparison-profile]");
+      if (await projections.count() !== 3) throw new Error(`Expected three synchronized projections, rendered ${await projections.count()}`);
+      const initialProfiles = await projections.evaluateAll((items) => items.map((item) => item.getAttribute("data-comparison-profile")));
+      if (new Set(initialProfiles).size !== 3 || !initialProfiles.some((id) => id?.includes("browser"))) {
+        throw new Error(`Comparison did not choose unique desktop, tablet, and phone defaults: ${initialProfiles.join(", ")}`);
+      }
+
+      await comparisonPage.getByLabel("Comparison frame 1").selectOption("device:neutral.phone.compact");
+      const swappedProfiles = await projections.evaluateAll((items) => items.map((item) => item.getAttribute("data-comparison-profile")));
+      if (swappedProfiles[0] !== "device:neutral.phone.compact" || new Set(swappedProfiles).size !== 3) {
+        throw new Error(`Selecting an existing profile did not swap frames safely: ${swappedProfiles.join(", ")}`);
+      }
+
+      await comparisonPage.getByLabel("Visual state").selectOption("loading");
+      await board.getByText("loading state", { exact: false }).waitFor();
+      if (await board.locator("[data-loading-skeleton]").count() < 3) throw new Error("Loading state was not synchronized across all projections");
+      await comparisonPage.getByLabel("Visual state").selectOption("idle");
+      await board.getByText("idle state", { exact: false }).waitFor();
+
+      const axe = await new AxeBuilder({ page: comparisonPage })
+        .include('[aria-label="Multi-device comparison"]')
+        .withTags(["wcag2a", "wcag2aa", "wcag22aa"])
+        .analyze();
+      if (axe.violations.length > 0) {
+        throw new Error(`Comparison board failed axe: ${axe.violations.map((item) => `${item.id} (${item.nodes.length}) ${item.nodes.map((node) => node.target.join(" ")).join(" | ")}`).join("; ")}`);
+      }
+      await comparisonPage.screenshot({ path: join(root, "output/playwright/studio-multi-device.png"), fullPage: true });
+
+      await toggle.click();
+      await board.waitFor({ state: "detached" });
+      await comparisonPage.getByTestId("canvas-viewport").waitFor();
+    },
+  });
+
+  await runSmokeScenario(browser, {
     name: "direct routes refresh and invalid input",
     allowRequestFailure: (request) => request.failure()?.errorText === "net::ERR_ABORTED"
       && (new URL(request.url()).pathname === "/icon.svg"

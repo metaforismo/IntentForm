@@ -65,6 +65,12 @@ import { importLocalAsset } from "./editor/asset-import";
 import { Inspector } from "./editor/inspector";
 import { LayersPanel } from "./editor/layers-panel";
 import { CommandMenu, ShortcutsSheet, type EditorCommand } from "./editor/overlays";
+import { MultiDeviceComparison } from "./stages/multi-device-comparison";
+import {
+  defaultComparisonProfileIds,
+  reconcileComparisonProfileIds,
+  replaceComparisonProfile,
+} from "./stages/workspace-model";
 import {
   NODE_CLIPBOARD_MIME,
   STYLE_CLIPBOARD_MIME,
@@ -286,6 +292,8 @@ export function ManualEditor({
   const [commandQuery, setCommandQuery] = useState("");
   const [layerQuery, setLayerQuery] = useState("");
   const [previewMode, setPreviewMode] = useState(false);
+  const [comparisonMode, setComparisonMode] = useState(false);
+  const [comparisonProfileIds, setComparisonProfileIds] = useState<string[]>(() => defaultComparisonProfileIds(editorProfiles(graph)));
   const [showDeviceChrome, setShowDeviceChrome] = useState(true);
   const [localLicenseAcknowledged, setLocalLicenseAcknowledged] = useState(() => graph.devices.bezel?.acknowledgedLocalLicense === true);
   const [pendingBezelValue, setPendingBezelValue] = useState("");
@@ -431,6 +439,9 @@ export function ManualEditor({
     : null;
   const profiles = useMemo(() => editorProfiles(graph), [graph]);
   const activeProfile = profiles.find((profile) => profile.id === deviceId) ?? profiles.find((profile) => profile.id === `web:${graph.web?.defaultFrame}`) ?? profiles[0]!;
+  useEffect(() => {
+    setComparisonProfileIds((current) => reconcileComparisonProfileIds(current, profiles));
+  }, [profiles]);
   const availableBezels = useMemo(() => bezelPacks.flatMap((pack) => pack.profiles
     .filter((profile) => !pack.revoked && profile.deviceProfileId === activeProfile.registryId)
     .map((profile) => ({ pack, profile }))), [activeProfile.registryId, bezelPacks]);
@@ -1369,7 +1380,7 @@ export function ManualEditor({
       if (modifier || event.altKey) return;
       if (key === "v") setTool("select");
       else if (key === "h") setTool("hand");
-      else if (key === "p") setPreviewMode((current) => !current);
+      else if (key === "p") { setComparisonMode(false); setPreviewMode((current) => !current); }
       else if (key === "0") { event.preventDefault(); canvasApi.current?.fitAll(true); }
       else if (key === "1") { event.preventDefault(); canvasApi.current?.zoomTo(1); }
       else if (key === "2") { event.preventDefault(); canvasApi.current?.zoomTo(2); }
@@ -1436,9 +1447,12 @@ export function ManualEditor({
   }, [insertOpen, zoomMenuOpen]);
 
   const commands: EditorCommand[] = [
-    { label: "Fit board in view", shortcut: "0", section: "Board", icon: ArrowsOutSimple, action: () => canvasApi.current?.fitAll(true) },
-    { label: "Zoom to 100%", shortcut: "1", section: "Board", icon: MagnifyingGlass, action: () => canvasApi.current?.zoomTo(1) },
-    { label: previewMode ? "Exit preview mode" : "Enter preview mode", shortcut: "P", section: "Board", icon: MonitorPlay, action: () => setPreviewMode((current) => !current) },
+    ...(!comparisonMode ? [
+      { label: "Fit board in view", shortcut: "0", section: "Board", icon: ArrowsOutSimple, action: () => canvasApi.current?.fitAll(true) },
+      { label: "Zoom to 100%", shortcut: "1", section: "Board", icon: MagnifyingGlass, action: () => canvasApi.current?.zoomTo(1) },
+      { label: previewMode ? "Exit preview mode" : "Enter preview mode", shortcut: "P", section: "Board", icon: MonitorPlay, action: () => setPreviewMode((current) => !current) },
+    ] : []),
+    { label: comparisonMode ? "Exit responsive comparison" : "Compare responsive devices", section: "Board", icon: ArrowsOutSimple, action: () => setComparisonMode((current) => !current) },
     { label: "Toggle pages and layers", shortcut: "⌥L", section: "Panels", icon: Stack, action: () => toggleEditorPanel("structure") },
     { label: "Toggle design inspector", shortcut: "⌥I", section: "Panels", icon: Selection, action: () => toggleEditorPanel("inspector") },
     { label: "Show design tokens", section: "Panels", icon: PaintBrush, action: () => { setRailTab("tokens"); setDesktopPanels((current) => ({ ...current, structure: true })); setMobilePanel("structure"); } },
@@ -1463,12 +1477,12 @@ export function ManualEditor({
     ...(normalizedSelection.length > 1 ? [
       { label: "Group selected layers", section: "Edit", icon: Stack, action: groupSelection },
     ] : []),
-    ...profiles.map((profile) => ({
+    ...(!comparisonMode ? profiles.map((profile) => ({
       label: `Preview on ${profile.label.toLowerCase()} (${profile.detail})`,
       section: "Device",
       icon: DeviceMobile,
       action: () => onDeviceId(profile.id),
-    })),
+    })) : []),
     { label: "Open product brief", section: "Workflow", icon: Sparkle, action: () => onOpenStage("brief") },
     { label: "Open semantic graph", section: "Workflow", icon: TreeStructure, action: () => onOpenStage("graph") },
     { label: "Open native outputs", section: "Workflow", icon: ArrowSquareOut, action: () => onOpenStage("outputs") },
@@ -1583,48 +1597,61 @@ export function ManualEditor({
             className="absolute inset-y-0 right-0 z-[4] hidden w-1.5 cursor-col-resize hover:bg-[var(--accent)]/25 active:bg-[var(--accent)]/40 xl:block"
           />
         ) : null}
-        <CanvasStage
-          graph={graph}
-          selectedScreen={screen.id}
-          selectedNodeId={selectedNodeId}
-          selectedNodeIds={selectedNodeIds}
-          hoveredNodeId={hoveredNodeId}
-          tool={tool}
-          spaceHeld={spaceHeld}
-          previewMode={previewMode}
-          showDeviceChrome={showDeviceChrome}
-          bezelOverlay={bezelOverlay}
-          profile={activeProfile}
-          apiRef={canvasApi}
-          visualStateFor={visualStateFor}
-          frameStatus={(screenId) => statusByScreen.get(screenId) ?? { errors: 0, warnings: 0 }}
-          onSelectScreen={onSelectScreen}
-          onSelectNode={selectNode}
-          onAnchor={(nodeId, placement) => updateNodeById(nodeId, (draft) => {
-            if (draft.layout.placement) draft.layout.placement[activeProfile.breakpoint] = placement;
-          }, placement === "persistent-bottom"
-            ? `Anchored primary action to the ${activeProfile.breakpoint} bottom safe area.`
-            : `Returned primary action to the ${activeProfile.breakpoint} semantic stack.`)}
-          onReorderSelection={reorderSelection}
-          onMoveFreeform={moveFreeformSelection}
-          onResizeNode={resizeNode}
-          onGroupSelection={groupSelection}
-          onDuplicateSelection={duplicateSelection}
-          onDeleteSelection={deleteSelection}
-          onCopySelection={() => { copySelection(); }}
-          onCutSelection={() => { if (copySelection()) deleteSelection(); }}
-          onPaste={pasteInternal}
-          onCopyStyles={() => copyStyles()}
-          onPasteStyles={() => pasteStyles()}
-          onMoveSelection={moveSelection}
-          onNodeCommand={handleNodeCommand}
-          onRenameNode={(nodeId, _screenId, label) => updateNodeById(nodeId, (draft) => {
-            draft.intent.label = label;
-            draft.accessibility.label = label;
-          }, "Updated visible and accessible label.")}
-          onOpenVerify={() => onOpenStage("verify")}
-          onZoomChange={setZoomPct}
-        />
+        {comparisonMode ? (
+          <div className="h-full pb-7 pt-12">
+            <MultiDeviceComparison
+              graph={graph}
+              selectedScreen={screen.id}
+              visualState={activeVisualState}
+              profiles={profiles}
+              profileIds={comparisonProfileIds}
+              onProfileChange={(index, profileId) => setComparisonProfileIds((current) => replaceComparisonProfile(current, index, profileId, profiles))}
+            />
+          </div>
+        ) : (
+          <CanvasStage
+            graph={graph}
+            selectedScreen={screen.id}
+            selectedNodeId={selectedNodeId}
+            selectedNodeIds={selectedNodeIds}
+            hoveredNodeId={hoveredNodeId}
+            tool={tool}
+            spaceHeld={spaceHeld}
+            previewMode={previewMode}
+            showDeviceChrome={showDeviceChrome}
+            bezelOverlay={bezelOverlay}
+            profile={activeProfile}
+            apiRef={canvasApi}
+            visualStateFor={visualStateFor}
+            frameStatus={(screenId) => statusByScreen.get(screenId) ?? { errors: 0, warnings: 0 }}
+            onSelectScreen={onSelectScreen}
+            onSelectNode={selectNode}
+            onAnchor={(nodeId, placement) => updateNodeById(nodeId, (draft) => {
+              if (draft.layout.placement) draft.layout.placement[activeProfile.breakpoint] = placement;
+            }, placement === "persistent-bottom"
+              ? `Anchored primary action to the ${activeProfile.breakpoint} bottom safe area.`
+              : `Returned primary action to the ${activeProfile.breakpoint} semantic stack.`)}
+            onReorderSelection={reorderSelection}
+            onMoveFreeform={moveFreeformSelection}
+            onResizeNode={resizeNode}
+            onGroupSelection={groupSelection}
+            onDuplicateSelection={duplicateSelection}
+            onDeleteSelection={deleteSelection}
+            onCopySelection={() => { copySelection(); }}
+            onCutSelection={() => { if (copySelection()) deleteSelection(); }}
+            onPaste={pasteInternal}
+            onCopyStyles={() => copyStyles()}
+            onPasteStyles={() => pasteStyles()}
+            onMoveSelection={moveSelection}
+            onNodeCommand={handleNodeCommand}
+            onRenameNode={(nodeId, _screenId, label) => updateNodeById(nodeId, (draft) => {
+              draft.intent.label = label;
+              draft.accessibility.label = label;
+            }, "Updated visible and accessible label.")}
+            onOpenVerify={() => onOpenStage("verify")}
+            onZoomChange={setZoomPct}
+          />
+        )}
 
         <div className="pointer-events-auto absolute inset-x-2 top-2 z-[2] flex flex-wrap items-start justify-between gap-2 sm:inset-x-3 sm:top-3 sm:flex-nowrap">
           <div className="floating-chrome order-1 flex shrink-0 items-center gap-0.5 rounded-xl p-1 sm:order-none">
@@ -1645,6 +1672,9 @@ export function ManualEditor({
           </div>
 
           <div className="floating-chrome order-3 mx-auto flex shrink-0 items-center gap-0.5 rounded-xl p-1 sm:order-none sm:mx-0">
+            {comparisonMode ? (
+              <span className="flex h-8 items-center gap-2 px-2.5 text-[11px] font-semibold text-[var(--accent-text)]"><ArrowsOutSimple size={14} /> {comparisonProfileIds.length} synchronized frames</span>
+            ) : <>
             {([
               { id: "select", label: "Select", icon: Cursor },
               { id: "hand", label: "Pan", icon: Hand },
@@ -1687,11 +1717,15 @@ export function ManualEditor({
                 </div>
               ) : null}
             </div>
+            </>}
           </div>
 
           <div className="floating-chrome order-2 flex shrink-0 items-center gap-0.5 rounded-xl p-1 sm:order-none">
-            <button type="button" aria-label="Toggle preview mode" aria-pressed={previewMode} onClick={() => setPreviewMode((current) => !current)} className={`inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium ${previewMode ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
+            {!comparisonMode ? <button type="button" aria-label="Toggle preview mode" aria-pressed={previewMode} onClick={() => setPreviewMode((current) => !current)} className={`inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium ${previewMode ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
               <MonitorPlay size={13} weight={previewMode ? "fill" : "regular"} /> Preview
+            </button> : null}
+            <button type="button" aria-label="Toggle responsive comparison" aria-pressed={comparisonMode} onClick={() => setComparisonMode((current) => !current)} className={`inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium ${comparisonMode ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
+              <ArrowsOutSimple size={13} /> Compare
             </button>
             <button
               ref={inspectorTriggerRef}
@@ -1709,15 +1743,15 @@ export function ManualEditor({
 
         <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-[2] flex min-h-7 items-center justify-between gap-2 border-t border-[var(--line)] bg-[var(--chrome)]/95 px-2 backdrop-blur sm:flex-nowrap">
           <div className="flex min-w-0 shrink items-center gap-1.5 text-[10px] text-[var(--muted)]">
-            <label className="relative flex items-center gap-1.5 text-[var(--muted)]">
+            {!comparisonMode ? <label className="relative flex items-center gap-1.5 text-[var(--muted)]">
               <DeviceMobile size={12} aria-hidden="true" />
               <span className="sr-only">Preview device</span>
               <select aria-label="Preview device" value={activeProfile.id} onChange={(event) => onDeviceId(event.target.value as DeviceId)} className="min-h-7 max-w-36 appearance-none rounded-md bg-transparent pr-4 text-[12px] font-semibold outline-none hover:bg-[var(--hover)]">
                 {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label} · {profile.detail}</option>)}
               </select>
               <CaretDown size={9} className="pointer-events-none absolute right-0 text-[var(--faint)]" />
-            </label>
-            {availableBezels.length > 0 ? <>
+            </label> : <span className="flex items-center gap-1.5 font-semibold text-[var(--muted)]"><ArrowsOutSimple size={12} /> Responsive comparison</span>}
+            {!comparisonMode && availableBezels.length > 0 ? <>
               <span className="h-4 w-px bg-[var(--line)]" />
               <label className="relative flex items-center gap-1.5 text-[var(--muted)]">
                 <FrameCorners size={12} aria-hidden="true" />
@@ -1759,14 +1793,14 @@ export function ManualEditor({
               <CaretDown size={9} className="pointer-events-none absolute right-0 text-[var(--faint)]" />
             </label>
             <span className="hidden pl-1 pr-2 font-mono text-[11px] text-[var(--faint)] 2xl:inline">
-              {previewMode ? "Preview · click actions to follow the flow" : spaceHeld ? "Panning · release Space to select" : tool === "select" ? "Drag the primary action to anchor it" : "Drag to pan the board"}
+              {comparisonMode ? "Shared screen and visual state across every frame" : previewMode ? "Preview · click actions to follow the flow" : spaceHeld ? "Panning · release Space to select" : tool === "select" ? "Drag the primary action to anchor it" : "Drag to pan the board"}
             </span>
             <span className="hidden h-4 w-px bg-[var(--line)] lg:block" />
-            <span className="hidden font-mono text-[10px] text-[var(--faint)] lg:inline">{normalizedSelection.length} selected · {activeProfile.breakpoint} · saved · {graph.schemaVersion}</span>
+            <span className="hidden font-mono text-[10px] text-[var(--faint)] lg:inline">{comparisonMode ? `${comparisonProfileIds.length} frames` : `${normalizedSelection.length} selected · ${activeProfile.breakpoint}`} · saved · {graph.schemaVersion}</span>
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
-            {activeProfile.presentation === "device" ? (
+            {!comparisonMode && activeProfile.presentation === "device" ? (
               <button
                 type="button"
                 aria-label="Toggle device chrome"
@@ -1778,6 +1812,7 @@ export function ManualEditor({
                 <FrameCorners size={12} />
               </button>
             ) : null}
+            {!comparisonMode ? <>
             <button type="button" aria-label="Fit canvas" title="Fit board · 0" onClick={() => canvasApi.current?.fitAll(true)} className="hidden size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] sm:grid"><ArrowsOutSimple size={12} /></button>
             <button type="button" aria-label="Zoom out" onClick={() => canvasApi.current?.zoomBy(0.8)} className="hidden size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] sm:grid"><Minus size={11} /></button>
             <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
@@ -1800,6 +1835,7 @@ export function ManualEditor({
               ) : null}
             </div>
             <button type="button" aria-label="Zoom in" onClick={() => canvasApi.current?.zoomBy(1.25)} className="hidden size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] sm:grid"><Plus size={11} /></button>
+            </> : null}
             <span className="hidden h-4 w-px bg-[var(--line)] sm:block" />
             <button type="button" aria-label="Show keyboard shortcuts" title="Keyboard shortcuts · ?" aria-expanded={shortcutsOpen} onClick={() => setShortcutsOpen((open) => !open)} className="hidden size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] sm:grid"><Keyboard size={13} /></button>
           </div>
