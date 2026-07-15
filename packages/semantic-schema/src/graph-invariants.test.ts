@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { customDeviceEntry, defaultDeviceConfiguration } from "@intentform/device-registry";
 import {
   GRAPH_LIMITS,
   applyGraphPatch,
@@ -23,7 +24,7 @@ function makeValidGraph() {
   };
 
   return {
-    schemaVersion: "0.4.0",
+    schemaVersion: "0.6.0",
     product: {
       name: "Invariant test",
       audience: ["product teams"],
@@ -42,6 +43,7 @@ function makeValidGraph() {
       extensions: {},
     },
     assets: [],
+    devices: defaultDeviceConfiguration(),
     platforms: [{ target: "react", enabled: true, capabilities: ["responsive-layout"] }],
     components: [{
       id: "intent.receipt-summary",
@@ -142,7 +144,7 @@ describe("semantic graph invariants", () => {
 
   it("migrates flat roots into recursive nodes with deterministic layout defaults", () => {
     const parsed = parseGraph(makeValidGraph());
-    expect(parsed.schemaVersion).toBe("0.4.0");
+    expect(parsed.schemaVersion).toBe("0.6.0");
     expect(parsed.screens[0]?.nodes[0]).toMatchObject({
       children: [],
       layout: {
@@ -154,6 +156,28 @@ describe("semantic graph invariants", () => {
         splitRatio: 0.5,
       },
     });
+  });
+
+  it("validates checksummed registry and custom device profiles fail closed", () => {
+    expectInvalid((graph) => {
+      graph.devices.profiles[0].checksum = "0".repeat(64);
+    }, /checksum mismatch/i);
+    expectInvalid((graph) => {
+      graph.devices.registryVersion = "9.0.0";
+    }, /unsupported device registry version/i);
+
+    const graph: GraphDraft = makeValidGraph();
+    const custom = customDeviceEntry({
+      id: "custom.review", version: "1.0.0", label: "Review", platform: "neutral", family: "custom", orientation: "landscape",
+      viewport: { width: 840, height: 620, scale: 1 }, safeArea: { top: 10, right: 12, bottom: 14, left: 12 }, corners: { radius: 10 }, cutouts: [],
+      input: { touch: false, pointer: true, keyboard: true }, capabilities: ["pointer", "hardware-keyboard", "multi-window", "resizable"], textScale: 1.25,
+      window: { mode: "floating", resizable: true },
+    });
+    graph.devices.profiles.push(custom);
+    graph.devices.defaultProfile = custom.profile.id;
+    expect(parseGraph(graph).devices.defaultProfile).toBe("custom.review");
+    custom.profile.viewport.width += 1;
+    expect(() => parseGraph(graph)).toThrow(/checksum mismatch/i);
   });
 
   it("accepts nested semantic containers and patches descendant nodes by stable id", () => {
@@ -508,6 +532,129 @@ describe("semantic graph invariants", () => {
       addAsset(graph, { kind: "font", mediaType: "font/woff2", storageKey: `assets/${"a".repeat(64)}.woff2` });
       graph.screens[1]!.nodes[0]!.asset = { assetId: "brand.hero", fit: "contain", focalPoint: { x: 0.5, y: 0.5 }, decorative: false };
     }, /font assets cannot be bound/i);
+  });
+
+  it("validates responsive-web frames, breakpoints, and typed node behavior", () => {
+    const draft: GraphDraft = makeValidGraph();
+    draft.platforms.push({ target: "web", enabled: true, capabilities: ["semantic-html", "intrinsic-grid"] });
+    draft.web = {
+      strategy: "responsive-web",
+      defaultFrame: "desktop",
+      frames: [
+        { id: "mobile", label: "Mobile browser", mode: "browser", width: 390, height: 844 },
+        { id: "desktop", label: "Desktop browser", mode: "browser", width: 1440, height: 1000 },
+      ],
+      breakpoints: [
+        { id: "small", label: "Small", minWidth: 0, maxWidth: 767 },
+        { id: "large", label: "Large", minWidth: 768 },
+      ],
+      contentMaxWidth: 1200,
+      inlinePaddingToken: "space.20",
+    };
+    draft.screens[0]!.nodes[0]!.web = {
+      display: "grid",
+      direction: "column",
+      wrap: "wrap",
+      position: "sticky",
+      insetBlockStart: 64,
+      overflowX: "clip",
+      overflowY: "auto",
+      aspectRatio: 1.5,
+      containerType: "inline-size",
+      gridMinColumnWidth: 280,
+      gridMaxColumns: 4,
+      breakpointOverrides: { large: { direction: "row", gridMaxColumns: 6 } },
+    };
+    const parsed = parseGraph(draft);
+    expect(parsed.web?.frames).toHaveLength(2);
+    expect(parsed.screens[0]?.nodes[0]?.web).toEqual(expect.objectContaining({
+      position: "sticky",
+      containerType: "inline-size",
+      breakpointOverrides: { large: { direction: "row", gridMaxColumns: 6 } },
+    }));
+    const patched = applyGraphPatch(parsed, {
+      id: "web.set-layout",
+      rationale: "Switch the primary action to a sticky flex row on large web widths",
+      operations: [{
+        op: "set-web-layout",
+        target: "home.submit",
+        layout: {
+          display: "flex",
+          direction: "column",
+          wrap: "nowrap",
+          position: "sticky",
+          insetBlockStart: 64,
+          overflowX: "visible",
+          overflowY: "visible",
+          containerType: "inline-size",
+          gridMinColumnWidth: 240,
+          gridMaxColumns: 4,
+          breakpointOverrides: { large: { direction: "row" } },
+        },
+      }],
+    });
+    expect(patched.screens[0]?.nodes[0]?.web?.breakpointOverrides.large).toEqual({ direction: "row" });
+    expect(semanticDiff(parsed, patched)).toContainEqual(expect.objectContaining({ path: "home.submit.web" }));
+  });
+
+  it("fails closed for incoherent responsive-web declarations", () => {
+    const withWeb = (graph: GraphDraft) => {
+      graph.platforms.push({ target: "web", enabled: true, capabilities: ["semantic-html"] });
+      graph.web = {
+        strategy: "responsive-web",
+        defaultFrame: "desktop",
+        frames: [{ id: "desktop", label: "Desktop", mode: "browser", width: 1440, height: 1000 }],
+        breakpoints: [{ id: "large", label: "Large", minWidth: 768 }],
+        contentMaxWidth: 1200,
+        inlinePaddingToken: "space.20",
+      };
+    };
+    expectInvalid((graph) => {
+      graph.platforms.push({ target: "web", enabled: true, capabilities: [] });
+    }, /requires a responsive-web profile/i);
+    expectInvalid((graph) => {
+      withWeb(graph);
+      graph.web!.defaultFrame = "missing";
+    }, /unknown default web frame/i);
+    expectInvalid((graph) => {
+      withWeb(graph);
+      graph.web!.inlinePaddingToken = "space.missing";
+    }, /unknown web inline padding token/i);
+    expectInvalid((graph) => {
+      withWeb(graph);
+      graph.web!.breakpoints = [
+        { id: "one", label: "One", minWidth: 0, maxWidth: 900 },
+        { id: "two", label: "Two", minWidth: 800 },
+      ];
+    }, /breakpoint ranges overlap/i);
+    expectInvalid((graph) => {
+      withWeb(graph);
+      graph.web!.breakpoints = [
+        { id: "one", label: "One", minWidth: 0 },
+        { id: "two", label: "Two", minWidth: 800 },
+      ];
+    }, /breakpoint ranges overlap/i);
+    expectInvalid((graph) => {
+      withWeb(graph);
+      graph.screens[0]!.nodes[0]!.web = { breakpointOverrides: { ghost: { display: "flex" } } } as never;
+    }, /unknown web breakpoint/i);
+    expectInvalid((graph) => {
+      withWeb(graph);
+      graph.screens[0]!.nodes[0]!.web = { position: "static", insetBlockStart: 12 } as never;
+    }, /requires sticky or fixed/i);
+    expectInvalid((graph) => {
+      withWeb(graph);
+      graph.screens[0]!.nodes[0]!.web = { breakpointOverrides: { large: { display: "flex", gridMaxColumns: 6 } } } as never;
+    }, /breakpoint grid column controls require grid display/i);
+    expectInvalid((graph) => {
+      withWeb(graph);
+      graph.screens[0]!.nodes[0]!.web = { breakpointOverrides: { large: { position: "static", insetBlockStart: 12 } } } as never;
+    }, /breakpoint block inset requires sticky or fixed/i);
+    expectInvalid((graph) => {
+      withWeb(graph);
+      graph.web!.frames = [{ id: "custom", label: "Custom", mode: "custom", height: 900 }];
+      graph.web!.defaultFrame = "custom";
+    }, /require an explicit width/i);
   });
 
   it("bounds graphs, patches and serialized request size", () => {

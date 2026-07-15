@@ -7,6 +7,8 @@ import {
   compileProject,
   componentSchema,
   describeProject,
+  deviceProfileResource,
+  deviceBezelResource,
   diffAgainstRevision,
   exportProjectTokens,
   getGraph,
@@ -22,6 +24,7 @@ import {
   searchComponents,
   searchProjectAssets,
   verifyProject,
+  verifyWebProject,
   type ScenarioId,
 } from "./tools.ts";
 import { resolveProjectDir } from "./store.ts";
@@ -41,8 +44,24 @@ interface ToolDefinition {
   run(args: Record<string, unknown>): unknown;
 }
 
+const DEVICE_PROFILES_URI = "intentform://device-profiles";
+
+export const resourceDefinitions = [{
+  uri: DEVICE_PROFILES_URI,
+  name: "IntentForm device profiles",
+  description: "Resolved, checksummed logical device geometry, safe areas, inputs and capabilities for the active project.",
+  mimeType: "application/json",
+  read: () => deviceProfileResource(projectDir),
+}, {
+  uri: "intentform://device-bezel-packs",
+  name: "IntentForm local device bezel packs",
+  description: "Read-only capability and metadata for explicitly enabled, locally supplied, checksum-verified bezel packs; never includes asset bytes or source paths.",
+  mimeType: "application/json",
+  read: () => deviceBezelResource(projectDir),
+}] as const;
+
 const PATCH_CONTRACT = `A GraphPatch is {"id": string, "rationale": string, "operations": Operation[]} where Operation is one of:
-{"op":"set-label","target":nodeId,"label":string} · {"op":"set-placement","target":nodeId,"compact":"inline"|"persistent-bottom","regular":"inline"|"persistent-bottom"} · {"op":"set-purpose","target":nodeId,"purpose":string} · {"op":"set-emphasis","target":nodeId,"emphasis":"quiet"|"normal"|"strong"} · {"op":"set-gap-token","target":nodeId,"token":string} · {"op":"set-padding-token","target":nodeId,"token":string} · {"op":"set-layout","target":nodeId, ...layoutFields} · {"op":"move-node","target":nodeId,"screenId":screenId,"parent":nodeId|null,"index"?:number} · {"op":"set-color-token","token":colorTokenName,"value":"#rrggbb"} · {"op":"set-token-mode","mode":modeId} · {"op":"bind-asset","target":nodeId,"assetId":assetId,"variantId"?:variantId,"fit":"contain"|"cover"|"fill"|"none","focalPoint":{"x":0..1,"y":0..1},"decorative":boolean} · {"op":"clear-asset","target":nodeId} · {"op":"set-fixture-value","screenId":screenId,"state":"idle"|"loading"|"empty"|"failed"|"completed","field":contractField,"value":string|number|boolean}.
+{"op":"set-label","target":nodeId,"label":string} · {"op":"set-placement","target":nodeId,"compact":"inline"|"persistent-bottom","regular":"inline"|"persistent-bottom"} · {"op":"set-purpose","target":nodeId,"purpose":string} · {"op":"set-emphasis","target":nodeId,"emphasis":"quiet"|"normal"|"strong"} · {"op":"set-gap-token","target":nodeId,"token":string} · {"op":"set-padding-token","target":nodeId,"token":string} · {"op":"set-layout","target":nodeId, ...layoutFields} · {"op":"set-web-layout","target":nodeId,"layout":typedWebLayout|null} · {"op":"move-node","target":nodeId,"screenId":screenId,"parent":nodeId|null,"index"?:number} · {"op":"set-color-token","token":colorTokenName,"value":"#rrggbb"} · {"op":"set-token-mode","mode":modeId} · {"op":"bind-asset","target":nodeId,"assetId":assetId,"variantId"?:variantId,"fit":"contain"|"cover"|"fill"|"none","focalPoint":{"x":0..1,"y":0..1},"decorative":boolean} · {"op":"clear-asset","target":nodeId} · {"op":"set-fixture-value","screenId":screenId,"state":"idle"|"loading"|"empty"|"failed"|"completed","field":contractField,"value":string|number|boolean}.
 Node IDs are stable; discover them with intentform_describe_project. The patch is schema-validated and rejected atomically if any operation is invalid.`;
 
 const PATCH_INPUT_SCHEMA = {
@@ -242,7 +261,7 @@ export const toolDefinitions: ToolDefinition[] = [
   },
   {
     name: "intentform_replace_graph",
-    description: "Replace the entire Semantic Interface Graph (current schemaVersion 0.4.0). Use for structural edits a typed operation cannot express. Recursive hierarchy, components, token modes, licensed assets, node-count and layout constraints are fully validated; invalid graphs are rejected without side effects. Returns the semantic diff and fresh verification findings.",
+    description: "Replace the entire Semantic Interface Graph (current schemaVersion 0.6.0). Use for structural edits a typed operation cannot express. Recursive hierarchy, components, token modes, licensed assets, logical device profiles, responsive-web profiles, node-count and layout constraints are fully validated; invalid graphs are rejected without side effects. Returns the semantic diff and fresh verification findings.",
     inputSchema: {
       type: "object",
       properties: {
@@ -263,17 +282,23 @@ export const toolDefinitions: ToolDefinition[] = [
     run: (args) => verifyProject(projectDir, (args.scenario === "regular" ? "regular" : "compact") as ScenarioId),
   },
   {
+    name: "intentform_verify_web",
+    description: "Verify the responsive-web profile, frame-to-breakpoint coverage, fixed/live-region risks, compiler diagnostics, semantic landmarks, and intrinsic CSS output. Returns the generated web fingerprint when compilation succeeds.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    run: () => verifyWebProject(projectDir),
+  },
+  {
     name: "intentform_compile",
-    description: "Compile the current graph with a deterministic backend ('react' or 'swiftui'). With write=true generated files and license-permitted copy-policy assets are emitted under .intentform/output/<target>/. Returns integrity, missing-file, and license diagnostics. Same graph + same compiler always yields byte-identical source output.",
+    description: "Compile the current graph with a deterministic backend ('react', 'swiftui', or 'web'). With write=true generated files and license-permitted copy-policy assets are emitted under .intentform/output/<target>/. The web backend emits an owned, buildable React/TypeScript route and CSS project. Same graph + same compiler always yields byte-identical source output.",
     inputSchema: {
       type: "object",
       properties: {
-        target: { type: "string", enum: ["react", "swiftui"] },
+        target: { type: "string", enum: ["react", "swiftui", "web"] },
         write: { type: "boolean", description: "Write generated files to .intentform/output/<target>/ (default true)" },
       },
       required: ["target"],
     },
-    run: (args) => compileProject(projectDir, args.target === "swiftui" ? "swiftui" : "react", args.write !== false),
+    run: (args) => compileProject(projectDir, args.target === "swiftui" ? "swiftui" : args.target === "web" ? "web" : "react", args.write !== false),
   },
   {
     name: "intentform_list_revisions",
@@ -314,7 +339,7 @@ function handle(message: { id?: number | string | null; method?: string; params?
       id: id ?? null,
       result: {
         protocolVersion: typeof params?.protocolVersion === "string" ? params.protocolVersion : PROTOCOL_VERSION,
-        capabilities: { tools: {} },
+        capabilities: { tools: {}, resources: {} },
         serverInfo: { name: "intentform", version: "0.1.0" },
       },
     });
@@ -330,6 +355,32 @@ function handle(message: { id?: number | string | null; method?: string; params?
       id: id ?? null,
       result: { tools: toolDefinitions.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) },
     });
+    return;
+  }
+  if (method === "resources/list") {
+    write({
+      jsonrpc: "2.0",
+      id: id ?? null,
+      result: { resources: resourceDefinitions.map(({ read: _read, ...resource }) => resource) },
+    });
+    return;
+  }
+  if (method === "resources/read") {
+    const uri = typeof params?.uri === "string" ? params.uri : "";
+    const resource = resourceDefinitions.find((candidate) => candidate.uri === uri);
+    if (!resource) {
+      write({ jsonrpc: "2.0", id: id ?? null, error: { code: -32602, message: `Unknown resource: ${uri}` } });
+      return;
+    }
+    try {
+      write({
+        jsonrpc: "2.0",
+        id: id ?? null,
+        result: { contents: [{ uri: resource.uri, mimeType: resource.mimeType, text: JSON.stringify(resource.read(), null, 2) }] },
+      });
+    } catch (error) {
+      write({ jsonrpc: "2.0", id: id ?? null, error: { code: -32603, message: error instanceof Error ? error.message : "Resource read failed." } });
+    }
     return;
   }
   if (method === "tools/call") {

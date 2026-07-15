@@ -35,7 +35,7 @@ export function BriefStage({
       <div className="pt-3 md:pt-10">
         <span className="font-mono text-[11px] text-[var(--accent)]">01 / PRODUCT BRIEF</span>
         <h2 className="mt-4 max-w-[620px] text-3xl font-semibold leading-[1.03] tracking-[-.055em] md:text-5xl">Describe the product. Keep the intent.</h2>
-        <p className="mt-5 max-w-[60ch] text-sm leading-relaxed text-[var(--muted)]">GPT‑5.6 turns a brief into a validated graph or proposes a narrow typed patch. React and SwiftUI are always compiled later by deterministic backends.</p>
+        <p className="mt-5 max-w-[60ch] text-sm leading-relaxed text-[var(--muted)]">GPT‑5.6 turns a brief into a validated graph or proposes a narrow typed patch. Enabled React, SwiftUI and responsive-web outputs are always compiled later by deterministic backends.</p>
         <div className="mt-8 inline-flex rounded-lg bg-[var(--hover)] p-0.5" role="group" aria-label="Intent operation">
           {(["create", "edit"] as const).map((operation) => (
             <button key={operation} type="button" aria-pressed={briefOperation === operation} disabled={isPending} onClick={() => setBriefOperation(operation)} className={`min-h-8 rounded-md px-3 text-[11px] font-semibold capitalize transition-colors disabled:opacity-50 ${briefOperation === operation ? "bg-[var(--seg-active)] text-[var(--ink)] shadow-[0_1px_4px_-2px_var(--shadow-strong)]" : "text-[var(--muted)] hover:text-[var(--ink)]"}`}>{operation === "create" ? "New graph" : "Semantic edit"}</button>

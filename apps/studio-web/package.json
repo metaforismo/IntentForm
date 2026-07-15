@@ -9,8 +9,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@intentform/device-bezels": "workspace:*",
+    "@intentform/device-registry": "workspace:*",
     "@intentform/compiler-react": "workspace:*",
     "@intentform/compiler-swiftui": "workspace:*",
+    "@intentform/compiler-web": "workspace:*",
     "@intentform/intent-interpreter": "workspace:*",
     "@intentform/layout-engine": "workspace:*",
     "@intentform/mcp-server": "workspace:*",

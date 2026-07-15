@@ -41,7 +41,7 @@ import {
 } from "../lib/browser-projects";
 import { ManualEditor, type WorkflowStage } from "./manual-editor";
 import { reconcileGraphSelection } from "./editor/direct-manipulation";
-import { deviceProfiles, type DeviceId } from "./editor/support";
+import { editorProfiles, type DeviceId } from "./editor/support";
 import { compileStudioTarget } from "./target-compilation";
 import { BriefStage } from "./stages/brief-stage";
 import { GraphStage } from "./stages/graph-stage";
@@ -50,7 +50,7 @@ import { ReportStage } from "./stages/report-stage";
 import { VerifyStage } from "./stages/verify-stage";
 
 type Stage = "canvas" | WorkflowStage;
-export type OutputTarget = "react" | "swiftui";
+export type OutputTarget = "react" | "swiftui" | "web";
 export type ScenarioId = DeviceId;
 
 const stages: Array<{ id: Stage; label: string; shortLabel: string; icon: typeof Sparkle }> = [
@@ -61,11 +61,6 @@ const stages: Array<{ id: Stage; label: string; shortLabel: string; icon: typeof
   { id: "verify", label: "Verification", shortLabel: "Verify", icon: ShieldCheck },
   { id: "report", label: "Proof report", shortLabel: "Report", icon: FileText },
 ];
-
-const scenarios = Object.fromEntries(deviceProfiles.map((profile) => [
-  profile.id,
-  { label: profile.label, viewport: { width: profile.width, height: profile.height } },
-])) as Record<ScenarioId, { label: string; viewport: { width: number; height: number } }>;
 
 function getSessionId(): string {
   const key = "intentform-session";
@@ -121,7 +116,7 @@ export function Studio() {
   const [outputTarget, setOutputTarget] = useState<OutputTarget>("react");
   const [outputFilePath, setOutputFilePath] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [scenarioId, setScenarioId] = useState<ScenarioId>("compact-phone");
+  const [scenarioId, setScenarioId] = useState<ScenarioId>(`device:${demoGraph.devices.defaultProfile}`);
   const [mode, setMode] = useState<"live" | "replay">("replay");
   const [model, setModel] = useState("deterministic-sample");
   const [lastTrace, setLastTrace] = useState<TraceSummary | null>(null);
@@ -179,6 +174,12 @@ export function Studio() {
         setGraph(restored);
         setBaseline(restored);
         setProjectType(recovered.project.projectType);
+        if (recovered.project.projectType === "responsive-web" && restored.platforms.some((platform) => platform.target === "web" && platform.enabled)) {
+          setOutputTarget("web");
+          setScenarioId(restored.web
+            ? `web:${restored.web.defaultFrame}`
+            : `device:${restored.devices.defaultProfile}`);
+        }
         setProjectSource(recovered.project.source);
         setLocalProjectFingerprint(recovered.project.localFingerprint ?? null);
         setSelectedScreen(nextScreen?.id ?? "");
@@ -250,17 +251,24 @@ export function Studio() {
 
   const reactCompilation = useMemo(() => compileStudioTarget(graph, "react"), [graph]);
   const swiftCompilation = useMemo(() => compileStudioTarget(graph, "swiftui"), [graph]);
+  const webCompilation = useMemo(() => compileStudioTarget(graph, "web"), [graph]);
   const reactOutput = reactCompilation.output;
   const swiftOutput = swiftCompilation.output;
-  const scenario = scenarios[scenarioId];
-  const verificationTarget = swiftOutput ? "swiftui" : reactOutput ? "react" : outputTarget;
+  const webOutput = webCompilation.output;
+  const previewProfiles = useMemo(() => editorProfiles(graph), [graph]);
+  const scenarios = useMemo(() => Object.fromEntries(previewProfiles.map((profile) => [
+    profile.id,
+    { label: profile.label, viewport: { width: profile.width, height: profile.height } },
+  ])) as Record<string, { label: string; viewport: { width: number; height: number } }>, [previewProfiles]);
+  const scenario = scenarios[scenarioId] ?? scenarios[previewProfiles[0]!.id]!;
+  const verificationTarget = swiftOutput ? "swiftui" : reactOutput ? "react" : webOutput ? "web" : outputTarget;
   const verification = useMemo(
     () => verifyGraph(graph, { target: verificationTarget, viewport: scenario.viewport, buildStatus: "not-run" }),
     [graph, scenario, verificationTarget],
   );
   const changes = useMemo(() => semanticDiff(baseline, graph), [baseline, graph]);
-  const output = outputTarget === "react" ? reactOutput : swiftOutput;
-  const outputMessage = outputTarget === "react" ? reactCompilation.message : swiftCompilation.message;
+  const output = outputTarget === "react" ? reactOutput : outputTarget === "swiftui" ? swiftOutput : webOutput;
+  const outputMessage = outputTarget === "react" ? reactCompilation.message : outputTarget === "swiftui" ? swiftCompilation.message : webCompilation.message;
   const graphSnapshot = useMemo(() => stableSerialize(graph), [graph]);
   const graphSnapshotRef = useRef(graphSnapshot);
   graphSnapshotRef.current = graphSnapshot;
@@ -733,6 +741,7 @@ export function Studio() {
                   canRedo={future.length > 0}
                   findings={verification.findings}
                   deviceId={scenarioId}
+                  localProjectEnabled={localProjectFingerprint !== null}
                   onSelectScreen={setSelectedScreen}
                   onDeviceId={setScenarioId}
                   onSelectNode={setSelectedNodeId}

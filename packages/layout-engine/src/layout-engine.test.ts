@@ -125,6 +125,22 @@ describe("deterministic recursive layout", () => {
     expect(layoutCoverage(roots)).toMatchObject({ nodeCount: 21, maxDepth: 2 });
   });
 
+  it("projects registry safe-area geometry without presentation-chrome offsets", () => {
+    const root = node("safe", "safe-area", [node("content")]);
+    const viewport = {
+      width: 402,
+      height: 874,
+      safeArea: { top: 59, right: 13, bottom: 34, left: 11 },
+    };
+    const result = computeNeutralLayout({ nodes: [root] }, graph, viewport);
+    expect(result.byId.get("content")?.frame).toMatchObject({
+      x: 27,
+      y: 75,
+      width: 346,
+    });
+    expect(result.viewport).toEqual(viewport);
+  });
+
   it("applies fixed and min/max sizing constraints deterministically", () => {
     const constrained = node("constrained", "status-message", [], {
       width: "fixed",

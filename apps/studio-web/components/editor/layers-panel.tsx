@@ -517,7 +517,7 @@ export function LayersPanel({
             </div>
             {Object.keys(graph.tokens.aliases).length > 0 ? <div className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--field)] p-2.5"><strong className="text-[9px] uppercase tracking-[.12em] text-[var(--faint)]">Aliases</strong>{Object.entries(graph.tokens.aliases).map(([key, target]) => <p key={key} className="mt-1 truncate font-mono text-[9px] text-[var(--muted)]">{key} → {target}{graph.tokens.deprecated[key] ? " · deprecated" : ""}</p>)}</div> : null}
             <div className="mt-4 rounded-lg bg-[var(--accent-soft)] p-3 text-[11px] leading-relaxed text-[var(--accent-text)]">
-              Token edits are semantic changes: they land in the graph diff and recompile React and SwiftUI deterministically.
+              Token edits are semantic changes: they land in the graph diff and recompile every enabled target deterministically.
             </div>
           </section>
         </div>

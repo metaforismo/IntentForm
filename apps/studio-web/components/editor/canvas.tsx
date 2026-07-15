@@ -59,6 +59,12 @@ interface CanvasStageProps {
   tool: EditorTool;
   spaceHeld: boolean;
   previewMode: boolean;
+  showDeviceChrome: boolean;
+  bezelOverlay: {
+    src: string;
+    image: { width: number; height: number };
+    viewport: { x: number; y: number; width: number; height: number };
+  } | null;
   profile: DeviceProfile;
   apiRef: RefObject<CanvasApi | null>;
   visualStateFor(screenId: string): VisualState;
@@ -94,6 +100,8 @@ export function CanvasStage({
   tool,
   spaceHeld,
   previewMode,
+  showDeviceChrome,
+  bezelOverlay,
   profile,
   apiRef,
   visualStateFor,
@@ -480,24 +488,55 @@ export function CanvasStage({
 
               <div
                 data-testid={isSelectedScreen ? "device-frame" : undefined}
+                data-device-profile={profile.registryId}
+                data-safe-area={`${profile.safeArea.top},${profile.safeArea.right},${profile.safeArea.bottom},${profile.safeArea.left}`}
+                data-cutout-count={profile.cutouts.length}
                 data-screen-id={screen.id}
                 data-breakpoint={profile.breakpoint}
                 data-visual-state={state}
                 data-canvas-bg="false"
                 onPointerDown={() => { if (!panActive && !isSelectedScreen) onSelectScreen(screen.id); }}
-                className={`relative flex h-full w-full flex-col overflow-hidden bg-[#fcfdfb] px-7 pb-7 pt-4 text-[#181c1a] transition-shadow ${isSelectedScreen ? "shadow-[0_44px_90px_-42px_rgba(24,35,29,.55),0_0_0_1.5px_var(--line-strong)]" : "shadow-[0_30px_60px_-40px_rgba(24,35,29,.45),0_0_0_1px_var(--line-strong)]"}`}
-                style={{ borderRadius: profile.breakpoint === "compact" ? 40 : 44 }}
+                className={`relative flex h-full w-full flex-col overflow-hidden bg-[#fcfdfb] text-[#181c1a] transition-shadow ${profile.presentation === "device" ? "" : "px-7 pb-7 pt-4"} ${isSelectedScreen ? "shadow-[0_44px_90px_-42px_rgba(24,35,29,.55),0_0_0_1.5px_var(--line-strong)]" : "shadow-[0_30px_60px_-40px_rgba(24,35,29,.45),0_0_0_1px_var(--line-strong)]"}`}
+                style={{
+                  borderRadius: profile.presentation === "device" ? profile.corners.radius : profile.presentation === "browser" ? 12 : 2,
+                  ...(profile.presentation === "device" ? {
+                    paddingTop: Math.max(16, profile.safeArea.top),
+                    paddingRight: Math.max(28, profile.safeArea.right),
+                    paddingBottom: Math.max(28, profile.safeArea.bottom),
+                    paddingLeft: Math.max(28, profile.safeArea.left),
+                  } : {}),
+                }}
               >
-                <div className="mb-4 flex items-center justify-between text-[12px] font-semibold text-[#2a2f2c]">
-                  <span className="pl-1 font-mono tracking-[-.02em]">9:41</span>
-                  <span className="flex items-center gap-1 pr-1" aria-hidden="true">
-                    <span className="h-2 w-3.5 rounded-[2px] border border-[#2a2f2c]/70" />
-                    <span className="h-2 w-2 rounded-full border border-[#2a2f2c]/70" />
-                  </span>
-                </div>
+                {profile.presentation === "device" && showDeviceChrome ? <>
+                  <div data-testid={isSelectedScreen ? "device-status-chrome" : undefined} className="pointer-events-none absolute inset-x-5 top-2 z-[1] flex items-center justify-between text-[12px] font-semibold text-[#2a2f2c]" aria-hidden="true">
+                    <span className="pl-1 font-mono tracking-[-.02em]">9:41</span>
+                    <span className="flex items-center gap-1 pr-1">
+                      <span className="h-2 w-3.5 rounded-[2px] border border-[#2a2f2c]/70" />
+                      <span className="h-2 w-2 rounded-full border border-[#2a2f2c]/70" />
+                    </span>
+                  </div>
+                  {profile.cutouts.map((cutout) => (
+                    <span
+                      key={cutout.id}
+                      data-testid={isSelectedScreen ? `device-cutout-${cutout.id}` : undefined}
+                      className="pointer-events-none absolute z-[2] bg-[#171a18]"
+                      aria-hidden="true"
+                      style={{
+                        left: cutout.x,
+                        top: cutout.y,
+                        width: cutout.width,
+                        height: cutout.height,
+                        borderRadius: cutout.shape === "circle" ? "50%" : cutout.shape === "capsule" ? 999 : 4,
+                      }}
+                    />
+                  ))}
+                </> : profile.presentation === "browser" ? <div className="-mx-7 -mt-4 mb-7 flex h-11 shrink-0 items-center gap-2 border-b border-zinc-200 bg-zinc-100 px-4">
+                  <span className="size-2 rounded-full bg-red-400" /><span className="size-2 rounded-full bg-amber-400" /><span className="size-2 rounded-full bg-emerald-400" />
+                  <span className="ml-3 truncate rounded-md bg-white px-3 py-1 font-mono text-[10px] text-zinc-500">{screen.route}</span>
+                </div> : null}
                 <span className="text-[11px] font-bold uppercase tracking-[.16em]" style={{ color: accent }}>{graph.product.name}</span>
                 <h2 className="mb-6 mt-1.5 text-[27px] font-semibold leading-[1.05] tracking-[-.045em]">{screen.title}</h2>
-                <div className="flex min-h-0 flex-1 flex-col" style={{ gap: 18 }}>
+                <div data-testid={isSelectedScreen ? "device-content" : undefined} className="flex min-h-0 flex-1 flex-col" style={{ gap: 18 }}>
                   {visibleNodes.map((node) => {
                     const selected = selectedNodeIds.includes(node.id) && isSelectedScreen;
                     const persistent = node.kind === "primary-action" && node.layout.placement?.[profile.breakpoint] === "persistent-bottom";
@@ -564,7 +603,7 @@ export function CanvasStage({
                           }
                         }}
                         className={`canvas-node relative rounded-[18px] outline-none ${persistent ? "mt-auto" : ""} ${flowStep ? "cursor-pointer" : "cursor-default"}`}
-                        style={semanticNodeBoxStyle(node)}
+                        style={semanticNodeBoxStyle(node, graph, profile)}
                       >
                         <NodePreview
                           node={node}
@@ -586,8 +625,24 @@ export function CanvasStage({
                     </div>
                   ) : null}
                 </div>
-                <div className="mx-auto mt-5 h-[5px] w-28 shrink-0 rounded-full bg-[#1d211f]" />
+                {profile.presentation === "device" && showDeviceChrome ? <div data-testid={isSelectedScreen ? "device-home-indicator" : undefined} className="pointer-events-none absolute bottom-2 left-1/2 h-[5px] w-28 -translate-x-1/2 rounded-full bg-[#1d211f]" aria-hidden="true" /> : null}
               </div>
+              {profile.presentation === "device" && bezelOverlay ? (
+                <img
+                  data-testid={isSelectedScreen ? "local-device-bezel" : undefined}
+                  alt=""
+                  aria-hidden="true"
+                  draggable={false}
+                  src={bezelOverlay.src}
+                  className="pointer-events-none absolute z-[3] max-w-none select-none"
+                  style={{
+                    left: -bezelOverlay.viewport.x,
+                    top: -bezelOverlay.viewport.y,
+                    width: bezelOverlay.image.width,
+                    height: bezelOverlay.image.height,
+                  }}
+                />
+              ) : null}
             </div>
           );
         })}

@@ -33,4 +33,21 @@ describe("Studio target compilation", () => {
     expect(result.status).toBe("disabled");
     expect(result.output).toBeNull();
   });
+
+  it("generates the dedicated responsive-web target", () => {
+    const graph = structuredClone(demoGraph);
+    graph.platforms.push({ target: "web", enabled: true, capabilities: ["semantic-html", "responsive-layout"] });
+    graph.web = {
+      strategy: "responsive-web",
+      defaultFrame: "desktop",
+      frames: [{ id: "desktop", label: "Desktop", mode: "browser", width: 1440, height: 1000 }],
+      breakpoints: [{ id: "large", label: "Large", minWidth: 0 }],
+      contentMaxWidth: 1200,
+      inlinePaddingToken: "space.20",
+    };
+    const result = compileStudioTarget(parseGraph(graph), "web");
+    expect(result.status).toBe("generated");
+    expect(result.output?.target).toBe("web");
+    expect(result.output?.files.some((file) => file.path === "src/styles.css")).toBe(true);
+  });
 });

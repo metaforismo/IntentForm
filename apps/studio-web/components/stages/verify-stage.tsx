@@ -11,7 +11,7 @@ interface VerifyStageProps {
   scenario: { label: string; viewport: { width: number; height: number } };
   scenarioId: ScenarioId;
   setScenarioId: (id: ScenarioId) => void;
-  scenarios: Record<ScenarioId, { label: string; viewport: { width: number; height: number } }>;
+  scenarios: Record<string, { label: string; viewport: { width: number; height: number } }>;
   repairFinding: (finding: VerificationFinding) => void;
   isPending: boolean;
 }

@@ -9,6 +9,7 @@ import type {
 } from "@intentform/semantic-schema";
 import { isContainerNode, resolveTokenMode, type ResolvedTokenMode, type TokenCollection } from "@intentform/semantic-schema";
 import { layoutCoverage } from "@intentform/layout-engine";
+import { resolveDeviceConfiguration, type ResolvedDeviceConfiguration } from "@intentform/device-registry";
 
 export type PlatformIRField = UIContract["data"][number];
 
@@ -77,6 +78,7 @@ export interface PlatformIRNode {
     focalPoint: NonNullable<SemanticNode["asset"]>["focalPoint"];
     decorative: boolean;
   } | null;
+  web: SemanticNode["web"] | null;
   events: PlatformIREvent[];
   visibility: Array<{ state: string; expression?: Expression }>;
   bindings: {
@@ -108,6 +110,8 @@ export interface PlatformIR {
   tokenModes: Record<string, ResolvedTokenMode>;
   activeTokenMode: string;
   assets: AssetDefinition[];
+  devices: ResolvedDeviceConfiguration;
+  web: SemanticInterfaceGraph["web"];
   screens: PlatformIRScreen[];
   diagnostics: CompilerDiagnostic[];
 }
@@ -470,6 +474,8 @@ export function lowerGraph(graph: SemanticInterfaceGraph, target: PlatformTarget
     ])),
     activeTokenMode: graph.tokens.activeMode,
     assets: graph.assets,
+    devices: resolveDeviceConfiguration(graph.devices),
+    web: graph.web,
     screens: graph.screens.map((screen) => {
       const contract = graph.contracts.find((candidate) => candidate.screenId === screen.id);
       const referencedFixtures = contract
@@ -543,6 +549,7 @@ export function lowerGraph(graph: SemanticInterfaceGraph, target: PlatformTarget
             focalPoint: node.asset.focalPoint,
             decorative: node.asset.decorative,
           } : null,
+          web: node.web ?? null,
           events: eventsForNode(node, contract),
           visibility: node.states.map((state) => ({
             state: state.name,

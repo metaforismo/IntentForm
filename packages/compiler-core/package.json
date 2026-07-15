@@ -6,6 +6,7 @@
   "exports": { ".": "./src/index.ts" },
   "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" },
   "dependencies": {
+    "@intentform/device-registry": "workspace:*",
     "@intentform/layout-engine": "workspace:*",
     "@intentform/semantic-schema": "workspace:*"
   }

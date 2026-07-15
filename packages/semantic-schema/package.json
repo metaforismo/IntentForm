@@ -9,5 +9,8 @@
     "./migrations": "./src/migrations.ts"
   },
   "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" },
-  "dependencies": { "zod": "^4.3.6" }
+  "dependencies": {
+    "@intentform/device-registry": "workspace:*",
+    "zod": "^4.3.6"
+  }
 }

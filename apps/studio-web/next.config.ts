@@ -44,6 +44,7 @@ const nextConfig: NextConfig = {
     "@intentform/compiler-core",
     "@intentform/compiler-react",
     "@intentform/compiler-swiftui",
+    "@intentform/compiler-web",
     "@intentform/intent-interpreter",
     "@intentform/mcp-server",
     "@intentform/proof-report",

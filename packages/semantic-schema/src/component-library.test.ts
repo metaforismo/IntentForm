@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { defaultDeviceConfiguration } from "@intentform/device-registry";
 import {
   findGraphNode,
   parseGraph,
@@ -60,7 +61,7 @@ actionTemplate.style.emphasis = "strong";
 const cardTemplate = node("card.root", "stack", "Surface card");
 
 const demoGraph = parseGraph({
-  schemaVersion: "0.4.0",
+  schemaVersion: "0.6.0",
   product: {
     name: "Component tests",
     audience: ["interface teams"],
@@ -79,6 +80,7 @@ const demoGraph = parseGraph({
     extensions: {},
   },
   assets: [],
+  devices: defaultDeviceConfiguration(),
   platforms: [{ target: "react", enabled: true, capabilities: ["responsive-layout"] }],
   components: [
     {

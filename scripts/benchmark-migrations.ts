@@ -22,7 +22,7 @@ const durationMs = performance.now() - startedAt;
 const operationsPerSecond = Math.round(iterations / (durationMs / 1_000));
 
 console.log(JSON.stringify({
-  fixture: "0.0.1-to-0.4.0",
+  fixture: "0.0.1-to-0.6.0",
   iterations,
   durationMs: Number(durationMs.toFixed(2)),
   operationsPerSecond,

@@ -1,4 +1,5 @@
 import { demoGraph } from "@intentform/proof-report/demo";
+import { defaultDeviceConfiguration } from "@intentform/device-registry";
 import {
   parseGraph,
   type PlatformTarget,
@@ -13,7 +14,7 @@ export interface StarterProjectInput {
   audience: string;
   purpose: string;
   projectType: ProjectType;
-  targets: Array<Extract<PlatformTarget, "react" | "swiftui">>;
+  targets: Array<Extract<PlatformTarget, "react" | "swiftui" | "web">>;
 }
 
 const starterCopy: Record<ProjectType, { title: string; nodeLabel: string; principle: string }> = {
@@ -32,6 +33,11 @@ const starterCopy: Record<ProjectType, { title: string; nodeLabel: string; princ
     nodeLabel: "Add the first reusable semantic component",
     principle: "Prefer stable semantic roles over page-specific styling",
   },
+  "responsive-web": {
+    title: "Home",
+    nodeLabel: "Shape the first responsive section",
+    principle: "Let intrinsic content and declared breakpoints drive the layout",
+  },
 };
 
 export function createStarterGraph(input: StarterProjectInput): SemanticInterfaceGraph {
@@ -42,7 +48,7 @@ export function createStarterGraph(input: StarterProjectInput): SemanticInterfac
   const copy = starterCopy[input.projectType];
 
   return parseGraph({
-    schemaVersion: "0.4.0",
+    schemaVersion: "0.6.0",
     product: {
       name,
       audience: [audience],
@@ -71,9 +77,30 @@ export function createStarterGraph(input: StarterProjectInput): SemanticInterfac
       extensions: {},
     },
     assets: [],
+    devices: defaultDeviceConfiguration(),
+    ...(input.projectType === "responsive-web" ? {
+      web: {
+        strategy: "responsive-web",
+        defaultFrame: "desktop-browser",
+        frames: [
+          { id: "mobile-browser", label: "Mobile browser", mode: "browser", width: 390, height: 844 },
+          { id: "tablet-browser", label: "Tablet browser", mode: "browser", width: 768, height: 1024 },
+          { id: "desktop-browser", label: "Desktop browser", mode: "browser", width: 1440, height: 1000 },
+          { id: "fluid-content", label: "Fluid content", mode: "fluid", minWidth: 320, maxWidth: 1600, height: 1000 },
+        ],
+        breakpoints: [
+          { id: "small", label: "Small", minWidth: 0, maxWidth: 767 },
+          { id: "medium", label: "Medium", minWidth: 768, maxWidth: 1199 },
+          { id: "large", label: "Large", minWidth: 1200 },
+        ],
+        contentMaxWidth: 1200,
+        inlinePaddingToken: "space.20",
+      },
+    } : {}),
     platforms: [
       { target: "react", enabled: input.targets.includes("react"), capabilities: ["responsive-layout", "aria", "sticky-actions"] },
       { target: "swiftui", enabled: input.targets.includes("swiftui"), capabilities: ["safe-area", "dynamic-type", "native-controls"] },
+      ...(input.projectType === "responsive-web" ? [{ target: "web" as const, enabled: input.targets.includes("web"), capabilities: ["semantic-html", "responsive-layout", "intrinsic-grid", "container-queries"] }] : []),
     ],
     components: [],
     screens: [{
@@ -92,6 +119,20 @@ export function createStarterGraph(input: StarterProjectInput): SemanticInterfac
         layout: { axis: "vertical", width: "fill", gapToken: "space.16", paddingToken: "space.20" },
         style: { role: "empty-state", emphasis: "quiet" },
         accessibility: { label: copy.nodeLabel, live: "off" },
+        ...(input.projectType === "responsive-web" ? {
+          web: {
+            display: "grid",
+            direction: "column",
+            wrap: "wrap",
+            position: "static",
+            overflowX: "visible",
+            overflowY: "visible",
+            containerType: "inline-size",
+            gridMinColumnWidth: 260,
+            gridMaxColumns: 3,
+            breakpointOverrides: { large: { gridMinColumnWidth: 320, gridMaxColumns: 4 } },
+          },
+        } : {}),
         states: [],
         interactions: [],
         provenance: { author: "system", revision: 0 },

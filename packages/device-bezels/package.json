@@ -1,0 +1,13 @@
+{
+  "name": "@intentform/device-bezels",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" },
+  "dependencies": {
+    "@intentform/device-registry": "workspace:*",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": { "@types/node": "^25.0.0" }
+}

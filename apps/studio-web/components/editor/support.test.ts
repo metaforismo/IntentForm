@@ -1,14 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { demoGraph } from "../../../../packages/proof-report/src/demo";
 import { classifyDevice, semanticDiff } from "@intentform/semantic-schema";
-import { deviceProfiles, fixtureFor, withFixtureValue } from "./support";
+import { deviceProfiles, editorProfiles, fixtureFor, withFixtureValue } from "./support";
 
 describe("editor device profiles", () => {
   it("derives every breakpoint from the shared viewport contract", () => {
     for (const profile of deviceProfiles) {
       expect(profile.breakpoint).toBe(classifyDevice(profile));
-      expect(profile.detail).toBe(`${profile.width} × ${profile.height}`);
+      expect(profile.detail).toBe(`${profile.width} × ${profile.height} · ${profile.orientation}`);
     }
+  });
+
+  it("resolves the graph-owned registry references and keeps a neutral custom viewport available", () => {
+    const profiles = editorProfiles(demoGraph);
+    expect(profiles[0]?.id).toBe(`device:${demoGraph.devices.defaultProfile}`);
+    expect(profiles.some((profile) => profile.id === "device:neutral.window.custom")).toBe(true);
+    expect(profiles.find((profile) => profile.id === "device:neutral.phone.regular")?.safeArea.top).toBe(59);
   });
 });
 

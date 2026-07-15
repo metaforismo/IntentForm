@@ -189,7 +189,7 @@ export interface ${name}Props {
 
 export function ${name}({ data, events }: ${name}Props) {
   return (
-    <main className="screen" data-if-token-mode=${JSON.stringify(ir.activeTokenMode)} data-screen-id="${screen.id}" data-screen-route={${JSON.stringify(screen.route)}} data-screen-purpose={${JSON.stringify(screen.purpose)}}>
+    <main className="screen" data-if-token-mode=${JSON.stringify(ir.activeTokenMode)} data-if-device-profile=${JSON.stringify(ir.devices.defaultProfile.id)} data-screen-id="${screen.id}" data-screen-route={${JSON.stringify(screen.route)}} data-screen-purpose={${JSON.stringify(screen.purpose)}}>
       <header><span className="eyebrow">{${JSON.stringify(ir.productName)}}</span><h1>{${JSON.stringify(screen.title)}}</h1></header>
       <div className="screen-content">
 ${body}
@@ -291,6 +291,16 @@ function stylesSource(ir: PlatformIR): string {
       return [`.if-gap-${fragment} { --if-node-gap: ${variable}; }`, `.if-padding-${fragment} { --if-node-padding: ${variable}; }`];
     })
     .join("\n");
+  const defaultSafeArea = ir.devices.defaultProfile.safeArea;
+  const deviceDeclarations = [...ir.devices.profiles]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map((profile) => `.screen[data-if-device-profile=${JSON.stringify(profile.id)}] {
+  --if-safe-area-top: ${profile.safeArea.top}px;
+  --if-safe-area-right: ${profile.safeArea.right}px;
+  --if-safe-area-bottom: ${profile.safeArea.bottom}px;
+  --if-safe-area-left: ${profile.safeArea.left}px;
+}`)
+    .join("\n");
 
   return `:root {
   color-scheme: light;
@@ -305,11 +315,16 @@ ${declarations}
   --if-hairline: color-mix(in oklab, var(--if-ink) 12%, #ffffff);
   --if-control-radius: var(--if-radius-control, 18px);
   --if-surface-radius: var(--if-radius-surface, 28px);
+  --if-safe-area-top: ${defaultSafeArea.top}px;
+  --if-safe-area-right: ${defaultSafeArea.right}px;
+  --if-safe-area-bottom: ${defaultSafeArea.bottom}px;
+  --if-safe-area-left: ${defaultSafeArea.left}px;
 }
 ${modeDeclarations}
+${deviceDeclarations}
 * { box-sizing: border-box; }
 body { margin: 0; color: var(--if-ink); background: var(--if-canvas); }
-.screen { min-height: 100dvh; max-width: 440px; margin: auto; padding: 28px 22px 110px; background: var(--if-surface); }
+.screen { min-height: 100dvh; max-width: 440px; margin: auto; padding: max(28px, var(--if-safe-area-top)) max(22px, var(--if-safe-area-right)) max(110px, var(--if-safe-area-bottom)) max(22px, var(--if-safe-area-left)); background: var(--if-surface); }
 .eyebrow { color: var(--if-accent); font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 h1 { margin: 8px 0 28px; font-size: 32px; letter-spacing: -.04em; }
 .screen-content { display: grid; gap: 18px; }
@@ -339,7 +354,7 @@ h1 { margin: 8px 0 28px; font-size: 32px; letter-spacing: -.04em; }
 .if-mode-compact-overlay > .if-node { grid-area: 1 / 1; }
 .if-mode-compact-freeform > .if-node { position: absolute; left: var(--if-x, 0); top: var(--if-y, 0); z-index: var(--if-z, 0); }
 .if-mode-compact-scroll { overflow: auto; }
-.if-mode-compact-safe-area { padding-top: max(16px, env(safe-area-inset-top)); padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+.if-mode-compact-safe-area { padding: max(var(--if-safe-area-top), env(safe-area-inset-top)) max(var(--if-safe-area-right), env(safe-area-inset-right)) max(var(--if-safe-area-bottom), env(safe-area-inset-bottom)) max(var(--if-safe-area-left), env(safe-area-inset-left)); }
 .if-mode-compact-wrap { flex-flow: row wrap; }
 .if-mode-compact-wrap > .if-node { flex: 1 1 calc((100% - (var(--if-columns) - 1) * var(--if-node-gap, 0px)) / var(--if-columns)); }
 .if-mode-compact-split { flex-direction: row; }
@@ -407,6 +422,10 @@ export class ReactCompiler implements CompilerBackend {
       ...ir.screens.map((_, index) => ({ path: `src/generated/screens/${ir.screens[index]?.id}.tsx`, content: screenSource(ir, index) })),
       ...ir.screens.map((_, index) => ({ path: `src/generated/contracts/${ir.screens[index]?.id}.ts`, content: contractSource(ir, index) })),
       { path: "src/generated/styles.css", content: stylesSource(ir) },
+      {
+        path: "src/generated/intentform.devices.json",
+        content: `${JSON.stringify({ version: 1, defaultProfile: ir.devices.defaultProfile.id, profiles: ir.devices.profiles }, null, 2)}\n`,
+      },
       { path: "src/generated/App.tsx", content: appSource(ir) },
       ...(ir.assets.length > 0 ? [{
         path: "assets.manifest.json",
@@ -429,6 +448,9 @@ export class ReactCompiler implements CompilerBackend {
 
   validate(output: GeneratedFileSet): CompilerDiagnostic[] {
     const diagnostics: CompilerDiagnostic[] = [];
+    if (!output.files.some((file) => file.path === "src/generated/intentform.devices.json")) {
+      diagnostics.push({ severity: "error", path: "src/generated/intentform.devices.json", message: "React output must include the resolved device profile manifest." });
+    }
     for (const file of output.files) {
       if (file.content.includes("position(x")) {
         diagnostics.push({ severity: "error", path: file.path, message: "Absolute positioning escaped the semantic layout compiler." });

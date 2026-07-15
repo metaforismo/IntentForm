@@ -3,6 +3,7 @@ import {
   type SemanticInterfaceGraph,
   type SemanticNode,
 } from "@intentform/semantic-schema";
+import { defaultDeviceConfiguration } from "@intentform/device-registry";
 
 const baseLayout = (
   overrides: Partial<SemanticNode["layout"]> = {},
@@ -77,7 +78,7 @@ export const demoBrief =
   "Create a calm payment flow for independent professionals. Keep the amount, recipient and next action unmistakable. Never expose blockchain terminology. Every failure must provide a recovery path.";
 
 export const demoGraph: SemanticInterfaceGraph = parseGraph({
-  schemaVersion: "0.4.0",
+  schemaVersion: "0.6.0",
   product: {
     name: "Verdant Pay",
     audience: ["independent professionals", "non-technical customers"],
@@ -124,6 +125,7 @@ export const demoGraph: SemanticInterfaceGraph = parseGraph({
     extensions: {},
   },
   assets: [],
+  devices: defaultDeviceConfiguration(),
   platforms: [
     { target: "react", enabled: true, capabilities: ["responsive-layout", "aria", "sticky-actions"] },
     { target: "swiftui", enabled: true, capabilities: ["safe-area", "dynamic-type", "native-controls"] },
@@ -345,3 +347,47 @@ export const demoGraph: SemanticInterfaceGraph = parseGraph({
     { id: "receipt.completed", screenId: "receipt", state: "completed", data: { reference: "IF-2048", amount: "120.00" } },
   ],
 });
+
+const responsiveWebDraft = structuredClone(demoGraph);
+responsiveWebDraft.platforms.push({
+  target: "web",
+  enabled: true,
+  capabilities: ["semantic-html", "responsive-layout", "intrinsic-grid", "container-queries"],
+});
+responsiveWebDraft.web = {
+  strategy: "responsive-web",
+  defaultFrame: "desktop-browser",
+  frames: [
+    { id: "mobile-browser", label: "Mobile browser", mode: "browser", width: 390, height: 844 },
+    { id: "tablet-browser", label: "Tablet browser", mode: "browser", width: 768, height: 1024 },
+    { id: "desktop-browser", label: "Desktop browser", mode: "browser", width: 1440, height: 1000 },
+    { id: "fluid-content", label: "Fluid content", mode: "fluid", minWidth: 320, maxWidth: 1600, height: 1000 },
+  ],
+  breakpoints: [
+    { id: "small", label: "Small", minWidth: 0, maxWidth: 767 },
+    { id: "medium", label: "Medium", minWidth: 768, maxWidth: 1199 },
+    { id: "large", label: "Large", minWidth: 1200 },
+  ],
+  contentMaxWidth: 1200,
+  inlinePaddingToken: "space.20",
+};
+const responsiveLayout = responsiveWebDraft.screens.find((screen) => screen.id === "layout-lab")?.nodes[0];
+if (responsiveLayout) {
+  responsiveLayout.web = {
+    display: "grid",
+    direction: "column",
+    wrap: "wrap",
+    position: "static",
+    overflowX: "visible",
+    overflowY: "visible",
+    containerType: "inline-size",
+    gridMinColumnWidth: 260,
+    gridMaxColumns: 3,
+    breakpointOverrides: {
+      small: { display: "block" },
+      large: { gridMinColumnWidth: 320, gridMaxColumns: 4 },
+    },
+  };
+}
+
+export const responsiveWebDemoGraph: SemanticInterfaceGraph = parseGraph(responsiveWebDraft);

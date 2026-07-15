@@ -1,5 +1,4 @@
 import {
-  CANONICAL_DEVICE_VIEWPORTS,
   classifyDevice,
   resolveTokenMode,
   setFixtureValue,
@@ -7,11 +6,16 @@ import {
   type SemanticInterfaceGraph,
   type SemanticNode,
 } from "@intentform/semantic-schema";
+import {
+  defaultDeviceConfiguration,
+  resolveDeviceConfiguration,
+  type DeviceProfile as RegistryDeviceProfile,
+} from "@intentform/device-registry";
 
 export type EditorTool = "select" | "hand";
 export type MobilePanel = "structure" | "inspector" | null;
 export type PreviewBreakpoint = DeviceClass;
-export type DeviceId = "compact-phone" | "regular-phone" | "regular-tablet";
+export type DeviceId = `device:${string}` | `web:${string}`;
 export type VisualState = "idle" | "loading" | "empty" | "failed" | "completed";
 export type RailTab = "layers" | "components" | "assets" | "tokens";
 export type NodeCommand = "duplicate" | "delete" | "move-up" | "move-down";
@@ -23,25 +27,68 @@ export interface DeviceProfile {
   width: number;
   height: number;
   breakpoint: PreviewBreakpoint;
+  presentation: "device" | "browser" | "content";
+  registryId?: string;
+  scale: number;
+  orientation?: RegistryDeviceProfile["orientation"];
+  safeArea: RegistryDeviceProfile["safeArea"];
+  corners: RegistryDeviceProfile["corners"];
+  cutouts: RegistryDeviceProfile["cutouts"];
+  input?: RegistryDeviceProfile["input"];
+  capabilities: RegistryDeviceProfile["capabilities"];
+  textScale: number;
+  window?: RegistryDeviceProfile["window"];
 }
 
 const deviceProfile = (
-  id: DeviceId,
-  label: string,
-  viewport: { width: number; height: number },
+  profile: RegistryDeviceProfile,
 ): DeviceProfile => ({
-  id,
-  label,
-  detail: `${viewport.width} × ${viewport.height}`,
-  ...viewport,
-  breakpoint: classifyDevice(viewport),
+  id: `device:${profile.id}`,
+  registryId: profile.id,
+  label: profile.label,
+  detail: `${profile.viewport.width} × ${profile.viewport.height} · ${profile.orientation}`,
+  width: profile.viewport.width,
+  height: profile.viewport.height,
+  scale: profile.viewport.scale,
+  breakpoint: classifyDevice(profile.viewport),
+  presentation: "device",
+  orientation: profile.orientation,
+  safeArea: profile.safeArea,
+  corners: profile.corners,
+  cutouts: profile.cutouts,
+  input: profile.input,
+  capabilities: profile.capabilities,
+  textScale: profile.textScale,
+  window: profile.window,
 });
 
-export const deviceProfiles: DeviceProfile[] = [
-  deviceProfile("compact-phone", "Compact phone", CANONICAL_DEVICE_VIEWPORTS.compactPhone),
-  deviceProfile("regular-phone", "Regular phone", CANONICAL_DEVICE_VIEWPORTS.regularPhone),
-  deviceProfile("regular-tablet", "Regular tablet", CANONICAL_DEVICE_VIEWPORTS.regularTablet),
-];
+export const deviceProfiles: DeviceProfile[] = resolveDeviceConfiguration(defaultDeviceConfiguration()).profiles.map(deviceProfile);
+
+export function editorProfiles(graph: Pick<SemanticInterfaceGraph, "devices" | "web">): DeviceProfile[] {
+  const resolvedDevices = resolveDeviceConfiguration(graph.devices).profiles.map(deviceProfile);
+  if (!graph.web) return resolvedDevices;
+  return [
+    ...resolvedDevices,
+    ...graph.web.frames.map((frame) => {
+      const width = frame.width ?? frame.maxWidth ?? frame.minWidth ?? graph.web!.contentMaxWidth;
+      const viewport = { width, height: frame.height };
+      return {
+        id: `web:${frame.id}` as const,
+        label: frame.label,
+        detail: `${width} × ${frame.height} · ${frame.mode}`,
+        ...viewport,
+        scale: 1,
+        breakpoint: classifyDevice(viewport),
+        presentation: frame.mode === "content" ? "content" as const : "browser" as const,
+        safeArea: { top: 0, right: 0, bottom: 0, left: 0 },
+        corners: { radius: frame.mode === "browser" ? 12 : 2 },
+        cutouts: [],
+        capabilities: [],
+        textScale: 1,
+      };
+    }),
+  ];
+}
 
 export const nodeNames: Record<SemanticNode["kind"], string> = {
   "balance-summary": "Balance summary",

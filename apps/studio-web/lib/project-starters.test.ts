@@ -7,7 +7,7 @@ import {
 } from "./project-starters";
 
 describe("project starters", () => {
-  it.each<ProjectType>(["application", "prototype", "component-library"])(
+  it.each<ProjectType>(["application", "prototype", "component-library", "responsive-web"])(
     "creates a deterministic valid %s starter",
     (projectType) => {
       const first = createStarterGraph({
@@ -15,14 +15,14 @@ describe("project starters", () => {
         audience: "Distributed research teams",
         purpose: "Review and organize field observations",
         projectType,
-        targets: ["react", "swiftui"],
+        targets: projectType === "responsive-web" ? ["react", "swiftui", "web"] : ["react", "swiftui"],
       });
       const second = createStarterGraph({
         name: "Northline Field Notes",
         audience: "Distributed research teams",
         purpose: "Review and organize field observations",
         projectType,
-        targets: ["react", "swiftui"],
+        targets: projectType === "responsive-web" ? ["react", "swiftui", "web"] : ["react", "swiftui"],
       });
 
       expect(parseGraph(first)).toEqual(first);
@@ -32,6 +32,25 @@ describe("project starters", () => {
       expect(first.screens[0]?.nodes).toHaveLength(1);
     },
   );
+
+  it("creates a responsive-web starter with intrinsic frames, breakpoints, and typed layout", () => {
+    const graph = createStarterGraph({
+      name: "Northline Journal",
+      audience: "Field researchers",
+      purpose: "Publish observations across browser widths",
+      projectType: "responsive-web",
+      targets: ["web"],
+    });
+    expect(graph.web).toEqual(expect.objectContaining({
+      strategy: "responsive-web",
+      defaultFrame: "desktop-browser",
+      inlinePaddingToken: "space.20",
+    }));
+    expect(graph.web?.frames.map((frame) => frame.mode)).toEqual(["browser", "browser", "browser", "fluid"]);
+    expect(graph.web?.breakpoints.map((breakpoint) => breakpoint.id)).toEqual(["small", "medium", "large"]);
+    expect(graph.screens[0]?.nodes[0]?.web).toEqual(expect.objectContaining({ display: "grid", containerType: "inline-size" }));
+    expect(graph.platforms.find((platform) => platform.target === "web")?.enabled).toBe(true);
+  });
 
   it("enables only explicitly selected compiler targets", () => {
     const graph = createStarterGraph({

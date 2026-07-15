@@ -3,7 +3,7 @@
 import { DeviceMobile } from "@phosphor-icons/react";
 import type { SemanticInterfaceGraph } from "@intentform/semantic-schema";
 import { NodePreview } from "../editor/node-preview";
-import { deviceProfiles, fixtureFor, isNodeVisible } from "../editor/support";
+import { editorProfiles, fixtureFor, isNodeVisible } from "../editor/support";
 
 /* A single scaled-down frame that reuses the canvas node renderer, so every
    preview in the product draws from one source of truth. */
@@ -11,7 +11,8 @@ export function PhonePreview({ graph, selectedScreen }: { graph: SemanticInterfa
   const screen = graph.screens.find((item) => item.id === selectedScreen) ?? graph.screens[0];
   if (!screen) return null;
   const scale = 0.68;
-  const profile = deviceProfiles.find((item) => item.id === "compact-phone") ?? deviceProfiles[0]!;
+  const profiles = editorProfiles(graph);
+  const profile = profiles.find((item) => item.id === `device:${graph.devices.defaultProfile}`) ?? profiles[0]!;
   const { width, height } = profile;
   const nodes = screen.nodes.filter((node) => isNodeVisible(node, "idle"));
   const fixture = fixtureFor(graph, screen.id, "idle");
@@ -19,8 +20,18 @@ export function PhonePreview({ graph, selectedScreen }: { graph: SemanticInterfa
     <div className="relative grid min-h-[520px] place-items-center rounded-[32px] border border-[var(--line)] bg-[var(--inset)] p-6">
       <div style={{ width: width * scale, height: height * scale }}>
         <div
-          className="phone-shell flex flex-col overflow-hidden rounded-[40px] bg-[#fcfdfb] px-7 pb-7 pt-5"
-          style={{ width, height, transform: `scale(${scale})`, transformOrigin: "top left" }}
+          className="phone-shell flex flex-col overflow-hidden bg-[#fcfdfb]"
+          style={{
+            width,
+            height,
+            borderRadius: profile.corners.radius,
+            paddingTop: Math.max(20, profile.safeArea.top),
+            paddingRight: Math.max(28, profile.safeArea.right),
+            paddingBottom: Math.max(28, profile.safeArea.bottom),
+            paddingLeft: Math.max(28, profile.safeArea.left),
+            transform: `scale(${scale})`,
+            transformOrigin: "top left",
+          }}
         >
           <div className="mb-4 flex items-center justify-between text-[12px] font-semibold text-[#2a2f2c]">
             <span className="pl-1 font-mono tracking-[-.02em]">9:41</span>
@@ -34,7 +45,7 @@ export function PhonePreview({ graph, selectedScreen }: { graph: SemanticInterfa
           <div className="flex min-h-0 flex-1 flex-col" style={{ gap: 18 }}>
             {nodes.map((node) => (
               <div key={node.id} className={node.kind === "primary-action" && node.layout.placement?.[profile.breakpoint] === "persistent-bottom" ? "mt-auto" : ""}>
-                <NodePreview node={node} graph={graph} fixture={fixture} state="idle" viewport={{ width: 375, height: 667 }} />
+                <NodePreview node={node} graph={graph} fixture={fixture} state="idle" viewport={profile} />
               </div>
             ))}
           </div>

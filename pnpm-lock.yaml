@@ -60,6 +60,15 @@ importers:
       '@intentform/compiler-swiftui':
         specifier: workspace:*
         version: link:../../packages/compiler-swiftui
+      '@intentform/compiler-web':
+        specifier: workspace:*
+        version: link:../../packages/compiler-web
+      '@intentform/device-bezels':
+        specifier: workspace:*
+        version: link:../../packages/device-bezels
+      '@intentform/device-registry':
+        specifier: workspace:*
+        version: link:../../packages/device-registry
       '@intentform/intent-interpreter':
         specifier: workspace:*
         version: link:../../packages/intent-interpreter
@@ -122,8 +131,30 @@ importers:
         specifier: ^4.2.1
         version: 4.3.2
 
+  apps/web-preview:
+    dependencies:
+      react:
+        specifier: ^19.2.4
+        version: 19.2.4
+      react-dom:
+        specifier: ^19.2.4
+        version: 19.2.4(react@19.2.4)
+    devDependencies:
+      '@types/react':
+        specifier: ^19.2.14
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: ^19.2.3
+        version: 19.2.3(@types/react@19.2.17)
+      vite:
+        specifier: ^8.1.4
+        version: 8.1.4(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)
+
   packages/compiler-core:
     dependencies:
+      '@intentform/device-registry':
+        specifier: workspace:*
+        version: link:../device-registry
       '@intentform/layout-engine':
         specifier: workspace:*
         version: link:../layout-engine
@@ -148,6 +179,38 @@ importers:
       '@intentform/semantic-schema':
         specifier: workspace:*
         version: link:../semantic-schema
+
+  packages/compiler-web:
+    dependencies:
+      '@intentform/compiler-core':
+        specifier: workspace:*
+        version: link:../compiler-core
+      '@intentform/semantic-schema':
+        specifier: workspace:*
+        version: link:../semantic-schema
+    devDependencies:
+      '@intentform/proof-report':
+        specifier: workspace:*
+        version: link:../proof-report
+
+  packages/device-bezels:
+    dependencies:
+      '@intentform/device-registry':
+        specifier: workspace:*
+        version: link:../device-registry
+      zod:
+        specifier: ^4.3.6
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^25.0.0
+        version: 25.9.5
+
+  packages/device-registry:
+    dependencies:
+      zod:
+        specifier: ^4.3.6
+        version: 4.4.3
 
   packages/intent-interpreter:
     dependencies:
@@ -175,6 +238,15 @@ importers:
       '@intentform/compiler-swiftui':
         specifier: workspace:*
         version: link:../compiler-swiftui
+      '@intentform/compiler-web':
+        specifier: workspace:*
+        version: link:../compiler-web
+      '@intentform/device-bezels':
+        specifier: workspace:*
+        version: link:../device-bezels
+      '@intentform/device-registry':
+        specifier: workspace:*
+        version: link:../device-registry
       '@intentform/proof-report':
         specifier: workspace:*
         version: link:../proof-report
@@ -187,6 +259,9 @@ importers:
       '@intentform/verifier':
         specifier: workspace:*
         version: link:../verifier
+      '@intentform/web-verifier':
+        specifier: workspace:*
+        version: link:../web-verifier
       zod:
         specifier: ^4.3.6
         version: 4.4.3
@@ -206,6 +281,9 @@ importers:
       '@intentform/compiler-swiftui':
         specifier: workspace:*
         version: link:../compiler-swiftui
+      '@intentform/device-registry':
+        specifier: workspace:*
+        version: link:../device-registry
       '@intentform/repair-planner':
         specifier: workspace:*
         version: link:../repair-planner
@@ -233,6 +311,9 @@ importers:
 
   packages/semantic-schema:
     dependencies:
+      '@intentform/device-registry':
+        specifier: workspace:*
+        version: link:../device-registry
       zod:
         specifier: ^4.3.6
         version: 4.4.3
@@ -255,6 +336,19 @@ importers:
       '@intentform/semantic-schema':
         specifier: workspace:*
         version: link:../semantic-schema
+
+  packages/web-verifier:
+    dependencies:
+      '@intentform/compiler-web':
+        specifier: workspace:*
+        version: link:../compiler-web
+      '@intentform/semantic-schema':
+        specifier: workspace:*
+        version: link:../semantic-schema
+    devDependencies:
+      '@intentform/proof-report':
+        specifier: workspace:*
+        version: link:../proof-report
 
 packages:
 

@@ -2,11 +2,11 @@
 
 **Compile product intent into platform-native, runnable, verified interfaces.**
 
-IntentForm is an agent-native interface compiler. A product brief becomes a validated Semantic Interface Graph; deterministic backends lower that graph into normal React and SwiftUI; evidence-based checks identify intent violations and accept a repair only after an independent rerun.
+IntentForm is an agent-native interface compiler. A product brief becomes a validated Semantic Interface Graph; deterministic backends lower that graph into normal React, SwiftUI and responsive-web projects; evidence-based checks identify intent violations and accept a repair only after an independent rerun.
 
 > Manipulate it like a design. Compile it like software.
 
-This repository is the OpenAI Build Week vertical slice. It intentionally proves the compiler model with React and SwiftUI before adding the broader Expo-first product surface.
+This repository began as an OpenAI Build Week vertical slice and now continues toward the complete local-first product. The original React and SwiftUI proof remains intact alongside the dedicated responsive-web surface.
 
 ## What works today
 
@@ -16,13 +16,15 @@ This repository is the OpenAI Build Week vertical slice. It intentionally proves
 - Stable node IDs, restricted expression AST, typed UI contracts and fixtures.
 - Infinite multi-frame semantic board with flow edges, live finding badges, pointer-anchored zoom, pan, fit commands and adaptive workspace panels.
 - State-aware previews that expose idle, loading, failed and completed fixtures without rendering state-bound nodes at the wrong time.
-- Compact and regular device profiles; direct manipulation changes the active semantic breakpoint rather than storing coordinates.
+- Versioned, checksummed logical device profiles for neutral phone, tablet, orientation, split-window and custom viewports, plus named fluid, custom, browser and content web frames; direct manipulation changes semantic layout rather than storing arbitrary CSS.
+- Disabled-by-default bring-your-own bezel-pack boundary for locally supplied, legally permitted raster artwork; no official bezel bytes are bundled or emitted.
 - Fit-to-canvas, trackpad zoom, middle-mouse panning, preview mode and contextual keyboard shortcuts for selection, panels and revision history.
 - Searchable recursive layers and commands, human editing for labels, layout relations, width, spacing tokens, emphasis, sibling ordering, subtree-safe duplication and component insertion, with undo/redo.
 - Versioned local component definitions with typed props, named slots, variants, states, overrides, reset/detach, deprecation, deterministic compiler expansion and a strict `1.0.0` library ABI.
 - Project launcher with guided blank application/prototype/library starters, validated imports, copy-only examples, browser recovery diagnostics and an optional local-agent workspace bridge.
 - Versioned browser project recovery carrying project type, source, timestamp and local conflict fingerprint; invalid recovery remains inspectable instead of silently replacing a project.
 - Deterministic React and SwiftUI compiler backends for stack, grid, overlay, scroll, safe-area, adaptive, wrap, split, bounded freeform and page-flow hierarchy.
+- Dedicated responsive-web compiler and verifier for semantic HTML routes, block/flex/intrinsic-grid layout, wrapping, sticky/fixed positioning, overflow, aspect ratio, container declarations and named breakpoint overrides.
 - Active React preview embedded in Studio: it validates the current graph, verifies the exact compiler fingerprint, lowers the shared IR into an isolated runtime, and executes typed navigation events without evaluating arbitrary generated source.
 - Playwright screenshot, computed-style and layout-bounds verification for compact and regular viewports.
 - Typed repair proposal, semantic diff and independent verification rerun.
@@ -70,6 +72,8 @@ pnpm build
 pnpm smoke:studio
 pnpm generate:demo
 pnpm verify:react-preview
+pnpm verify:web-preview
+pnpm smoke:web-preview
 pnpm verify:swiftui
 pnpm verify:swiftui-render
 ```
@@ -106,6 +110,8 @@ IntentForm is designed to be **driven by coding agents**, not just humans. The r
 intentform_preview_migration inspect schema status without writing
 intentform_apply_migration   checkpoint and migrate a previewed old graph
 intentform_describe_project   inspect screens, stable node IDs, tokens, flows, findings
+intentform://device-profiles  read checksummed geometry, safe areas, inputs and capabilities
+intentform://device-bezel-packs inspect local-only pack capability and byte-free metadata
 intentform_list_token_modes   inspect resolved modes, aliases and deprecation
 intentform_import_dtcg / intentform_export_dtcg  DTCG 2025.10 interchange
 intentform_search_assets / intentform_import_asset  licensed local media
@@ -117,7 +123,8 @@ intentform_preview_patch      validate and inspect a typed semantic edit without
 intentform_apply_patch        smallest typed semantic or hierarchy edit, validated and revisioned
 intentform_replace_graph      structural edits with full schema validation
 intentform_verify             deterministic intent rules per device scenario
-intentform_compile            byte-stable React or SwiftUI plus permitted assets into output/
+intentform_verify_web         responsive frames, breakpoint coverage and web compiler diagnostics
+intentform_compile            byte-stable React, SwiftUI or web plus permitted assets into output/
 intentform_diff / revert      semantic history — every agent edit is reversible
 ```
 
@@ -138,6 +145,7 @@ Brief or semantic edit
   -> shared Platform IR
      -> React compiler -> runnable web UI
      -> SwiftUI compiler -> native iOS UI
+     -> responsive-web compiler -> routed Vite site
   -> deterministic verifier + evidence
   -> GPT-5.6 or deterministic repair planner
   -> validated patch -> rebuild -> independent rerun
@@ -152,12 +160,17 @@ See [architecture](docs/ARCHITECTURE.md), [hackathon scope](docs/HACKATHON_SCOPE
 ```text
 apps/studio-web/            Next.js product experience and server routes
 apps/react-preview/         Vite harness executing generated React output
+apps/web-preview/           Vite harness compiling generated responsive-web output
 packages/semantic-schema/   graph, validation, canonical serialization, patches
+packages/device-registry/   neutral versioned geometry, capabilities and checksums
+packages/device-bezels/     kill-switched local manifests, containment and integrity checks
 packages/layout-engine/     deterministic recursive indexing and neutral layout
 packages/compiler-core/     shared lowering and compiler contracts
 packages/compiler-react/    accessible responsive React output
 packages/compiler-swiftui/  native SwiftUI output
+packages/compiler-web/      semantic responsive-web output
 packages/verifier/          deterministic findings and evidence
+packages/web-verifier/      frame and breakpoint verification for web projects
 packages/repair-planner/    typed deterministic and GPT-5.6 repairs
 packages/intent-interpreter GPT-5.6 structured graph creation and typed semantic edits
 packages/proof-report/      end-to-end proof orchestration and golden sample
@@ -174,7 +187,7 @@ Submission closes **July 21, 2026 at 5:00 PM PT**. IntentForm is entered in Deve
 
 ## Product direction
 
-The full product is local-first and Expo Adaptive-first, with SwiftUI as the reference native renderer. Planned layers include direct semantic manipulation, native preview daemons, Expo iOS/Android, standalone Compose and web, MCP, operation-log-based Git workflows, repository adoption through managed zones, and optional collaboration cloud. No production app requires an IntentForm runtime.
+The full product is local-first and Expo Adaptive-first, with SwiftUI as the reference native renderer. Responsive web, direct semantic manipulation and MCP are now implemented; planned layers include native preview daemons, Expo iOS/Android, standalone Compose, operation-log-based Git workflows, repository adoption through managed zones, and optional collaboration cloud. No production app requires an IntentForm runtime.
 
 ## License
 

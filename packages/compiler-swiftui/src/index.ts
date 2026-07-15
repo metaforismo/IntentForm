@@ -753,6 +753,49 @@ struct ReceiptSummary: View {
 `;
 }
 
+function deviceProfilesSource(ir: PlatformIR): string {
+  const profiles = [...ir.devices.profiles]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map((profile) => `        IntentFormDeviceProfile(
+            id: "${escapeSwift(profile.id)}",
+            width: ${profile.viewport.width},
+            height: ${profile.viewport.height},
+            scale: ${profile.viewport.scale},
+            orientation: "${profile.orientation}",
+            safeArea: IntentFormDeviceInsets(top: ${profile.safeArea.top}, right: ${profile.safeArea.right}, bottom: ${profile.safeArea.bottom}, left: ${profile.safeArea.left}),
+            cornerRadius: ${profile.corners.radius},
+            capabilities: [${profile.capabilities.map((capability) => `"${escapeSwift(capability)}"`).join(", ")}]
+        )`)
+    .join(",\n");
+  return `import SwiftUI
+
+struct IntentFormDeviceInsets: Sendable {
+    let top: CGFloat
+    let right: CGFloat
+    let bottom: CGFloat
+    let left: CGFloat
+}
+
+struct IntentFormDeviceProfile: Identifiable, Sendable {
+    let id: String
+    let width: CGFloat
+    let height: CGFloat
+    let scale: CGFloat
+    let orientation: String
+    let safeArea: IntentFormDeviceInsets
+    let cornerRadius: CGFloat
+    let capabilities: [String]
+}
+
+enum IntentFormDeviceProfiles {
+    static let defaultID = "${escapeSwift(ir.devices.defaultProfile.id)}"
+    static let all: [IntentFormDeviceProfile] = [
+${profiles}
+    ]
+}
+`;
+}
+
 export class SwiftUICompiler implements CompilerBackend {
   readonly id = "swiftui" as const;
 
@@ -768,6 +811,7 @@ export class SwiftUICompiler implements CompilerBackend {
     const files = [
       ...ir.screens.map((screen, index) => ({ path: `Generated/Screens/${swiftIdentifier(screen.id)}.swift`, content: swiftScreen(ir, index) })),
       { path: "Generated/Components/IntentFormComponents.swift", content: componentsSource(ir) },
+      { path: "Generated/IntentFormDeviceProfiles.swift", content: deviceProfilesSource(ir) },
       { path: "Generated/IntentFormApp.swift", content: swiftAppSource(ir) },
       ...(ir.assets.length > 0 ? [{
         path: "Generated/Assets.manifest.json",
@@ -788,11 +832,15 @@ export class SwiftUICompiler implements CompilerBackend {
   }
 
   validate(output: GeneratedFileSet): CompilerDiagnostic[] {
-    return output.files.flatMap((file) =>
+    const diagnostics = output.files.flatMap((file) =>
       file.content.includes(".position(")
         ? [{ severity: "error" as const, path: file.path, message: "Absolute position is forbidden outside Freeform." }]
         : [],
     );
+    if (!output.files.some((file) => file.path === "Generated/IntentFormDeviceProfiles.swift")) {
+      diagnostics.push({ severity: "error", path: "Generated/IntentFormDeviceProfiles.swift", message: "SwiftUI output must include resolved device profile metadata." });
+    }
+    return diagnostics;
   }
 }
 

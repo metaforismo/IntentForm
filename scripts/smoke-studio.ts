@@ -1,5 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium, type Browser } from "playwright";
 import { demoGraph } from "../packages/proof-report/src/demo.ts";
@@ -9,9 +12,48 @@ const root = process.cwd();
 const studioRoot = join(root, "apps/studio-web");
 const remoteOrigin = process.env.STUDIO_ORIGIN?.replace(/\/$/, "");
 const origin = remoteOrigin || "http://127.0.0.1:4319";
+const localTestProjectDir = remoteOrigin ? undefined : mkdtempSync(join(tmpdir(), "intentform-bezel-smoke-"));
+let localBezelOption = "";
+if (localTestProjectDir) {
+  const bytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+X3Y5WQAAAABJRU5ErkJggg==", "base64");
+  const digest = createHash("sha256").update(bytes).digest("hex");
+  const packId = "fixture.browser";
+  const packRoot = join(localTestProjectDir, "bezel-packs", packId);
+  mkdirSync(packRoot, { recursive: true });
+  writeFileSync(join(localTestProjectDir, "graph.json"), JSON.stringify(demoGraph));
+  writeFileSync(join(packRoot, "frame.png"), bytes);
+  writeFileSync(join(packRoot, "manifest.json"), JSON.stringify({
+    format: "intentform-device-bezel-pack",
+    version: "1.0.0",
+    packId,
+    name: "Browser fixture frame",
+    publisher: "IntentForm tests",
+    revoked: false,
+    license: {
+      name: "Fixture-only terms",
+      sourceUrl: "https://example.test/browser-fixture",
+      termsAcknowledgement: "I confirm this inert fixture is used for local browser tests only.",
+      redistribution: "local-reference-only",
+    },
+    profiles: [{
+      deviceProfileId: "neutral.phone.compact",
+      asset: { fileName: "frame.png", digest, mediaType: "image/png", byteLength: bytes.byteLength, width: 395, height: 707 },
+      viewport: { x: 10, y: 20, width: 375, height: 667 },
+    }],
+  }));
+  localBezelOption = `${packId}:${digest}`;
+}
 const server = remoteOrigin ? undefined : spawn(process.execPath, [join(studioRoot, "node_modules/next/dist/bin/next"), "start"], {
   cwd: studioRoot,
-  env: { ...process.env, OPENAI_API_KEY: "", HOSTNAME: "127.0.0.1", PORT: "4319" },
+  env: {
+    ...process.env,
+    OPENAI_API_KEY: "",
+    HOSTNAME: "127.0.0.1",
+    PORT: "4319",
+    INTENTFORM_ENABLE_LOCAL_PROJECT_API: "1",
+    INTENTFORM_ENABLE_LOCAL_BEZELS: "1",
+    ...(localTestProjectDir ? { INTENTFORM_PROJECT_DIR: localTestProjectDir } : {}),
+  },
   stdio: ["ignore", "pipe", "pipe"],
 });
 
@@ -76,12 +118,12 @@ try {
             status: 409,
             contentType: "application/json",
             body: JSON.stringify({
-              error: "Project schema 0.0.1 must be migrated to 0.4.0 before it can be opened.",
+              error: "Project schema 0.0.1 must be migrated to 0.6.0 before it can be opened.",
               migration: {
                 status: "migration-required",
                 sourceFingerprint: "a".repeat(64),
                 fromVersion: "0.0.1",
-                toVersion: "0.4.0",
+                toVersion: "0.6.0",
                 diagnostics: [{
                   severity: "info",
                   code: "schema.migrated.0.0.1.to.0.1.0",
@@ -102,6 +144,16 @@ try {
                   code: "schema.migrated.0.3.0.to.0.4.0",
                   path: "schemaVersion",
                   message: "Converted schema 0.3.0 to 0.4.0.",
+                }, {
+                  severity: "info",
+                  code: "schema.migrated.0.4.0.to.0.5.0",
+                  path: "schemaVersion",
+                  message: "Converted schema 0.4.0 to 0.5.0.",
+                }, {
+                  severity: "info",
+                  code: "schema.migrated.0.5.0.to.0.6.0",
+                  path: "schemaVersion",
+                  message: "Converted schema 0.5.0 to 0.6.0.",
                 }],
               },
             }),
@@ -184,6 +236,97 @@ try {
       await page.getByTestId("canvas-node-home.balance").waitFor();
       await page.getByRole("button", { name: "IntentForm project menu" }).click();
       await page.getByRole("menu").getByText("Verdant Pay", { exact: true }).waitFor();
+    },
+  });
+
+  if (!remoteOrigin) await runSmokeScenario(browser, {
+    name: "local bezel pack acknowledgement and neutral fallback",
+    run: async (page) => {
+      await gotoStudio(page, origin, "/");
+      const openLocal = page.getByRole("button", { name: "Open local project" });
+      await openLocal.waitFor();
+      await openLocal.click();
+      await page.waitForURL(`${origin}/studio`);
+      const bezelSelect = page.getByLabel("Device bezel");
+      await bezelSelect.waitFor();
+      // The canvas camera settles after opening a local project. Measure both
+      // states outside that transition so this remains a geometry assertion,
+      // not an animation-timing assertion.
+      await page.waitForTimeout(450);
+      const contentBefore = await page.getByTestId("device-content").boundingBox();
+      await bezelSelect.selectOption(localBezelOption);
+      if (await bezelSelect.inputValue() !== localBezelOption) throw new Error("Pending local bezel terms were not retained for review");
+      if (await page.getByTestId("local-device-bezel").count() !== 0) throw new Error("Unacknowledged local bezel selection was rendered");
+      const termsLink = page.getByRole("link", { name: "Review terms" });
+      if (await termsLink.getAttribute("href") !== "https://example.test/browser-fixture") throw new Error("Selected bezel terms were not linked to their manifest source");
+      await page.getByLabel("Acknowledge local bezel license").check();
+      const overlay = page.getByTestId("local-device-bezel");
+      await overlay.waitFor();
+      await page.waitForFunction(() => {
+        const image = document.querySelector<HTMLImageElement>('[data-testid="local-device-bezel"]');
+        return image?.complete === true && (image.naturalWidth ?? 0) > 0;
+      });
+      await page.waitForTimeout(450);
+      const contentWithBezel = await page.getByTestId("device-content").boundingBox();
+      if (!contentBefore || !contentWithBezel
+        || Math.abs(contentBefore.x - contentWithBezel.x) > 0.1
+        || Math.abs(contentBefore.y - contentWithBezel.y) > 0.1
+        || Math.abs(contentBefore.width - contentWithBezel.width) > 0.1
+        || Math.abs(contentBefore.height - contentWithBezel.height) > 0.1) {
+        throw new Error("Local bezel presentation changed semantic content geometry");
+      }
+      await bezelSelect.selectOption("");
+      await overlay.waitFor({ state: "detached" });
+      await mkdir(join(root, "output/playwright"), { recursive: true });
+      await page.screenshot({ path: join(root, "output/playwright/local-bezel-neutral-fallback.png"), fullPage: true });
+    },
+  });
+
+  await runSmokeScenario(browser, {
+    name: "responsive web project compiler",
+    run: async (page) => {
+      await gotoStudio(page, origin, "/");
+      await page.getByRole("button", { name: "New project" }).click();
+      const responsiveWebType = page.getByRole("radio", { name: /Responsive web/ });
+      await page.getByText("Responsive web", { exact: true }).first().click();
+      if (!await responsiveWebType.isChecked()) throw new Error("Responsive-web project type could not be selected");
+      await page.getByLabel("Project name").fill("Northline Journal");
+      await page.getByLabel("Primary audience").fill("Field researchers");
+      await page.getByLabel("First outcome").fill("Publish observations across browser widths");
+      await page.getByLabel("React").uncheck();
+      await page.getByLabel("SwiftUI").uncheck();
+      if (!await page.getByRole("checkbox", { name: "Responsive web" }).isChecked()) {
+        throw new Error("Responsive-web compiler target was not enabled by default");
+      }
+      await page.getByRole("button", { name: "Create blank canvas" }).click();
+      await page.waitForURL(`${origin}/studio`);
+      await page.getByText("Northline Journal", { exact: true }).first().waitFor();
+      await page.getByLabel("Preview device").selectOption("web:desktop-browser");
+      const frame = page.getByTestId("device-frame");
+      if (await frame.getAttribute("data-breakpoint") !== "regular") throw new Error("Desktop web frame did not resolve to the regular layout class");
+      await page.getByRole("heading", { name: "Responsive web" }).waitFor();
+      await page.getByRole("group", { name: "Display" }).waitFor();
+      if (await page.getByTestId("web-breakpoint-overrides").locator("select").count() !== 3) {
+        throw new Error("Responsive-web breakpoint controls did not reflect the project profile");
+      }
+      await page.getByRole("button", { name: "Native outputs" }).click();
+      const outputTargets = page.getByRole("group", { name: "Output target" });
+      if (await outputTargets.getByRole("button", { name: "web" }).getAttribute("aria-pressed") !== "true") {
+        throw new Error("Responsive-web projects did not open their dedicated output target");
+      }
+      await page.getByTestId("responsive-web-preview").waitFor();
+      await page.getByRole("button", { name: "styles.css" }).click();
+      const css = await page.locator("code").textContent();
+      if (!css?.includes("grid-template-columns: repeat(auto-fit, minmax(") || !css.includes("@media (min-width: 1200px)")) {
+        throw new Error("Responsive-web output omitted intrinsic grid or declared breakpoint CSS");
+      }
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      if (overflow > 1) throw new Error(`Responsive-web Studio has ${overflow}px horizontal overflow`);
+      await mkdir(join(root, "output/playwright"), { recursive: true });
+      await page.screenshot({ path: join(root, "output/playwright/responsive-web-output.png"), fullPage: true });
+      await page.getByRole("button", { name: "Toggle color theme" }).click();
+      if (await page.locator("html[data-theme='dark']").count() !== 1) throw new Error("Responsive-web workspace did not enter dark mode");
+      await page.screenshot({ path: join(root, "output/playwright/responsive-web-output-dark.png"), fullPage: true });
     },
   });
 
@@ -299,11 +442,11 @@ try {
       if (await adaptivePreview.getAttribute("data-layout-mode") !== "stack") {
         throw new Error("Compact canvas did not resolve the shared adaptive mode to stack");
       }
-      await page.getByLabel("Preview device").selectOption("regular-phone");
+      await page.getByLabel("Preview device").selectOption("device:neutral.phone.regular");
       if (await adaptivePreview.getAttribute("data-layout-mode") !== "grid") {
         throw new Error("Regular canvas did not resolve the shared adaptive mode to grid");
       }
-      await page.getByLabel("Preview device").selectOption("compact-phone");
+      await page.getByLabel("Preview device").selectOption("device:neutral.phone.compact");
       await nestedGridLayer.click();
       await page.getByRole("button", { name: "Duplicate layer" }).click();
       await page.getByTestId("layer-layout-lab.grid-copy").waitFor();
@@ -353,12 +496,31 @@ try {
       await page.getByLabel("Visual state").selectOption("idle");
       await page.getByTestId("canvas-node-payment-request.failure").waitFor({ state: "detached" });
 
-      await page.getByLabel("Preview device").selectOption("regular-phone");
+      await page.getByLabel("Preview device").selectOption("device:neutral.phone.regular");
       if (await page.getByTestId("device-frame").getAttribute("data-breakpoint") !== "regular") {
         throw new Error("Device profile did not switch the semantic preview breakpoint");
       }
+      if (await page.getByTestId("device-frame").getAttribute("data-safe-area") !== "59,0,34,0") {
+        throw new Error("Device frame did not expose registry-owned safe-area geometry");
+      }
+      await page.getByTestId("device-cutout-sensor-island").waitFor();
+      // Device changes animate frame size and camera fit; compare chrome states
+      // only after that presentation transition reaches its settled geometry.
+      await page.waitForTimeout(450);
+      const contentWithChrome = await page.getByTestId("device-content").boundingBox();
+      await page.getByRole("button", { name: "Toggle device chrome" }).click();
+      await page.getByTestId("device-cutout-sensor-island").waitFor({ state: "detached" });
+      const contentWithoutChrome = await page.getByTestId("device-content").boundingBox();
+      if (!contentWithChrome || !contentWithoutChrome
+        || Math.abs(contentWithChrome.x - contentWithoutChrome.x) > 0.1
+        || Math.abs(contentWithChrome.y - contentWithoutChrome.y) > 0.1
+        || Math.abs(contentWithChrome.width - contentWithoutChrome.width) > 0.1
+        || Math.abs(contentWithChrome.height - contentWithoutChrome.height) > 0.1) {
+        throw new Error(`Presentation chrome changed logical device content geometry (${JSON.stringify(contentWithChrome)} vs ${JSON.stringify(contentWithoutChrome)})`);
+      }
+      await page.getByRole("button", { name: "Toggle device chrome" }).click();
       await page.getByRole("button", { name: "Verification" }).click();
-      const regularScenario = page.getByRole("button", { name: "Regular phone", exact: true });
+      const regularScenario = page.getByRole("button", { name: "Neutral regular phone", exact: true });
       if (await regularScenario.getAttribute("aria-pressed") !== "true") {
         throw new Error("Verification did not inherit the active canvas device");
       }
@@ -368,7 +530,7 @@ try {
       await page.getByRole("button", { name: "Proof report" }).click();
       await page.getByRole("heading", { name: "Source generated. Build evidence is still pending." }).waitFor();
       await page.getByRole("button", { name: "Design canvas" }).click();
-      if (await page.getByLabel("Preview device").inputValue() !== "regular-phone") {
+      if (await page.getByLabel("Preview device").inputValue() !== "device:neutral.phone.regular") {
         throw new Error("Canvas device changed after visiting verification");
       }
       await page.keyboard.press("h");
@@ -380,7 +542,7 @@ try {
       await page.getByRole("dialog", { name: "Keyboard shortcuts" }).waitFor();
       await page.keyboard.press("Escape");
       await page.getByRole("dialog", { name: "Keyboard shortcuts" }).waitFor({ state: "detached" });
-      await page.getByLabel("Preview device").selectOption("compact-phone");
+      await page.getByLabel("Preview device").selectOption("device:neutral.phone.compact");
 
       await mkdir(join(root, "output/playwright"), { recursive: true });
       await page.screenshot({ path: join(root, "output/playwright/studio-redesign-wide.png"), fullPage: true });
@@ -846,4 +1008,5 @@ try {
 } finally {
   await browser?.close();
   if (server) await stopServer(server);
+  if (localTestProjectDir) await rm(localTestProjectDir, { recursive: true, force: true });
 }

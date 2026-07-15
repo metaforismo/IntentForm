@@ -229,6 +229,22 @@ export function Inspector({
   const boundAsset = selectedNode?.asset
     ? graph.assets.find((asset) => asset.id === selectedNode.asset?.assetId)
     : undefined;
+  const updateWeb = (mutate: (web: NonNullable<SemanticNode["web"]>) => void, notice: string) => updateNode((node) => {
+    const display = isContainerNode(node) ? node.kind === "grid" ? "grid" : "flex" : "block";
+    node.web ??= {
+      display,
+      direction: node.layout.axis === "horizontal" ? "row" : "column",
+      wrap: node.kind === "wrap" ? "wrap" : "nowrap",
+      position: "static",
+      overflowX: node.layout.overflow === "scroll" ? "auto" : node.layout.overflow === "clip" ? "clip" : "visible",
+      overflowY: node.layout.overflow === "scroll" ? "auto" : node.layout.overflow === "clip" ? "clip" : "visible",
+      containerType: "normal",
+      gridMinColumnWidth: 240,
+      gridMaxColumns: display === "grid" ? node.layout.columns : 4,
+      breakpointOverrides: {},
+    };
+    mutate(node.web);
+  }, notice);
 
   return (
     <aside
@@ -560,6 +576,44 @@ export function Inspector({
               />
             ) : null}
           </Section>
+
+          {graph.web ? (
+            <Section title="Responsive web">
+              <p className="text-[10px] leading-relaxed text-[var(--faint)]">Typed CSS behavior compiles into owned route and stylesheet files. Breakpoints come from the project profile.</p>
+              <SegmentedControl disabled={Boolean(componentContext)} label="Display" value={selectedNode.web?.display ?? (isContainerNode(selectedNode) ? selectedNode.kind === "grid" ? "grid" : "flex" : "block")} options={[{ value: "block", label: "Block" }, { value: "flex", label: "Flex" }, { value: "grid", label: "Grid" }]} onChange={(value) => updateWeb((web) => {
+                web.display = value;
+                if (value !== "grid") { web.gridMinColumnWidth = 240; web.gridMaxColumns = 4; }
+              }, `Changed responsive-web display to ${value}.`)} />
+              {(selectedNode.web?.display ?? (isContainerNode(selectedNode) ? "flex" : "block")) === "flex" ? <>
+                <SegmentedControl disabled={Boolean(componentContext)} label="Direction" value={selectedNode.web?.direction ?? (selectedNode.layout.axis === "horizontal" ? "row" : "column")} options={[{ value: "row", label: "Row" }, { value: "column", label: "Column" }]} onChange={(value) => updateWeb((web) => { web.direction = value; }, `Changed responsive-web direction to ${value}.`)} />
+                <SegmentedControl disabled={Boolean(componentContext)} label="Wrap" value={selectedNode.web?.wrap ?? "nowrap"} options={[{ value: "nowrap", label: "No wrap" }, { value: "wrap", label: "Wrap" }]} onChange={(value) => updateWeb((web) => { web.wrap = value; }, `Changed responsive-web wrapping to ${value}.`)} />
+              </> : null}
+              {(selectedNode.web?.display ?? (selectedNode.kind === "grid" ? "grid" : "block")) === "grid" ? <div className="grid grid-cols-2 gap-2">
+                <NumberField disabled={Boolean(componentContext)} label="Min column" value={selectedNode.web?.gridMinColumnWidth ?? 240} min={80} max={1600} onCommit={(value) => { if (value !== undefined) updateWeb((web) => { web.display = "grid"; web.gridMinColumnWidth = Math.round(value); }, "Updated the intrinsic grid minimum."); }} />
+                <NumberField disabled={Boolean(componentContext)} label="Max columns" value={selectedNode.web?.gridMaxColumns ?? selectedNode.layout.columns} min={1} max={12} onCommit={(value) => { if (value !== undefined) updateWeb((web) => { web.display = "grid"; web.gridMaxColumns = Math.round(value); }, "Updated the intrinsic grid maximum."); }} />
+              </div> : null}
+              <SegmentedControl disabled={Boolean(componentContext)} label="Position" value={selectedNode.web?.position ?? "static"} options={[{ value: "static", label: "Static" }, { value: "relative", label: "Relative" }, { value: "sticky", label: "Sticky" }, { value: "fixed", label: "Fixed" }]} onChange={(value) => updateWeb((web) => {
+                web.position = value;
+                if (value !== "sticky" && value !== "fixed") delete web.insetBlockStart;
+              }, `Changed responsive-web position to ${value}.`)} />
+              {selectedNode.web?.position === "sticky" || selectedNode.web?.position === "fixed" ? <NumberField disabled={Boolean(componentContext)} label="Block inset" value={selectedNode.web.insetBlockStart} min={-2000} max={2000} onCommit={(value) => updateWeb((web) => { if (value === undefined) delete web.insetBlockStart; else web.insetBlockStart = value; }, "Updated responsive-web block inset.")} /> : null}
+              <div className="grid grid-cols-2 gap-2">
+                <label className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">Overflow X<select disabled={Boolean(componentContext)} value={selectedNode.web?.overflowX ?? "visible"} onChange={(event) => updateWeb((web) => { web.overflowX = event.target.value as NonNullable<SemanticNode["web"]>["overflowX"]; }, "Changed responsive-web horizontal overflow.")} className="select-control text-[11px] font-normal">{["visible", "clip", "hidden", "auto", "scroll"].map((value) => <option key={value}>{value}</option>)}</select></label>
+                <label className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">Overflow Y<select disabled={Boolean(componentContext)} value={selectedNode.web?.overflowY ?? "visible"} onChange={(event) => updateWeb((web) => { web.overflowY = event.target.value as NonNullable<SemanticNode["web"]>["overflowY"]; }, "Changed responsive-web vertical overflow.")} className="select-control text-[11px] font-normal">{["visible", "clip", "hidden", "auto", "scroll"].map((value) => <option key={value}>{value}</option>)}</select></label>
+              </div>
+              <NumberField disabled={Boolean(componentContext)} label="Aspect ratio" value={selectedNode.web?.aspectRatio} min={0.1} max={10} step={0.1} onCommit={(value) => updateWeb((web) => { if (value === undefined) delete web.aspectRatio; else web.aspectRatio = value; }, "Updated responsive-web aspect ratio.")} />
+              <label className="flex min-h-8 items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--field)] px-2.5 text-[11px] font-medium text-[var(--muted)]">Container queries
+                <input type="checkbox" checked={selectedNode.web?.containerType === "inline-size"} disabled={Boolean(componentContext)} onChange={(event) => updateWeb((web) => { web.containerType = event.target.checked ? "inline-size" : "normal"; }, "Changed responsive-web container-query boundary.")} className="size-4 accent-[var(--accent)]" />
+              </label>
+              <div className="grid gap-2" data-testid="web-breakpoint-overrides">
+                {graph.web.breakpoints.map((breakpoint) => <label key={breakpoint.id} className="grid grid-cols-[minmax(0,1fr)_100px] items-center gap-2 text-[10px] text-[var(--muted)]"><span className="truncate">{breakpoint.label} · {breakpoint.minWidth}px{breakpoint.maxWidth ? `–${breakpoint.maxWidth}px` : "+"}</span><select disabled={Boolean(componentContext)} value={selectedNode.web?.breakpointOverrides[breakpoint.id]?.display ?? ""} onChange={(event) => updateWeb((web) => {
+                  const display = event.target.value as "block" | "flex" | "grid" | "";
+                  if (!display) delete web.breakpointOverrides[breakpoint.id];
+                  else web.breakpointOverrides[breakpoint.id] = { ...(web.breakpointOverrides[breakpoint.id] ?? {}), display };
+                }, `Updated the ${breakpoint.label} web override.`)} className="select-control text-[10px] font-normal"><option value="">Inherit</option><option value="block">Block</option><option value="flex">Flex</option><option value="grid">Grid</option></select></label>)}
+              </div>
+            </Section>
+          ) : null}
 
           {!componentContext && contractStates.length > 0 ? (
             <Section title="State visibility">

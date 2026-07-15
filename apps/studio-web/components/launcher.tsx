@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowRight,
   BracketsCurly,
+  Browser,
   Check,
   Code,
   Cube,
@@ -47,6 +48,7 @@ const projectTypeOptions: Array<{ id: ProjectType; label: string; detail: string
   { id: "application", label: "Application", detail: "A product workflow with screens, state, data, and platform output.", icon: BracketsCurly },
   { id: "prototype", label: "Prototype", detail: "A focused concept intended for fast semantic iteration and testing.", icon: Sparkle },
   { id: "component-library", label: "Component library", detail: "A reusable catalog of intent roles, tokens, and variants.", icon: Cube },
+  { id: "responsive-web", label: "Responsive web", detail: "A semantic site or web app with intrinsic layout and declared breakpoints.", icon: Browser },
 ];
 
 function validationMessage(error: unknown): string {
@@ -58,8 +60,12 @@ function validationMessage(error: unknown): string {
 }
 
 function projectTypeLabel(projectType: ProjectType): string {
-  return projectType === "component-library" ? "Component library" : projectType[0]!.toUpperCase() + projectType.slice(1);
+  if (projectType === "component-library") return "Component library";
+  if (projectType === "responsive-web") return "Responsive web";
+  return projectType[0]!.toUpperCase() + projectType.slice(1);
 }
+
+const inferredProjectType = (graph: SemanticInterfaceGraph): ProjectType => graph.web ? "responsive-web" : "application";
 
 export function Launcher() {
   const router = useRouter();
@@ -76,6 +82,7 @@ export function Launcher() {
   const [purpose, setPurpose] = useState("");
   const [reactTarget, setReactTarget] = useState(true);
   const [swiftTarget, setSwiftTarget] = useState(true);
+  const [webTarget, setWebTarget] = useState(true);
 
   useEffect(() => {
     try {
@@ -139,7 +146,7 @@ export function Launcher() {
         const graph = parseGraph(result.graph);
         setLocalMigration(null);
         persistAndOpen(graph, {
-          projectType: "application",
+          projectType: inferredProjectType(graph),
           source: "local",
           localFingerprint: result.fingerprint,
         }, "local");
@@ -169,7 +176,7 @@ export function Launcher() {
         const graph = parseGraph(result.graph);
         setLocalMigration(null);
         persistAndOpen(graph, {
-          projectType: "application",
+          projectType: inferredProjectType(graph),
           source: "local",
           localFingerprint: result.fingerprint,
         }, "migration");
@@ -184,8 +191,8 @@ export function Launcher() {
   const createProject = (event: FormEvent) => {
     event.preventDefault();
     try {
-      const targets = [reactTarget ? "react" : null, swiftTarget ? "swiftui" : null]
-        .filter((target): target is "react" | "swiftui" => target !== null);
+      const targets = [reactTarget ? "react" : null, swiftTarget ? "swiftui" : null, projectType === "responsive-web" && webTarget ? "web" : null]
+        .filter((target): target is "react" | "swiftui" | "web" => target !== null);
       const graph = createStarterGraph({ name, audience, purpose, projectType, targets });
       persistAndOpen(graph, { projectType, source: "created" }, "create");
     } catch (cause) {
@@ -201,7 +208,7 @@ export function Launcher() {
       try {
         if (file.size > MAX_IMPORT_BYTES) throw new Error("The project file is larger than the 512 KB import limit.");
         const graph = previewGraphMigration(JSON.parse(await file.text())).graph;
-        persistAndOpen(graph, { projectType: "application", source: "imported" }, "import");
+        persistAndOpen(graph, { projectType: inferredProjectType(graph), source: "imported" }, "import");
       } catch (cause) {
         setOpening(null);
         setError(`Import failed: ${validationMessage(cause)}`);
@@ -263,7 +270,7 @@ export function Launcher() {
             <form onSubmit={createProject} className="rounded-[28px] border border-[var(--line)] bg-[var(--surface-strong)] p-5 shadow-[0_24px_60px_-45px_var(--shadow-strong)] sm:p-7">
               <fieldset>
                 <legend className="text-xs font-semibold text-[var(--ink)]">What are you designing?</legend>
-                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                   {projectTypeOptions.map((option) => {
                     const Icon = option.icon;
                     const selected = projectType === option.id;
@@ -288,6 +295,7 @@ export function Launcher() {
                 <div className="mt-2 flex flex-wrap gap-2">
                   <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--field)] px-3 text-xs"><input type="checkbox" checked={reactTarget} onChange={(event) => setReactTarget(event.target.checked)} className="accent-[var(--accent)]" /> React</label>
                   <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--field)] px-3 text-xs"><input type="checkbox" checked={swiftTarget} onChange={(event) => setSwiftTarget(event.target.checked)} className="accent-[var(--accent)]" /> SwiftUI</label>
+                  {projectType === "responsive-web" ? <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-3 text-xs"><input type="checkbox" checked={webTarget} onChange={(event) => setWebTarget(event.target.checked)} className="accent-[var(--accent)]" /> Responsive web</label> : null}
                 </div>
               </fieldset>
               <div className="mt-7 flex items-center justify-between gap-4 border-t border-[var(--line)] pt-5">

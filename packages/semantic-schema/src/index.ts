@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  DEVICE_REGISTRY,
+  deviceConfigurationSchema,
+  resolveDeviceConfiguration,
+} from "@intentform/device-registry";
 import { synchronizeComponentInstances } from "./component-library.ts";
 
 export type DeviceClass = "compact" | "regular";
@@ -12,9 +17,9 @@ export const DEVICE_CLASS_LIMITS = {
 } as const;
 
 export const CANONICAL_DEVICE_VIEWPORTS = {
-  compactPhone: { width: 375, height: 667 },
-  regularPhone: { width: 402, height: 874 },
-  regularTablet: { width: 768, height: 1024 },
+  compactPhone: DEVICE_REGISTRY.find((entry) => entry.profile.id === "neutral.phone.compact")!.profile.viewport,
+  regularPhone: DEVICE_REGISTRY.find((entry) => entry.profile.id === "neutral.phone.regular")!.profile.viewport,
+  regularTablet: DEVICE_REGISTRY.find((entry) => entry.profile.id === "neutral.tablet.regular")!.profile.viewport,
 } as const;
 
 export const GRAPH_LIMITS = {
@@ -47,6 +52,9 @@ export const GRAPH_LIMITS = {
   maxTokenAliases: 256,
   maxAssets: 256,
   maxAssetVariants: 16,
+  maxWebFrames: 12,
+  maxWebBreakpoints: 12,
+  maxWebBreakpointOverrides: 12,
   maxExpressionDepth: 12,
 } as const;
 
@@ -317,6 +325,101 @@ const alignmentSchema = z.enum(["start", "center", "end", "stretch"]);
 const justificationSchema = z.enum(["start", "center", "end", "space-between"]);
 const boundedDimensionSchema = z.number().finite().nonnegative().max(10_000);
 
+export const webBreakpointSchema = z.strictObject({
+  id: idSchema,
+  label: safeTextSchema(120),
+  minWidth: z.number().int().nonnegative().max(10_000),
+  maxWidth: z.number().int().positive().max(10_000).optional(),
+}).superRefine((breakpoint, context) => {
+  if (breakpoint.maxWidth !== undefined && breakpoint.maxWidth < breakpoint.minWidth) {
+    context.addIssue({ code: "custom", path: ["maxWidth"], message: "Breakpoint maximum width cannot be below its minimum width" });
+  }
+});
+
+export const webFrameSchema = z.strictObject({
+  id: idSchema,
+  label: safeTextSchema(120),
+  mode: z.enum(["fluid", "custom", "browser", "content"]),
+  width: z.number().int().positive().max(10_000).optional(),
+  height: z.number().int().positive().max(10_000).default(900),
+  minWidth: z.number().int().positive().max(10_000).optional(),
+  maxWidth: z.number().int().positive().max(10_000).optional(),
+}).superRefine((frame, context) => {
+  if (["custom", "browser"].includes(frame.mode) && frame.width === undefined) {
+    context.addIssue({ code: "custom", path: ["width"], message: `${frame.mode} frames require an explicit width` });
+  }
+  if (frame.minWidth !== undefined && frame.maxWidth !== undefined && frame.minWidth > frame.maxWidth) {
+    context.addIssue({ code: "custom", path: ["minWidth"], message: "Frame minimum width cannot exceed its maximum width" });
+  }
+  if (frame.width !== undefined && frame.minWidth !== undefined && frame.width < frame.minWidth) {
+    context.addIssue({ code: "custom", path: ["width"], message: "Frame width cannot be below its minimum width" });
+  }
+  if (frame.width !== undefined && frame.maxWidth !== undefined && frame.width > frame.maxWidth) {
+    context.addIssue({ code: "custom", path: ["width"], message: "Frame width cannot exceed its maximum width" });
+  }
+});
+
+export const webProjectProfileSchema = z.strictObject({
+  strategy: z.literal("responsive-web"),
+  defaultFrame: idSchema,
+  frames: z.array(webFrameSchema).min(1).max(GRAPH_LIMITS.maxWebFrames),
+  breakpoints: z.array(webBreakpointSchema).min(1).max(GRAPH_LIMITS.maxWebBreakpoints),
+  contentMaxWidth: z.number().int().positive().max(10_000).default(1200),
+  inlinePaddingToken: spacingTokenKeySchema,
+});
+
+const webNodeStyleFields = {
+  display: z.enum(["block", "flex", "grid"]),
+  direction: z.enum(["row", "column"]),
+  wrap: z.enum(["nowrap", "wrap"]),
+  position: z.enum(["static", "relative", "sticky", "fixed"]),
+  insetBlockStart: z.number().finite().min(-2_000).max(2_000),
+  overflowX: z.enum(["visible", "clip", "hidden", "auto", "scroll"]),
+  overflowY: z.enum(["visible", "clip", "hidden", "auto", "scroll"]),
+  aspectRatio: z.number().finite().min(0.1).max(10),
+  containerType: z.enum(["normal", "inline-size"]),
+  gridMinColumnWidth: z.number().int().min(80).max(1_600),
+  gridMaxColumns: z.number().int().min(1).max(12),
+} as const;
+
+export const webNodeStyleOverrideSchema = z.strictObject(Object.fromEntries(
+  Object.entries(webNodeStyleFields).map(([key, schema]) => [key, schema.optional()]),
+) as { [Key in keyof typeof webNodeStyleFields]: z.ZodOptional<(typeof webNodeStyleFields)[Key]> }).superRefine((override, context) => {
+  if (override.display !== undefined && override.display !== "grid"
+    && (override.gridMinColumnWidth !== undefined || override.gridMaxColumns !== undefined)) {
+    context.addIssue({ code: "custom", path: ["display"], message: "Breakpoint grid column controls require grid display" });
+  }
+  if (override.position !== undefined && !["sticky", "fixed"].includes(override.position)
+    && override.insetBlockStart !== undefined) {
+    context.addIssue({ code: "custom", path: ["insetBlockStart"], message: "Breakpoint block inset requires sticky or fixed positioning" });
+  }
+});
+
+export const webNodeLayoutSchema = z.strictObject({
+  display: webNodeStyleFields.display.default("block"),
+  direction: webNodeStyleFields.direction.default("column"),
+  wrap: webNodeStyleFields.wrap.default("nowrap"),
+  position: webNodeStyleFields.position.default("static"),
+  insetBlockStart: webNodeStyleFields.insetBlockStart.optional(),
+  overflowX: webNodeStyleFields.overflowX.default("visible"),
+  overflowY: webNodeStyleFields.overflowY.default("visible"),
+  aspectRatio: webNodeStyleFields.aspectRatio.optional(),
+  containerType: webNodeStyleFields.containerType.default("normal"),
+  gridMinColumnWidth: webNodeStyleFields.gridMinColumnWidth.default(240),
+  gridMaxColumns: webNodeStyleFields.gridMaxColumns.default(4),
+  breakpointOverrides: z.record(idSchema, webNodeStyleOverrideSchema).refine(
+    (record) => Object.keys(record).length <= GRAPH_LIMITS.maxWebBreakpointOverrides,
+    `Web layout must contain at most ${GRAPH_LIMITS.maxWebBreakpointOverrides} breakpoint overrides`,
+  ).default({}),
+}).superRefine((web, context) => {
+  if (web.display !== "grid" && (web.gridMinColumnWidth !== 240 || web.gridMaxColumns !== 4)) {
+    context.addIssue({ code: "custom", path: ["display"], message: "Grid column controls require grid display" });
+  }
+  if (!["sticky", "fixed"].includes(web.position) && web.insetBlockStart !== undefined) {
+    context.addIssue({ code: "custom", path: ["insetBlockStart"], message: "Block inset requires sticky or fixed positioning" });
+  }
+});
+
 export const semanticLayoutSchema = z.strictObject({
   axis: z.enum(["vertical", "horizontal", "overlay"]).default("vertical"),
   width: dimensionPolicySchema.default("fill"),
@@ -430,6 +533,7 @@ const semanticNodeBaseSchema = z.strictObject({
     }).default({ x: 0.5, y: 0.5 }),
     decorative: z.boolean().default(false),
   }).optional(),
+  web: webNodeLayoutSchema.optional(),
   states: z.array(z.strictObject({ name: visualStateSchema, visibleWhen: expressionSchema.optional() })).max(5).default([]),
   interactions: z.array(
     z.strictObject({
@@ -716,7 +820,7 @@ export function isTransactionalScreen(
 
 export const semanticInterfaceGraphSchema = z
   .strictObject({
-    schemaVersion: z.literal("0.4.0"),
+    schemaVersion: z.literal("0.6.0"),
     product: z.strictObject({
       name: safeTextSchema(120),
       audience: z.array(safeTextSchema(240)).min(1).max(20),
@@ -724,6 +828,8 @@ export const semanticInterfaceGraphSchema = z
     }),
     tokens: tokenCollectionSchema,
     assets: z.array(assetDefinitionSchema).max(GRAPH_LIMITS.maxAssets).default([]),
+    devices: deviceConfigurationSchema,
+    web: webProjectProfileSchema.optional(),
     platforms: z.array(
       z.strictObject({
         target: platformTargetSchema,
@@ -770,6 +876,25 @@ export const semanticInterfaceGraphSchema = z
     checkUnique(graph.contracts.map((contract) => contract.screenId), "contract screen", ["contracts"]);
     checkUnique(graph.fixtures.map((fixture) => fixture.id), "fixture id", ["fixtures"]);
     checkUnique(graph.assets.map((asset) => asset.id), "asset id", ["assets"]);
+    try {
+      resolveDeviceConfiguration(graph.devices);
+    } catch (error) {
+      addIssue(error instanceof Error ? error.message : "Device profile resolution failed", ["devices"]);
+    }
+    if (graph.web) {
+      checkUnique(graph.web.frames.map((frame) => frame.id), "web frame id", ["web", "frames"]);
+      checkUnique(graph.web.breakpoints.map((breakpoint) => breakpoint.id), "web breakpoint id", ["web", "breakpoints"]);
+      if (!graph.web.frames.some((frame) => frame.id === graph.web?.defaultFrame)) {
+        addIssue(`Unknown default web frame: ${graph.web.defaultFrame}`, ["web", "defaultFrame"]);
+      }
+      const orderedBreakpoints = [...graph.web.breakpoints].sort((left, right) => left.minWidth - right.minWidth);
+      orderedBreakpoints.forEach((breakpoint, index) => {
+        const previous = orderedBreakpoints[index - 1];
+        if (previous && (previous.maxWidth === undefined || breakpoint.minWidth <= previous.maxWidth)) {
+          addIssue(`Web breakpoint ranges overlap: ${previous.id} and ${breakpoint.id}`, ["web", "breakpoints"]);
+        }
+      });
+    }
 
     let activeTokens: ResolvedTokenMode = { colors: {}, spacing: {}, radii: {} };
     if (!graph.tokens.modes[graph.tokens.defaultMode]) {
@@ -837,6 +962,13 @@ export const semanticInterfaceGraphSchema = z
     const contractByScreen = new Map(graph.contracts.map((contract) => [contract.screenId, contract]));
     const fixtureById = new Map(graph.fixtures.map((fixture) => [fixture.id, fixture]));
     const platformTargets = new Set(graph.platforms.map((platform) => platform.target));
+    const webTarget = graph.platforms.find((platform) => platform.target === "web");
+    if (webTarget?.enabled && !graph.web) {
+      addIssue("The enabled web target requires a responsive-web profile", ["web"]);
+    }
+    if (graph.web && !Object.hasOwn(activeTokens.spacing, graph.web.inlinePaddingToken)) {
+      addIssue(`Unknown web inline padding token: ${graph.web.inlinePaddingToken}`, ["web", "inlinePaddingToken"]);
+    }
     const nodeIds = new Set<string>();
     const componentById = new Map(graph.components.map((component) => [component.id, component]));
 
@@ -852,6 +984,20 @@ export const semanticInterfaceGraphSchema = z
       }
       if (asset.kind === "font") {
         addIssue("Font assets cannot be bound as node content", [...path, "asset", "assetId"]);
+      }
+    };
+
+    const validateNodeWeb = (node: SemanticNode, path: Array<string | number>) => {
+      if (!node.web) return;
+      if (!graph.web) {
+        addIssue("Node web layout requires a responsive-web project profile", [...path, "web"]);
+        return;
+      }
+      const breakpoints = new Set(graph.web.breakpoints.map((breakpoint) => breakpoint.id));
+      for (const breakpointId of Object.keys(node.web.breakpointOverrides)) {
+        if (!breakpoints.has(breakpointId)) {
+          addIssue(`Node references unknown web breakpoint: ${breakpointId}`, [...path, "web", "breakpointOverrides", breakpointId]);
+        }
       }
     };
 
@@ -1000,6 +1146,7 @@ export const semanticInterfaceGraphSchema = z
           addIssue(`Component template exceeds maximum node depth ${GRAPH_LIMITS.maxNodeDepth}`, nodePath);
         }
         validateNodeAsset(node, nodePath);
+        validateNodeWeb(node, nodePath);
         if (!Object.hasOwn(activeTokens.spacing, node.layout.gapToken)) {
           addIssue(`Unknown spacing token: ${node.layout.gapToken}`, [...nodePath, "layout", "gapToken"]);
         }
@@ -1167,6 +1314,7 @@ export const semanticInterfaceGraphSchema = z
         }
 
         validateNodeAsset(node, nodePath);
+        validateNodeWeb(node, nodePath);
         if (!Object.hasOwn(activeTokens.spacing, node.layout.gapToken)) {
           addIssue(`Unknown spacing token: ${node.layout.gapToken}`, [...nodePath, "layout", "gapToken"]);
         }
@@ -1393,6 +1541,11 @@ export const graphPatchSchema = z.strictObject({
       }),
       z.strictObject({ op: z.literal("clear-asset"), target: idSchema }),
       z.strictObject({
+        op: z.literal("set-web-layout"),
+        target: idSchema,
+        layout: webNodeLayoutSchema.nullable(),
+      }),
+      z.strictObject({
         op: z.literal("set-fixture-value"),
         screenId: z.string().min(1).max(64).regex(/^[a-z][a-z0-9-]*$/),
         state: visualStateSchema,
@@ -1580,6 +1733,9 @@ export function applyGraphPatch(
       };
     } else if (operation.op === "clear-asset") {
       delete node.asset;
+    } else if (operation.op === "set-web-layout") {
+      if (operation.layout === null) delete node.web;
+      else node.web = operation.layout;
     } else if (operation.op === "set-placement") {
       node.layout.placement = { compact: operation.compact, regular: operation.regular };
     } else if (operation.op === "set-label") {
@@ -1661,6 +1817,12 @@ export function semanticDiff(
       changes.push({ path: `assets.${id}`, before: previous, after: next });
     }
   }
+  if (JSON.stringify(before.web) !== JSON.stringify(after.web)) {
+    changes.push({ path: "web", before: before.web, after: after.web });
+  }
+  if (JSON.stringify(before.devices) !== JSON.stringify(after.devices)) {
+    changes.push({ path: "devices", before: before.devices, after: after.devices });
+  }
 
   const beforeComponents = new Map(before.components.map((definition) => [definition.id, definition]));
   const afterComponents = new Map(after.components.map((definition) => [definition.id, definition]));
@@ -1729,6 +1891,9 @@ export function semanticDiff(
     }
     if (JSON.stringify(previous.asset) !== JSON.stringify(node.asset)) {
       changes.push({ path: `${node.id}.asset`, before: previous.asset, after: node.asset });
+    }
+    if (JSON.stringify(previous.web) !== JSON.stringify(node.web)) {
+      changes.push({ path: `${node.id}.web`, before: previous.web, after: node.web });
     }
     if (previous.layout.gapToken !== node.layout.gapToken) {
       changes.push({ path: `${node.id}.layout.gapToken`, before: previous.layout.gapToken, after: node.layout.gapToken });

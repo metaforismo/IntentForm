@@ -39,14 +39,45 @@ interface NodePreviewProps {
   graph: SemanticInterfaceGraph;
   fixture?: Record<string, unknown>;
   state?: VisualState;
-  viewport?: { width: number; height: number };
+  viewport?: { width: number; height: number; presentation?: "device" | "browser" | "content" };
   selectedNodeId?: string | null;
   selectedNodeIds?: readonly string[];
   hoveredNodeId?: string | null;
   onSelectNode?(nodeId: string, intent: SelectionIntent): void;
 }
 
-export function semanticNodeBoxStyle(node: SemanticNode) {
+interface PreviewWebStyle {
+  display?: CSSProperties["display"] | undefined;
+  flexDirection?: CSSProperties["flexDirection"] | undefined;
+  flexWrap?: CSSProperties["flexWrap"] | undefined;
+  gridTemplateColumns?: CSSProperties["gridTemplateColumns"] | undefined;
+  position?: CSSProperties["position"] | undefined;
+  insetBlockStart?: CSSProperties["insetBlockStart"] | undefined;
+  overflowX?: CSSProperties["overflowX"] | undefined;
+  overflowY?: CSSProperties["overflowY"] | undefined;
+  aspectRatio?: CSSProperties["aspectRatio"] | undefined;
+  containerType?: CSSProperties["containerType"] | undefined;
+}
+
+function previewWebStyle(node: SemanticNode, graph?: SemanticInterfaceGraph, viewport?: { width: number; height: number; presentation?: "device" | "browser" | "content" }): PreviewWebStyle {
+  if (!node.web || !graph?.web || !viewport || viewport.presentation === "device") return {};
+  const breakpoint = graph.web.breakpoints.find((candidate) => viewport.width >= candidate.minWidth && (candidate.maxWidth === undefined || viewport.width <= candidate.maxWidth));
+  const style = { ...node.web, ...(breakpoint ? node.web.breakpointOverrides[breakpoint.id] : {}) };
+  return {
+    display: style.display,
+    flexDirection: style.display === "flex" ? style.direction : undefined,
+    flexWrap: style.display === "flex" ? style.wrap : undefined,
+    gridTemplateColumns: style.display === "grid" ? `repeat(auto-fit, minmax(min(100%, ${style.gridMinColumnWidth}px), 1fr))` : undefined,
+    position: style.position,
+    insetBlockStart: style.insetBlockStart,
+    overflowX: style.overflowX,
+    overflowY: style.overflowY,
+    aspectRatio: style.aspectRatio,
+    containerType: style.containerType,
+  };
+}
+
+export function semanticNodeBoxStyle(node: SemanticNode, graph?: SemanticInterfaceGraph, viewport?: { width: number; height: number; presentation?: "device" | "browser" | "content" }) {
   return {
     width: node.layout.width === "fixed" ? node.layout.fixedWidth : node.layout.width === "fill" ? "100%" : "fit-content",
     height: node.layout.height === "fixed" ? node.layout.fixedHeight : undefined,
@@ -56,6 +87,7 @@ export function semanticNodeBoxStyle(node: SemanticNode) {
     maxHeight: node.layout.maxHeight,
     alignSelf: node.layout.align === "start" ? "flex-start" : node.layout.align === "end" ? "flex-end" : node.layout.align,
     overflow: node.layout.overflow === "clip" ? "hidden" : node.layout.overflow === "scroll" ? "auto" : "visible",
+    ...previewWebStyle(node, graph, viewport),
   };
 }
 
@@ -129,7 +161,7 @@ export function NodePreview({
     const padding = spacing[node.layout.paddingToken] ?? 0;
     const horizontal = node.layout.axis === "horizontal";
     const style: CSSProperties = {
-      ...semanticNodeBoxStyle(node),
+      ...semanticNodeBoxStyle(node, graph, viewport),
       display: mode === "grid" || mode === "overlay" || mode === "freeform" ? "grid" : "flex",
       flexDirection: horizontal ? "row" : "column",
       flexWrap: mode === "wrap" ? "wrap" : "nowrap",
@@ -150,7 +182,7 @@ export function NodePreview({
         {visibleChildren.length > 0 ? visibleChildren.map((child, index) => {
           const position = child.layout.position;
           const childStyle: CSSProperties = {
-            ...semanticNodeBoxStyle(child),
+            ...semanticNodeBoxStyle(child, graph, viewport),
             ...(mode === "overlay" ? { gridArea: "1 / 1" } : {}),
             ...(mode === "freeform" ? {
               position: "absolute",

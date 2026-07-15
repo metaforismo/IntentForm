@@ -7,14 +7,14 @@ import {
   previewGraphMigration,
 } from "./migrations";
 
-function fixture(version: "0.0.1" | "0.1.0" | "0.2.0" | "0.3.0" | "0.4.0"): unknown {
+function fixture(version: "0.0.1" | "0.1.0" | "0.2.0" | "0.3.0" | "0.4.0" | "0.5.0" | "0.6.0"): unknown {
   return JSON.parse(readFileSync(new URL(`./fixtures/migrations/${version}.json`, import.meta.url), "utf8"));
 }
 
 describe("Semantic Interface Graph migrations", () => {
-  it("converts the 0.0.1 golden fixture through every step to byte-stable canonical 0.4.0 output", () => {
+  it("converts the 0.0.1 golden fixture through every step to byte-stable canonical 0.6.0 output", () => {
     const preview = previewGraphMigration(fixture("0.0.1"));
-    const expected = previewGraphMigration(fixture("0.4.0"));
+    const expected = previewGraphMigration(fixture("0.6.0"));
 
     expect(preview).toMatchObject({
       fromVersion: "0.0.1",
@@ -25,6 +25,8 @@ describe("Semantic Interface Graph migrations", () => {
         { severity: "info", code: "schema.migrated.0.1.0.to.0.2.0", path: "schemaVersion" },
         { severity: "info", code: "schema.migrated.0.2.0.to.0.3.0", path: "schemaVersion" },
         { severity: "info", code: "schema.migrated.0.3.0.to.0.4.0", path: "schemaVersion" },
+        { severity: "info", code: "schema.migrated.0.4.0.to.0.5.0", path: "schemaVersion" },
+        { severity: "info", code: "schema.migrated.0.5.0.to.0.6.0", path: "schemaVersion" },
       ],
     });
     expect(preview.graph).toEqual(expected.graph);
@@ -34,7 +36,7 @@ describe("Semantic Interface Graph migrations", () => {
 
   it("converts a flat 0.1.0 graph into recursive roots with explicit layout defaults", () => {
     const preview = previewGraphMigration(fixture("0.1.0"));
-    expect(preview).toMatchObject({ fromVersion: "0.1.0", toVersion: "0.4.0", changed: true });
+    expect(preview).toMatchObject({ fromVersion: "0.1.0", toVersion: "0.6.0", changed: true });
     expect(preview.graph.screens[0]?.nodes[0]).toMatchObject({
       children: [],
       layout: {
@@ -46,7 +48,7 @@ describe("Semantic Interface Graph migrations", () => {
         splitRatio: 0.5,
       },
     });
-    expect(preview.graph).toEqual(previewGraphMigration(fixture("0.4.0")).graph);
+    expect(preview.graph).toEqual(previewGraphMigration(fixture("0.6.0")).graph);
   });
 
   it("upgrades legacy component catalog metadata into executable local definitions", () => {
@@ -95,7 +97,7 @@ describe("Semantic Interface Graph migrations", () => {
   });
 
   it("treats the current version as an identity conversion", () => {
-    const input = fixture("0.4.0");
+    const input = fixture("0.6.0");
     const preview = previewGraphMigration(input);
     expect(preview.changed).toBe(false);
     expect(preview.graph).toEqual(input);
@@ -105,7 +107,7 @@ describe("Semantic Interface Graph migrations", () => {
   it.each([
     [{ product: {} }, "schema.version.missing"],
     [{ schemaVersion: "0.0.0" }, "schema.version.unsupported"],
-    [{ schemaVersion: "0.5.0" }, "schema.version.future"],
+    [{ schemaVersion: "0.7.0" }, "schema.version.future"],
     [{ schemaVersion: "not-semver" }, "schema.version.unsupported"],
   ])("fails closed for unsupported version input %#", (input, code) => {
     expect(() => previewGraphMigration(input)).toThrow(GraphMigrationError);

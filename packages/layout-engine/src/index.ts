@@ -36,10 +36,16 @@ export interface NeutralLayoutNode {
 }
 
 export interface NeutralScreenLayout {
-  viewport: { width: number; height: number };
+  viewport: LayoutViewport;
   contentHeight: number;
   roots: NeutralLayoutNode[];
   byId: Map<string, NeutralLayoutNode>;
+}
+
+export interface LayoutViewport {
+  width: number;
+  height: number;
+  safeArea?: { top: number; right: number; bottom: number; left: number };
 }
 
 export function buildNodeIndex(roots: readonly SemanticNode[]): Map<string, NodeLocation> {
@@ -96,7 +102,7 @@ function resolvedHeight(node: SemanticNode, available: number, intrinsic: number
 
 interface LayoutContext {
   spacing: Record<string, number>;
-  viewport: { width: number; height: number };
+  viewport: LayoutViewport;
   byId: Map<string, NeutralLayoutNode>;
 }
 
@@ -139,11 +145,12 @@ function layoutNode(
   const width = resolvedWidth(node, available.width);
   const padding = context.spacing[node.layout.paddingToken] ?? 0;
   const gap = context.spacing[node.layout.gapToken] ?? 0;
-  const safeTop = mode === "safe-area" ? 16 : 0;
-  const safeBottom = mode === "safe-area" ? 24 : 0;
-  const contentX = origin.x + padding;
-  const contentY = origin.y + padding + safeTop;
-  const contentWidth = Math.max(0, width - padding * 2);
+  const safeArea = mode === "safe-area"
+    ? context.viewport.safeArea ?? { top: 16, right: 0, bottom: 24, left: 0 }
+    : { top: 0, right: 0, bottom: 0, left: 0 };
+  const contentX = origin.x + padding + safeArea.left;
+  const contentY = origin.y + padding + safeArea.top;
+  const contentWidth = Math.max(0, width - padding * 2 - safeArea.left - safeArea.right);
   const children: NeutralLayoutNode[] = [];
 
   if (mode !== "leaf") {
@@ -226,14 +233,14 @@ function layoutNode(
   const childrenBottom = children.reduce((maximum, child) => Math.max(maximum, child.frame.y + child.frame.height), contentY);
   const intrinsic = mode === "leaf"
     ? leafHeight[node.kind] ?? 64
-    : Math.max(0, childrenBottom - origin.y) + padding + safeBottom;
-  const height = resolvedHeight(node, available.height, Math.max(intrinsic, mode === "leaf" ? 1 : padding * 2 + safeTop + safeBottom));
+    : Math.max(0, childrenBottom - origin.y) + padding + safeArea.bottom;
+  const height = resolvedHeight(node, available.height, Math.max(intrinsic, mode === "leaf" ? 1 : padding * 2 + safeArea.top + safeArea.bottom));
 
   const isLinear = mode === "stack" || mode === "page-flow" || mode === "safe-area" || mode === "scroll";
   if (isLinear && children.length > 0) {
     const horizontal = node.layout.axis === "horizontal";
-    const innerWidth = Math.max(0, width - padding * 2);
-    const innerHeight = Math.max(0, height - padding * 2 - safeTop - safeBottom);
+    const innerWidth = Math.max(0, width - padding * 2 - safeArea.left - safeArea.right);
+    const innerHeight = Math.max(0, height - padding * 2 - safeArea.top - safeArea.bottom);
     const first = children[0]!;
     const last = children.at(-1)!;
     const used = horizontal
@@ -276,7 +283,7 @@ function layoutNode(
 export function computeNeutralLayout(
   screen: Pick<ScreenDefinition, "nodes">,
   graph: Pick<SemanticInterfaceGraph, "tokens">,
-  viewport: { width: number; height: number },
+  viewport: LayoutViewport,
 ): NeutralScreenLayout {
   const byId = new Map<string, NeutralLayoutNode>();
   const spacing = resolveTokenMode(graph.tokens).spacing;

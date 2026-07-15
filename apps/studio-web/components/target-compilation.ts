@@ -1,8 +1,9 @@
 import { compileReact } from "@intentform/compiler-react";
 import { compileSwiftUI } from "@intentform/compiler-swiftui";
+import { compileWeb } from "@intentform/compiler-web";
 import type { SemanticInterfaceGraph } from "@intentform/semantic-schema";
 
-export type StudioOutputTarget = "react" | "swiftui";
+export type StudioOutputTarget = "react" | "swiftui" | "web";
 export type StudioGeneratedFileSet = ReturnType<typeof compileReact>;
 
 export interface StudioTargetCompilation {
@@ -30,7 +31,7 @@ export function compileStudioTarget(
     return {
       target,
       status: "generated",
-      output: target === "react" ? compileReact(graph) : compileSwiftUI(graph),
+      output: target === "react" ? compileReact(graph) : target === "swiftui" ? compileSwiftUI(graph) : compileWeb(graph),
       message: null,
     };
   } catch (error) {

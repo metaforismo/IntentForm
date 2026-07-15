@@ -10,14 +10,14 @@ export const BROWSER_PROJECT_KEY = "intentform-browser-project-v1";
 export const LEGACY_DRAFT_KEY = "intentform-project-draft-v1";
 export const BROWSER_MIGRATION_BACKUP_KEY = "intentform-browser-migration-backup-v1";
 
-export type ProjectType = "application" | "prototype" | "component-library";
+export type ProjectType = "application" | "prototype" | "component-library" | "responsive-web";
 export type ProjectSource = "created" | "example" | "imported" | "local" | "recovery";
 
 const browserProjectSchema = z.strictObject({
   version: z.literal(1),
   graph: semanticInterfaceGraphSchema,
   savedAt: z.string().datetime(),
-  projectType: z.enum(["application", "prototype", "component-library"]),
+  projectType: z.enum(["application", "prototype", "component-library", "responsive-web"]),
   source: z.enum(["created", "example", "imported", "local", "recovery"]),
   localFingerprint: z.string().regex(/^[a-f0-9]{8}$/).optional(),
 });

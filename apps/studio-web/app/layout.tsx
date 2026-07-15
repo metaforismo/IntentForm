@@ -5,7 +5,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "IntentForm — Product intent, compiled",
-  description: "Compile semantic product intent into React and SwiftUI, then verify the result.",
+  description: "Compile semantic product intent into React, SwiftUI and responsive web, then verify the result.",
 };
 
 const themeScript = `try {

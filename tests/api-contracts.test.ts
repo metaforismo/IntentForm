@@ -6,9 +6,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { demoGraph } from "../packages/proof-report/src/demo";
 import { applyGraphPatch } from "../packages/semantic-schema/src/index";
 import { verifyGraph } from "../packages/verifier/src/index";
+import { bezelManifestChecksum, deviceBezelPackManifestSchema } from "../packages/device-bezels/src/index";
 import { POST as interpret } from "../apps/studio-web/app/api/interpret/route";
 import { GET as getProject, POST as migrateProjectRoute, PUT as putProject } from "../apps/studio-web/app/api/project/route";
 import { GET as getProjectAsset } from "../apps/studio-web/app/api/project/assets/[digest]/route";
+import { GET as listBezelPacks } from "../apps/studio-web/app/api/project/bezel-packs/route";
+import { GET as getBezelAsset } from "../apps/studio-web/app/api/project/bezel-packs/[packId]/[digest]/route";
 import { POST as repair } from "../apps/studio-web/app/api/repair/route";
 import { loadProject, saveProject } from "../packages/mcp-server/src/store";
 import {
@@ -22,6 +25,7 @@ const originalVercel = process.env.VERCEL;
 const originalVercelEnv = process.env.VERCEL_ENV;
 const originalApiKey = process.env.OPENAI_API_KEY;
 const originalProjectDir = process.env.INTENTFORM_PROJECT_DIR;
+const originalBezelEnablement = process.env.INTENTFORM_ENABLE_LOCAL_BEZELS;
 
 afterEach(() => {
   if (originalVercel === undefined) delete process.env.VERCEL;
@@ -32,7 +36,38 @@ afterEach(() => {
   else process.env.OPENAI_API_KEY = originalApiKey;
   if (originalProjectDir === undefined) delete process.env.INTENTFORM_PROJECT_DIR;
   else process.env.INTENTFORM_PROJECT_DIR = originalProjectDir;
+  if (originalBezelEnablement === undefined) delete process.env.INTENTFORM_ENABLE_LOCAL_BEZELS;
+  else process.env.INTENTFORM_ENABLE_LOCAL_BEZELS = originalBezelEnablement;
 });
+
+function writeFixtureBezelPack(projectDir: string, revoked = false) {
+  const bytes = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("api-fixture-only-bezel")]);
+  const digest = createHash("sha256").update(bytes).digest("hex");
+  const manifest = {
+    format: "intentform-device-bezel-pack",
+    version: "1.0.0",
+    packId: "fixture.api",
+    name: "API fixture",
+    publisher: "IntentForm tests",
+    revoked,
+    license: {
+      name: "Fixture terms",
+      sourceUrl: "https://example.test/terms",
+      termsAcknowledgement: "I confirm this fixture is used for local tests only.",
+      redistribution: "local-reference-only",
+    },
+    profiles: [{
+      deviceProfileId: "neutral.phone.compact",
+      asset: { fileName: "frame.png", digest, mediaType: "image/png", byteLength: bytes.byteLength, width: 395, height: 707 },
+      viewport: { x: 10, y: 20, width: 375, height: 667 },
+    }],
+  };
+  const packRoot = join(projectDir, "bezel-packs", manifest.packId);
+  mkdirSync(packRoot, { recursive: true });
+  writeFileSync(join(packRoot, "frame.png"), bytes);
+  writeFileSync(join(packRoot, "manifest.json"), JSON.stringify(manifest));
+  return { bytes, digest, manifest };
+}
 
 function jsonRequest(url: string, body: unknown, method = "POST", headers: HeadersInit = {}) {
   return new Request(url, {
@@ -284,6 +319,45 @@ describe("local project trust boundary", () => {
     }
   });
 
+  it("keeps local bezel packs kill-switched, acknowledged, inert and digest verified", async () => {
+    delete process.env.VERCEL;
+    delete process.env.VERCEL_ENV;
+    const projectDir = mkdtempSync(join(tmpdir(), "intentform-api-bezels-"));
+    process.env.INTENTFORM_PROJECT_DIR = projectDir;
+    try {
+      const { bytes, digest, manifest: input } = writeFixtureBezelPack(projectDir);
+      const manifest = deviceBezelPackManifestSchema.parse(input);
+      const disabled = await listBezelPacks(new Request("http://localhost/api/project/bezel-packs"));
+      expect(disabled.status).toBe(200);
+      await expect(disabled.json()).resolves.toEqual({ enabled: false, packs: [], diagnostics: [] });
+
+      process.env.INTENTFORM_ENABLE_LOCAL_BEZELS = "1";
+      const listed = await listBezelPacks(new Request("http://localhost/api/project/bezel-packs"));
+      const listing = await listed.json() as { packs: Array<{ manifestChecksum: string }> };
+      expect(listing.packs).toHaveLength(1);
+      expect(JSON.stringify(listing)).not.toMatch(/fileName|sourcePath|bytes/i);
+      const checksum = bezelManifestChecksum(manifest);
+      expect(listing.packs[0]?.manifestChecksum).toBe(checksum);
+      const url = `http://localhost/api/project/bezel-packs/${manifest.packId}/${digest}?profile=neutral.phone.compact&version=1.0.0&manifest=${checksum}`;
+      const unacknowledged = await getBezelAsset(new Request(url), { params: Promise.resolve({ packId: manifest.packId, digest }) });
+      expect(unacknowledged.status).toBe(428);
+      const asset = await getBezelAsset(new Request(`${url}&ack=1`), { params: Promise.resolve({ packId: manifest.packId, digest }) });
+      expect(asset.status).toBe(200);
+      expect(asset.headers.get("content-type")).toBe("image/png");
+      expect(Buffer.from(await asset.arrayBuffer())).toEqual(bytes);
+
+      writeFileSync(join(projectDir, "bezel-packs", manifest.packId, "frame.png"), "changed");
+      const changed = await getBezelAsset(new Request(`${url}&ack=1`), { params: Promise.resolve({ packId: manifest.packId, digest }) });
+      expect(changed.status).toBe(404);
+
+      process.env.VERCEL = "1";
+      const hosted = await listBezelPacks(new Request("https://intentform.example/api/project/bezel-packs"));
+      expect(hosted.status).toBe(403);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects cross-origin browser requests and invalid save bodies", async () => {
     delete process.env.VERCEL;
     delete process.env.VERCEL_ENV;
@@ -347,7 +421,7 @@ describe("local project trust boundary", () => {
         migration: { sourceFingerprint: string; fromVersion: string; toVersion: string };
       };
       expect(open.status).toBe(409);
-      expect(blocked.migration).toMatchObject({ fromVersion: "0.0.1", toVersion: "0.4.0" });
+      expect(blocked.migration).toMatchObject({ fromVersion: "0.0.1", toVersion: "0.6.0" });
       expect(readdirSync(projectDir)).toEqual(["graph.json"]);
 
       const stale = await migrateProjectRoute(jsonRequest(

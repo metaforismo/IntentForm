@@ -462,6 +462,47 @@ describe("IntentForm proof pipeline", () => {
     expect(components?.content).toContain('static let availableModes = ["default", "evening"]');
   });
 
+  it("lowers resolved logical device profiles into both target adapters", () => {
+    const customized = structuredClone(demoGraph);
+    customized.devices.defaultProfile = "neutral.phone.regular";
+    const graph = parseGraph(customized);
+
+    const react = compileReact(graph);
+    const reactScreen = react.files.find((file) => file.path.endsWith("home.tsx"));
+    const styles = react.files.find((file) => file.path.endsWith("styles.css"));
+    const manifest = react.files.find((file) => file.path === "src/generated/intentform.devices.json");
+    expect(reactScreen?.content).toContain('data-if-device-profile="neutral.phone.regular"');
+    expect(styles?.content).toContain('.screen[data-if-device-profile="neutral.phone.regular"]');
+    expect(styles?.content).toContain("--if-safe-area-top: 59px;");
+    expect(JSON.parse(manifest!.content)).toMatchObject({
+      version: 1,
+      defaultProfile: "neutral.phone.regular",
+      profiles: expect.arrayContaining([expect.objectContaining({ id: "neutral.tablet.split", window: { mode: "split", resizable: true } })]),
+    });
+
+    const swift = compileSwiftUI(graph);
+    const profiles = swift.files.find((file) => file.path === "Generated/IntentFormDeviceProfiles.swift");
+    expect(profiles?.content).toContain('static let defaultID = "neutral.phone.regular"');
+    expect(profiles?.content).toContain("safeArea: IntentFormDeviceInsets(top: 59, right: 0, bottom: 34, left: 0)");
+    expect(react.fingerprint).not.toBe(compileReact(demoGraph).fingerprint);
+    expect(swift.fingerprint).not.toBe(compileSwiftUI(demoGraph).fingerprint);
+  });
+
+  it("keeps local presentation-bezel references out of compiler output", () => {
+    const draft = structuredClone(demoGraph);
+    draft.devices.bezel = {
+      packId: "local.official-pack",
+      packVersion: "1.0.0",
+      manifestChecksum: "a".repeat(64),
+      deviceProfileId: "neutral.phone.compact",
+      assetDigest: "b".repeat(64),
+      acknowledgedLocalLicense: true,
+    };
+    const graph = parseGraph(draft);
+    expect(compileReact(graph)).toEqual(compileReact(demoGraph));
+    expect(compileSwiftUI(graph)).toEqual(compileSwiftUI(demoGraph));
+  });
+
   it("lowers licensed raster assets into both targets and emits machine-readable manifests", () => {
     const draft = structuredClone(demoGraph);
     const digest = "c".repeat(64);

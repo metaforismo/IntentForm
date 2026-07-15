@@ -56,6 +56,7 @@ import {
   setComponentVariant,
 } from "@intentform/semantic-schema/component-library";
 import type { VerificationFinding } from "@intentform/verifier";
+import type { DeviceBezelReference } from "@intentform/device-registry";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CanvasStage, type CanvasApi } from "./editor/canvas";
 import { Inspector } from "./editor/inspector";
@@ -85,7 +86,7 @@ import {
   type SelectionIntent,
 } from "./editor/direct-manipulation";
 import {
-  deviceProfiles,
+  editorProfiles,
   isFormControl,
   isNodeVisible,
   nodeCatalog,
@@ -110,6 +111,7 @@ interface ManualEditorProps {
   canRedo: boolean;
   findings: VerificationFinding[];
   deviceId: DeviceId;
+  localProjectEnabled: boolean;
   onSelectScreen(screenId: string): void;
   onDeviceId(deviceId: DeviceId): void;
   onSelectNode(nodeId: string | null): void;
@@ -120,6 +122,27 @@ interface ManualEditorProps {
   onOpenStage(stage: WorkflowStage): void;
   onResetProject(): void;
   onExportGraph(): void;
+}
+
+interface LocalBezelPack {
+  packId: string;
+  version: string;
+  name: string;
+  publisher: string;
+  revoked: boolean;
+  manifestChecksum: string;
+  license: { name: string; sourceUrl: string; termsAcknowledgement: string; redistribution: "local-reference-only" };
+  profiles: Array<{
+    deviceProfileId: string;
+    asset: { digest: string; mediaType: "image/png" | "image/webp"; width: number; height: number };
+    viewport: { x: number; y: number; width: number; height: number };
+  }>;
+}
+
+interface LocalBezelResponse {
+  enabled: boolean;
+  packs: LocalBezelPack[];
+  diagnostics: string[];
 }
 
 const catalogIcons: Record<SemanticNode["kind"], Icon> = {
@@ -203,6 +226,7 @@ export function ManualEditor({
   canRedo,
   findings,
   deviceId,
+  localProjectEnabled,
   onSelectScreen,
   onDeviceId,
   onSelectNode,
@@ -228,6 +252,10 @@ export function ManualEditor({
   const [commandQuery, setCommandQuery] = useState("");
   const [layerQuery, setLayerQuery] = useState("");
   const [previewMode, setPreviewMode] = useState(false);
+  const [showDeviceChrome, setShowDeviceChrome] = useState(true);
+  const [localLicenseAcknowledged, setLocalLicenseAcknowledged] = useState(() => graph.devices.bezel?.acknowledgedLocalLicense === true);
+  const [pendingBezelValue, setPendingBezelValue] = useState("");
+  const [bezelPacks, setBezelPacks] = useState<LocalBezelPack[]>([]);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>(() => selectedNodeId ? [selectedNodeId] : []);
   const [panelWidths, setPanelWidths] = useState(() => {
@@ -357,7 +385,83 @@ export function ManualEditor({
   const componentContext = screen && selectedNodeId
     ? componentContextForNode(graph, screen, selectedNodeId)
     : null;
-  const activeProfile = deviceProfiles.find((profile) => profile.id === deviceId) ?? deviceProfiles[0]!;
+  const profiles = useMemo(() => editorProfiles(graph), [graph]);
+  const activeProfile = profiles.find((profile) => profile.id === deviceId) ?? profiles.find((profile) => profile.id === `web:${graph.web?.defaultFrame}`) ?? profiles[0]!;
+  const availableBezels = useMemo(() => bezelPacks.flatMap((pack) => pack.profiles
+    .filter((profile) => !pack.revoked && profile.deviceProfileId === activeProfile.registryId)
+    .map((profile) => ({ pack, profile }))), [activeProfile.registryId, bezelPacks]);
+  const activeBezel = graph.devices.bezel && graph.devices.bezel.deviceProfileId === activeProfile.registryId
+    ? availableBezels.find(({ pack, profile }) => pack.packId === graph.devices.bezel?.packId
+      && pack.manifestChecksum === graph.devices.bezel?.manifestChecksum
+      && profile.asset.digest === graph.devices.bezel?.assetDigest)
+    : undefined;
+  const activeBezelValue = activeBezel ? `${activeBezel.pack.packId}:${activeBezel.profile.asset.digest}` : "";
+  const pendingBezel = availableBezels.find(({ pack, profile }) => `${pack.packId}:${profile.asset.digest}` === pendingBezelValue);
+  const selectedBezel = pendingBezel ?? activeBezel;
+  const bezelOverlay = activeBezel && graph.devices.bezel ? {
+    src: `/api/project/bezel-packs/${encodeURIComponent(activeBezel.pack.packId)}/${activeBezel.profile.asset.digest}?profile=${encodeURIComponent(activeBezel.profile.deviceProfileId)}&version=${encodeURIComponent(activeBezel.pack.version)}&manifest=${activeBezel.pack.manifestChecksum}&ack=1`,
+    image: { width: activeBezel.profile.asset.width, height: activeBezel.profile.asset.height },
+    viewport: activeBezel.profile.viewport,
+  } : null;
+
+  useEffect(() => {
+    if (!localProjectEnabled) {
+      setBezelPacks([]);
+      return;
+    }
+    const controller = new AbortController();
+    void fetch("/api/project/bezel-packs", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => response.ok ? await response.json() as LocalBezelResponse : null)
+      .then((payload) => setBezelPacks(payload?.enabled ? payload.packs : []))
+      .catch(() => setBezelPacks([]));
+    return () => controller.abort();
+  }, [localProjectEnabled]);
+
+  const commitBezel = (selected: (typeof availableBezels)[number]) => {
+    const next = structuredClone(graph);
+    next.devices.bezel = {
+      packId: selected.pack.packId,
+      packVersion: selected.pack.version,
+      manifestChecksum: selected.pack.manifestChecksum,
+      deviceProfileId: selected.profile.deviceProfileId,
+      assetDigest: selected.profile.asset.digest,
+      acknowledgedLocalLicense: true,
+    } satisfies DeviceBezelReference;
+    setPendingBezelValue("");
+    onCommit(parseGraph(next), `Selected local bezel pack ${selected.pack.name}; compilers remain unchanged.`);
+  };
+
+  const selectBezel = (value: string) => {
+    if (!value) {
+      setPendingBezelValue("");
+      setLocalLicenseAcknowledged(false);
+      if (graph.devices.bezel) {
+        const next = structuredClone(graph);
+        delete next.devices.bezel;
+        onCommit(parseGraph(next), "Returned to the neutral device frame.");
+      }
+      return;
+    }
+    if (value === activeBezelValue) {
+      setPendingBezelValue("");
+      setLocalLicenseAcknowledged(true);
+      return;
+    }
+    const selected = availableBezels.find(({ pack, profile }) => `${pack.packId}:${profile.asset.digest}` === value);
+    if (!selected) return;
+    setPendingBezelValue(value);
+    setLocalLicenseAcknowledged(false);
+    onNotice(`Review ${selected.pack.license.name}, then confirm local-only use to apply this bezel.`);
+  };
+
+  const acknowledgeBezel = (acknowledged: boolean) => {
+    setLocalLicenseAcknowledged(acknowledged);
+    if (acknowledged && pendingBezel) {
+      commitBezel(pendingBezel);
+    } else if (!acknowledged && activeBezel) {
+      selectBezel("");
+    }
+  };
 
   useEffect(() => {
     const validIds = new Set(screen ? flattenSemanticNodes(screen.nodes).map((node) => node.id) : []);
@@ -438,7 +542,7 @@ export function ManualEditor({
         return copy;
       };
       const changesDefinitionOwnedFields = [
-        "intent", "style", "accessibility", "states", "interactions", "children", "componentInstance",
+        "intent", "style", "accessibility", "web", "states", "interactions", "children", "componentInstance",
       ].some((field) => JSON.stringify(before[field as keyof SemanticNode]) !== JSON.stringify(found.node[field as keyof SemanticNode]))
         || JSON.stringify(definitionLayout(before.layout)) !== JSON.stringify(definitionLayout(found.node.layout));
       if (nodeId !== binding.rootId || changesDefinitionOwnedFields) {
@@ -1027,7 +1131,7 @@ export function ManualEditor({
     ...(normalizedSelection.length > 1 ? [
       { label: "Group selected layers", section: "Edit", icon: Stack, action: groupSelection },
     ] : []),
-    ...deviceProfiles.map((profile) => ({
+    ...profiles.map((profile) => ({
       label: `Preview on ${profile.label.toLowerCase()} (${profile.detail})`,
       section: "Device",
       icon: DeviceMobile,
@@ -1145,6 +1249,8 @@ export function ManualEditor({
           tool={tool}
           spaceHeld={spaceHeld}
           previewMode={previewMode}
+          showDeviceChrome={showDeviceChrome}
+          bezelOverlay={bezelOverlay}
           profile={activeProfile}
           apiRef={canvasApi}
           visualStateFor={visualStateFor}
@@ -1259,10 +1365,42 @@ export function ManualEditor({
               <DeviceMobile size={12} aria-hidden="true" />
               <span className="sr-only">Preview device</span>
               <select aria-label="Preview device" value={activeProfile.id} onChange={(event) => onDeviceId(event.target.value as DeviceId)} className="min-h-7 max-w-36 appearance-none rounded-md bg-transparent pr-4 text-[12px] font-semibold outline-none hover:bg-[var(--hover)]">
-                {deviceProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label} · {profile.detail}</option>)}
+                {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label} · {profile.detail}</option>)}
               </select>
               <CaretDown size={9} className="pointer-events-none absolute right-0 text-[var(--faint)]" />
             </label>
+            {availableBezels.length > 0 ? <>
+              <span className="h-4 w-px bg-[var(--line)]" />
+              <label className="relative flex items-center gap-1.5 text-[var(--muted)]">
+                <FrameCorners size={12} aria-hidden="true" />
+                <span className="sr-only">Device bezel</span>
+                <select
+                  aria-label="Device bezel"
+                  value={pendingBezelValue || activeBezelValue}
+                  onChange={(event) => selectBezel(event.target.value)}
+                  className="min-h-7 max-w-40 appearance-none rounded-md bg-transparent pr-4 text-[12px] font-semibold outline-none hover:bg-[var(--hover)]"
+                >
+                  <option value="">Neutral frame</option>
+                  {availableBezels.map(({ pack, profile }) => <option key={`${pack.packId}:${profile.asset.digest}`} value={`${pack.packId}:${profile.asset.digest}`}>{pack.name} · {pack.license.name}</option>)}
+                </select>
+                <CaretDown size={9} className="pointer-events-none absolute right-0 text-[var(--faint)]" />
+              </label>
+              {selectedBezel ? <>
+                <a
+                  href={selectedBezel.pack.license.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={selectedBezel.pack.license.termsAcknowledgement}
+                  className="text-[11px] font-semibold text-[var(--accent)] underline-offset-2 hover:underline"
+                >
+                  Review terms
+                </a>
+                <label className="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--muted)]" title={selectedBezel.pack.license.termsAcknowledgement}>
+                  <input aria-label="Acknowledge local bezel license" type="checkbox" checked={localLicenseAcknowledged} onChange={(event) => acknowledgeBezel(event.target.checked)} className="accent-[var(--accent)]" />
+                  Use locally
+                </label>
+              </> : null}
+            </> : null}
             <span className="h-4 w-px bg-[var(--line)]" />
             <label className="relative flex items-center gap-1.5 text-[var(--muted)]">
               <span className="size-1.5 rounded-full bg-[var(--accent)]" aria-hidden="true" />
@@ -1278,6 +1416,18 @@ export function ManualEditor({
           </div>
 
           <div className="floating-chrome flex shrink-0 items-center gap-1 rounded-xl p-1">
+            {activeProfile.presentation === "device" ? (
+              <button
+                type="button"
+                aria-label="Toggle device chrome"
+                aria-pressed={showDeviceChrome}
+                title="Toggle neutral device chrome"
+                onClick={() => setShowDeviceChrome((current) => !current)}
+                className={`grid size-7 place-items-center rounded-md ${showDeviceChrome ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}
+              >
+                <FrameCorners size={12} />
+              </button>
+            ) : null}
             <button type="button" aria-label="Fit canvas" title="Fit board · 0" onClick={() => canvasApi.current?.fitAll(true)} className="hidden size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] sm:grid"><ArrowsOutSimple size={12} /></button>
             <button type="button" aria-label="Zoom out" onClick={() => canvasApi.current?.zoomBy(0.8)} className="hidden size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] sm:grid"><Minus size={11} /></button>
             <div className="relative" onPointerDown={(event) => event.stopPropagation()}>

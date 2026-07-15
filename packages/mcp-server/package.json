@@ -10,12 +10,16 @@
   },
   "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" },
   "dependencies": {
+    "@intentform/device-bezels": "workspace:*",
+    "@intentform/device-registry": "workspace:*",
     "@intentform/compiler-react": "workspace:*",
     "@intentform/compiler-swiftui": "workspace:*",
+    "@intentform/compiler-web": "workspace:*",
     "@intentform/proof-report": "workspace:*",
     "@intentform/semantic-schema": "workspace:*",
     "@intentform/token-assets": "workspace:*",
     "@intentform/verifier": "workspace:*",
+    "@intentform/web-verifier": "workspace:*",
     "zod": "^4.3.6"
   },
   "devDependencies": {

@@ -2,6 +2,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { compileReact } from "@intentform/compiler-react";
 import { compileSwiftUI } from "@intentform/compiler-swiftui";
+import { compileWeb } from "@intentform/compiler-web";
+import { resolveDeviceConfiguration } from "@intentform/device-registry";
+import { inspectLocalBezelPacks } from "@intentform/device-bezels";
 import {
   CANONICAL_DEVICE_VIEWPORTS,
   applyGraphPatch,
@@ -29,6 +32,7 @@ import {
   type ImportProjectAssetInput,
 } from "@intentform/token-assets/assets";
 import { verifyGraph, type VerificationFinding } from "@intentform/verifier";
+import { verifyResponsiveWeb } from "@intentform/web-verifier";
 import {
   graphFingerprint,
   listRevisions,
@@ -58,7 +62,13 @@ function verificationSummary(graph: SemanticInterfaceGraph, scenario: ScenarioId
   };
 }
 
-type CompilerTarget = "react" | "swiftui";
+type CompilerTarget = "react" | "swiftui" | "web";
+
+const compileTarget = (graph: SemanticInterfaceGraph, target: CompilerTarget) => {
+  if (target === "react") return compileReact(graph);
+  if (target === "swiftui") return compileSwiftUI(graph);
+  return compileWeb(graph);
+};
 
 function outputSummary(graph: SemanticInterfaceGraph, target: CompilerTarget) {
   const platform = graph.platforms.find((candidate) => candidate.target === target);
@@ -71,7 +81,7 @@ function outputSummary(graph: SemanticInterfaceGraph, target: CompilerTarget) {
   }
 
   try {
-    const output = target === "react" ? compileReact(graph) : compileSwiftUI(graph);
+    const output = compileTarget(graph, target);
     return {
       status: "generated" as const,
       fingerprint: output.fingerprint,
@@ -113,6 +123,7 @@ export function describeProject(dir: string) {
       position: node.layout.position,
       placement: node.layout.placement,
     },
+    web: node.web ?? null,
     states: node.states.map((state) => state.name),
     events: node.interactions.map((interaction) => interaction.event),
     children: node.children.map((child) => describeNode(child, node.id, depth + 1)),
@@ -150,6 +161,12 @@ export function describeProject(dir: string) {
         exportPolicy: asset.exportPolicy,
       })),
     },
+    devices: deviceProfileResource(dir),
+    deviceBezels: deviceBezelResource(dir),
+    web: graph.web ? {
+      ...graph.web,
+      verification: verifyResponsiveWeb(graph),
+    } : null,
     components: graph.components.map((definition) => ({
       id: definition.id,
       name: definition.name,
@@ -194,7 +211,55 @@ export function describeProject(dir: string) {
     outputs: {
       react: outputSummary(graph, "react"),
       swiftui: outputSummary(graph, "swiftui"),
+      web: outputSummary(graph, "web"),
     },
+  };
+}
+
+export function deviceProfileResource(dir: string) {
+  const { graph, fingerprint } = loadProject(dir);
+  const resolved = resolveDeviceConfiguration(graph.devices);
+  const entries = new Map(graph.devices.profiles.map((entry) => [
+    entry.source === "registry" ? entry.id : entry.profile.id,
+    entry,
+  ]));
+  return {
+    schemaVersion: graph.schemaVersion,
+    fingerprint,
+    registryVersion: graph.devices.registryVersion,
+    defaultProfile: resolved.defaultProfile.id,
+    profiles: resolved.profiles.map((profile) => {
+      const entry = entries.get(profile.id)!;
+      return {
+        source: entry.source,
+        checksum: entry.checksum,
+        ...profile,
+      };
+    }),
+  };
+}
+
+export function deviceBezelResource(dir: string) {
+  const inspection = inspectLocalBezelPacks(dir);
+  return {
+    enabled: inspection.enabled,
+    diagnostics: inspection.diagnostics,
+    packs: inspection.packs.map(({ manifest, manifestChecksum }) => ({
+      packId: manifest.packId,
+      version: manifest.version,
+      name: manifest.name,
+      publisher: manifest.publisher,
+      revoked: manifest.revoked,
+      manifestChecksum,
+      license: manifest.license,
+      profiles: manifest.profiles.map((profile) => ({
+        deviceProfileId: profile.deviceProfileId,
+        assetDigest: profile.asset.digest,
+        mediaType: profile.asset.mediaType,
+        image: { width: profile.asset.width, height: profile.asset.height },
+        viewport: profile.viewport,
+      })),
+    })),
   };
 }
 
@@ -438,9 +503,13 @@ export function verifyProject(dir: string, scenario: ScenarioId) {
   return verificationSummary(graph, scenario);
 }
 
-export function compileProject(dir: string, target: "react" | "swiftui", write: boolean) {
+export function verifyWebProject(dir: string) {
+  return verifyResponsiveWeb(loadProject(dir).graph);
+}
+
+export function compileProject(dir: string, target: CompilerTarget, write: boolean) {
   const { graph } = loadProject(dir);
-  const output = target === "react" ? compileReact(graph) : compileSwiftUI(graph);
+  const output = compileTarget(graph, target);
   const outputRoot = join(dir, "output", target);
   const written: string[] = [];
   const assetDiagnostics = inspectProjectAssets(dir, graph.assets);

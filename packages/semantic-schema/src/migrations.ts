@@ -4,9 +4,10 @@ import {
   stableSerialize,
   type SemanticInterfaceGraph,
 } from "./index";
+import { defaultDeviceConfiguration } from "@intentform/device-registry";
 
-export const CURRENT_SCHEMA_VERSION = "0.4.0" as const;
-export const SUPPORTED_SCHEMA_VERSIONS = ["0.0.1", "0.1.0", "0.2.0", "0.3.0", CURRENT_SCHEMA_VERSION] as const;
+export const CURRENT_SCHEMA_VERSION = "0.6.0" as const;
+export const SUPPORTED_SCHEMA_VERSIONS = ["0.0.1", "0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", CURRENT_SCHEMA_VERSION] as const;
 
 export type SupportedSchemaVersion = typeof SUPPORTED_SCHEMA_VERSIONS[number];
 export type MigrationDiagnosticSeverity = "info" | "warning" | "error";
@@ -104,7 +105,7 @@ const migrationSteps: Partial<Record<SupportedSchemaVersion, MigrationStep>> = {
     },
   },
   "0.3.0": {
-    toVersion: CURRENT_SCHEMA_VERSION,
+    toVersion: "0.4.0",
     convert: (input) => {
       const next = structuredClone(input) as Record<string, unknown>;
       const legacyTokens = next.tokens && typeof next.tokens === "object"
@@ -128,9 +129,21 @@ const migrationSteps: Partial<Record<SupportedSchemaVersion, MigrationStep>> = {
         extensions: {},
       };
       next.assets = [];
-      next.schemaVersion = CURRENT_SCHEMA_VERSION;
+      next.schemaVersion = "0.4.0";
       return next;
     },
+  },
+  "0.4.0": {
+    toVersion: "0.5.0",
+    convert: (input) => ({ ...structuredClone(input), schemaVersion: "0.5.0" }),
+  },
+  "0.5.0": {
+    toVersion: CURRENT_SCHEMA_VERSION,
+    convert: (input) => ({
+      ...structuredClone(input),
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      devices: defaultDeviceConfiguration(),
+    }),
   },
 };
 

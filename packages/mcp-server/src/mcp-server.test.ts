@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { demoGraph } from "@intentform/proof-report/demo";
 import { findGraphNodeLocation } from "@intentform/semantic-schema";
 import { compileReact } from "@intentform/compiler-react";
-import { toolDefinitions } from "./index.ts";
+import { compileWeb } from "@intentform/compiler-web";
+import { resourceDefinitions, toolDefinitions } from "./index.ts";
 import {
   applyMigration,
   applyPatch,
@@ -13,6 +14,8 @@ import {
   compileProject,
   componentSchema,
   describeProject,
+  deviceProfileResource,
+  deviceBezelResource,
   diffAgainstRevision,
   exportProjectTokens,
   importProjectAssetFromInbox,
@@ -27,6 +30,7 @@ import {
   searchComponents,
   searchProjectAssets,
   verifyProject,
+  verifyWebProject,
 } from "./tools.ts";
 import {
   loadProject,
@@ -99,7 +103,7 @@ describe("IntentForm agent project store", () => {
       required: ["definitionId", "instanceId", "screenId"],
       additionalProperties: false,
     });
-    expect([...byName.keys()].filter((name) => name.startsWith("intentform_"))).toHaveLength(21);
+    expect([...byName.keys()].filter((name) => name.startsWith("intentform_"))).toHaveLength(22);
     for (const name of [
       "intentform_list_token_modes",
       "intentform_import_dtcg",
@@ -107,6 +111,7 @@ describe("IntentForm agent project store", () => {
       "intentform_search_assets",
       "intentform_import_asset",
       "intentform_asset_gc",
+      "intentform_verify_web",
     ]) {
       expect(byName.get(name)?.inputSchema).toMatchObject({ additionalProperties: false });
     }
@@ -130,7 +135,7 @@ describe("IntentForm agent project store", () => {
     expect(preview).toMatchObject({
       status: "migration-required",
       fromVersion: "0.0.1",
-      toVersion: "0.4.0",
+      toVersion: "0.6.0",
       sourceFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
     expect(readdirSync(dir)).toEqual(["graph.json"]);
@@ -141,7 +146,7 @@ describe("IntentForm agent project store", () => {
     expect(applied).toMatchObject({
       status: "current",
       fromVersion: "0.0.1",
-      toVersion: "0.4.0",
+      toVersion: "0.6.0",
       fingerprint: expect.stringMatching(/^[a-f0-9]{8}$/),
     });
     expect(applied.checkpoint).toMatch(/migration-checkpoints/);
@@ -210,7 +215,7 @@ describe("IntentForm agent project store", () => {
 
     expect(applied).toMatchObject({ status: "current", checkpoint: expect.any(String) });
     expect(applied).not.toHaveProperty("graph");
-    expect(previewMigration(dir)).toMatchObject({ status: "current", fromVersion: "0.4.0" });
+    expect(previewMigration(dir)).toMatchObject({ status: "current", fromVersion: "0.6.0" });
   });
 
   it("writes atomically and rejects a stale writer without losing the winning graph", () => {
@@ -267,6 +272,40 @@ describe("IntentForm agent project store", () => {
     });
     expect(summary.verification.buildStatus).toBe("not-run");
     expect(summary.verification.passed).toBe(false);
+    expect(summary.devices).toMatchObject({
+      registryVersion: "1.0.0",
+      defaultProfile: "neutral.phone.compact",
+      profiles: expect.arrayContaining([
+        expect.objectContaining({ id: "neutral.phone.regular", safeArea: { top: 59, right: 0, bottom: 34, left: 0 } }),
+      ]),
+    });
+  });
+
+  it("publishes resolved device geometry as a read-only MCP resource", () => {
+    expect(resourceDefinitions.map(({ read: _read, ...resource }) => resource)).toEqual([{
+      uri: "intentform://device-profiles",
+      name: "IntentForm device profiles",
+      description: expect.stringMatching(/checksummed logical device geometry/i),
+      mimeType: "application/json",
+    }, {
+      uri: "intentform://device-bezel-packs",
+      name: "IntentForm local device bezel packs",
+      description: expect.stringMatching(/never includes asset bytes or source paths/i),
+      mimeType: "application/json",
+    }]);
+    const resource = deviceProfileResource(dir);
+    expect(resource.fingerprint).toBe(loadProject(dir).fingerprint);
+    expect(resource.profiles).toHaveLength(7);
+    expect(resource.profiles.find((profile) => profile.id === "neutral.tablet.split")).toMatchObject({
+      source: "registry",
+      window: { mode: "split", resizable: true },
+      capabilities: expect.arrayContaining(["split-window", "resizable"]),
+    });
+  });
+
+  it("keeps the local bezel capability disabled and byte-free by default", () => {
+    expect(deviceBezelResource(dir)).toEqual({ enabled: false, packs: [], diagnostics: [] });
+    expect(JSON.stringify(deviceBezelResource(dir))).not.toMatch(/fileName|sourcePath|bytes/i);
   });
 
   it("describes a disabled compiler target without throwing or fabricating a fingerprint", () => {
@@ -294,7 +333,7 @@ describe("IntentForm agent project store", () => {
     });
     expect(componentSchema(dir, "intent.balance-summary")).toMatchObject({
       abiVersion: "1.0.0",
-      schemaVersion: "0.4.0",
+      schemaVersion: "0.6.0",
       definitions: [{ id: "intent.balance-summary", version: "1.0.0" }],
     });
 
@@ -555,6 +594,36 @@ describe("IntentForm agent project store", () => {
     const dry = compileProject(dir, "react", false);
     expect(dry.fingerprint).toBe(compileReact(demoGraph).fingerprint);
     const written = compileProject(dir, "react", true);
+    expect(written.written?.length).toBe(written.fileCount);
+  });
+
+  it("describes, verifies, and compiles a responsive-web project through MCP tooling", () => {
+    const graph = structuredClone(demoGraph);
+    graph.platforms.push({ target: "web", enabled: true, capabilities: ["semantic-html", "responsive-layout"] });
+    graph.web = {
+      strategy: "responsive-web",
+      defaultFrame: "desktop",
+      frames: [
+        { id: "mobile", label: "Mobile", mode: "browser", width: 390, height: 844 },
+        { id: "desktop", label: "Desktop", mode: "browser", width: 1440, height: 1000 },
+      ],
+      breakpoints: [
+        { id: "small", label: "Small", minWidth: 0, maxWidth: 767 },
+        { id: "large", label: "Large", minWidth: 768 },
+      ],
+      contentMaxWidth: 1200,
+      inlinePaddingToken: "space.20",
+    };
+    replaceGraph(dir, graph, "enable responsive web");
+    const described = describeProject(dir);
+    expect(described.web).toEqual(expect.objectContaining({ strategy: "responsive-web" }));
+    expect(described.outputs.web).toEqual(expect.objectContaining({ status: "generated" }));
+    const verified = verifyWebProject(dir);
+    expect(verified.passed).toBe(true);
+    const dry = compileProject(dir, "web", false);
+    expect(dry.fingerprint).toBe(compileWeb(loadProject(dir).graph).fingerprint);
+    const written = compileProject(dir, "web", true);
+    expect(written.files).toContain("src/styles.css");
     expect(written.written?.length).toBe(written.fileCount);
   });
 
