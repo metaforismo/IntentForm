@@ -51,12 +51,17 @@ export interface PlatformIRNode {
     maxWidth?: number;
     minHeight?: number;
     maxHeight?: number;
+    flexGrow?: number;
+    flexShrink?: number;
+    flexBasis?: number;
     align: SemanticNode["layout"]["align"];
     justify: SemanticNode["layout"]["justify"];
     overflow: SemanticNode["layout"]["overflow"];
     columns: number;
     gridTracks?: number[];
+    gridRows?: number[];
     gridColumn?: { start: number; span: number };
+    gridRow?: { start: number; span: number };
     splitRatio: number;
     position?: { x: number; y: number; z: number };
     gapToken: string;
@@ -331,12 +336,17 @@ function resolveNodeSemantics(
       ...(node.layout.maxWidth !== undefined ? { maxWidth: node.layout.maxWidth } : {}),
       ...(node.layout.minHeight !== undefined ? { minHeight: node.layout.minHeight } : {}),
       ...(node.layout.maxHeight !== undefined ? { maxHeight: node.layout.maxHeight } : {}),
+      ...(node.layout.flexGrow !== undefined ? { flexGrow: node.layout.flexGrow } : {}),
+      ...(node.layout.flexShrink !== undefined ? { flexShrink: node.layout.flexShrink } : {}),
+      ...(node.layout.flexBasis !== undefined ? { flexBasis: node.layout.flexBasis } : {}),
       align: node.layout.align,
       justify: node.layout.justify,
       overflow: node.layout.overflow,
       columns: node.layout.columns,
       ...(node.layout.gridTracks ? { gridTracks: node.layout.gridTracks } : {}),
+      ...(node.layout.gridRows ? { gridRows: node.layout.gridRows } : {}),
       ...(node.layout.gridColumn ? { gridColumn: node.layout.gridColumn } : {}),
+      ...(node.layout.gridRow ? { gridRow: node.layout.gridRow } : {}),
       splitRatio: node.layout.splitRatio,
       ...(node.layout.position ? { position: node.layout.position } : {}),
       gapToken: node.layout.gapToken,
@@ -550,6 +560,20 @@ export function lowerGraph(graph: SemanticInterfaceGraph, target: PlatformTarget
             severity: "warning",
             path: `screens.${screen.id}.nodes.${node.id}.asset`,
             message: `SwiftUI raw ${definition.kind} assets require a platform adapter; the target uses a semantic fallback.`,
+          });
+        }
+        if ((target === "expo" || target === "swiftui") && (node.layout.gridColumn || node.layout.gridRow || node.layout.gridRows)) {
+          diagnostics.push({
+            severity: "warning",
+            path: `screens.${screen.id}.nodes.${node.id}.layout`,
+            message: `${target === "expo" ? "Expo" : "SwiftUI"} does not provide CSS-grid track placement; generated output preserves the semantic data and uses a deterministic flex/grid fallback.`,
+          });
+        }
+        if (target === "swiftui" && (node.layout.flexShrink !== undefined || node.layout.flexBasis !== undefined)) {
+          diagnostics.push({
+            severity: "warning",
+            path: `screens.${screen.id}.nodes.${node.id}.layout`,
+            message: "SwiftUI has no direct flex-shrink or flex-basis equivalent; generated output preserves constraints and uses natural sizing plus layout priority.",
           });
         }
         return {

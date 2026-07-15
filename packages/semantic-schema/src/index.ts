@@ -342,7 +342,7 @@ export type SemanticNodeKind = LeafNodeKind | ContainerNodeKind;
 export const semanticNodeKindSchema = z.enum([...LEAF_NODE_KINDS, ...CONTAINER_NODE_KINDS]);
 const containerNodeKindSchema = z.enum(CONTAINER_NODE_KINDS);
 const dimensionPolicySchema = z.enum(["hug", "fill", "fixed"]);
-const alignmentSchema = z.enum(["start", "center", "end", "stretch"]);
+const alignmentSchema = z.enum(["start", "center", "end", "stretch", "baseline"]);
 const justificationSchema = z.enum(["start", "center", "end", "space-between"]);
 const boundedDimensionSchema = z.number().finite().nonnegative().max(10_000);
 
@@ -478,14 +478,22 @@ export const semanticLayoutSchema = z.strictObject({
   maxWidth: boundedDimensionSchema.optional(),
   minHeight: boundedDimensionSchema.optional(),
   maxHeight: boundedDimensionSchema.optional(),
+  flexGrow: z.number().finite().min(0).max(100).optional(),
+  flexShrink: z.number().finite().min(0).max(100).optional(),
+  flexBasis: boundedDimensionSchema.optional(),
   align: alignmentSchema.default("stretch"),
   justify: justificationSchema.default("start"),
   overflow: z.enum(["visible", "clip", "scroll"]).default("visible"),
   columns: z.number().int().min(1).max(12).default(2),
   gridTracks: z.array(z.number().finite().positive().max(12)).min(1).max(12).optional(),
+  gridRows: z.array(z.number().finite().positive().max(12)).min(1).max(100).optional(),
   gridColumn: z.strictObject({
     start: z.number().int().min(1).max(12),
     span: z.number().int().min(1).max(12).default(1),
+  }).optional(),
+  gridRow: z.strictObject({
+    start: z.number().int().min(1).max(100),
+    span: z.number().int().min(1).max(100).default(1),
   }).optional(),
   splitRatio: z.number().finite().min(0.1).max(0.9).default(0.5),
   adaptive: z.strictObject({
@@ -931,7 +939,7 @@ export function isTransactionalScreen(
 
 export const semanticInterfaceGraphSchema = z
   .strictObject({
-    schemaVersion: z.literal("0.8.0"),
+    schemaVersion: z.literal("0.9.0"),
     product: z.strictObject({
       name: safeTextSchema(120),
       audience: z.array(safeTextSchema(240)).min(1).max(20),

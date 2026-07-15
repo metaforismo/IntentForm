@@ -458,17 +458,35 @@ export function Inspector({
                 ))}
               </div>
             ) : null}
-            <SegmentedControl disabled={Boolean(componentContext)} label="Align" value={selectedNode.layout.align} options={[{ value: "start", label: "Start" }, { value: "center", label: "Center" }, { value: "end", label: "End" }, { value: "stretch", label: "Stretch" }]} onChange={(value) => updateNode((node) => { node.layout.align = value; }, `Changed cross-axis alignment to ${value}.`)} />
+            <SegmentedControl disabled={Boolean(componentContext)} label="Align" value={selectedNode.layout.align} options={[{ value: "start", label: "Start" }, { value: "center", label: "Center" }, { value: "end", label: "End" }, { value: "stretch", label: "Stretch" }, { value: "baseline", label: "Baseline" }]} onChange={(value) => updateNode((node) => { node.layout.align = value; }, `Changed cross-axis alignment to ${value}.`)} />
             <SegmentedControl disabled={Boolean(componentContext)} label="Justify" value={selectedNode.layout.justify} options={[{ value: "start", label: "Start" }, { value: "center", label: "Center" }, { value: "end", label: "End" }, { value: "space-between", label: "Between" }]} onChange={(value) => updateNode((node) => { node.layout.justify = value; }, `Changed main-axis justification to ${value}.`)} />
             <SegmentedControl disabled={Boolean(componentContext)} label="Overflow" value={selectedNode.layout.overflow} options={[{ value: "visible", label: "Visible" }, { value: "clip", label: "Clip" }, { value: "scroll", label: "Scroll" }]} onChange={(value) => updateNode((node) => { node.layout.overflow = value; }, `Changed overflow behavior to ${value}.`)} />
             <SearchablePicker label="Gap token" token value={selectedNode.layout.gapToken} options={Object.entries(resolvedTokens.spacing).map(([token, resolved]) => ({ value: token, resolved }))} onChange={(value) => componentContext ? onSetComponentOverride({ op: "set-gap-token", target: componentContext.targetId, value }) : updateNode((node) => { node.layout.gapToken = value; }, `Bound gap to ${value}.`)} />
+            {!componentContext ? <div className="grid grid-cols-3 gap-2">
+              <NumberField label="Gap" value={selectedNode.layout.gap} min={0} max={512} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.gap; else node.layout.gap = value; }, "Updated the direct gap override.")} />
+              <NumberField label="Grow" value={selectedNode.layout.flexGrow} min={0} max={100} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.flexGrow; else node.layout.flexGrow = value; }, "Updated flex grow.")} />
+              <NumberField label="Shrink" value={selectedNode.layout.flexShrink} min={0} max={100} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.flexShrink; else node.layout.flexShrink = value; }, "Updated flex shrink.")} />
+              <NumberField label="Basis" value={selectedNode.layout.flexBasis} min={0} max={8_192} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.flexBasis; else node.layout.flexBasis = value; }, "Updated flex basis.")} />
+            </div> : null}
             <SearchablePicker label="Padding token" token value={selectedNode.layout.paddingToken} options={Object.entries(resolvedTokens.spacing).map(([token, resolved]) => ({ value: token, resolved }))} onChange={(value) => componentContext ? onSetComponentOverride({ op: "set-padding-token", target: componentContext.targetId, value }) : updateNode((node) => { node.layout.paddingToken = value; }, `Bound padding to ${value}.`)} />
+            {!componentContext ? <div className="grid grid-cols-2 gap-2" data-testid="padding-side-controls">
+              {(["top", "right", "bottom", "left"] as const).map((side) => <SearchablePicker key={side} label={`Padding ${side}`} token value={selectedNode.layout.paddingTokens?.[side] ?? selectedNode.layout.paddingToken} options={Object.entries(resolvedTokens.spacing).map(([token, resolved]) => ({ value: token, resolved }))} onChange={(value) => updateNode((node) => {
+                node.layout.paddingTokens ??= { top: node.layout.paddingToken, right: node.layout.paddingToken, bottom: node.layout.paddingToken, left: node.layout.paddingToken };
+                node.layout.paddingTokens[side] = value;
+              }, `Bound ${side} padding to ${value}.`)} />)}
+            </div> : null}
             {isContainerNode(selectedNode) ? (
               <div className="grid grid-cols-2 gap-2">
                 <NumberField disabled={Boolean(componentContext)} label="Columns" value={selectedNode.layout.columns} min={1} max={12} onCommit={(value) => { if (value !== undefined) updateNode((node) => { node.layout.columns = Math.round(value); }, `Set the container to ${Math.round(value)} columns.`); }} />
                 <NumberField disabled={Boolean(componentContext)} label="Split ratio" value={selectedNode.layout.splitRatio} min={0.1} max={0.9} step={0.05} onCommit={(value) => { if (value !== undefined) updateNode((node) => { node.layout.splitRatio = value; }, `Set the split ratio to ${value}.`); }} />
               </div>
             ) : null}
+            {!componentContext ? <div className="grid grid-cols-2 gap-2" data-testid="grid-placement-controls">
+              <NumberField label="Grid column" value={selectedNode.layout.gridColumn?.start} min={1} max={12} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.gridColumn; else node.layout.gridColumn = { start: Math.round(value), span: node.layout.gridColumn?.span ?? 1 }; }, "Updated grid column placement.")} />
+              <NumberField label="Column span" value={selectedNode.layout.gridColumn?.span} min={1} max={12} onCommit={(value) => { if (value !== undefined) updateNode((node) => { node.layout.gridColumn = { start: node.layout.gridColumn?.start ?? 1, span: Math.round(value) }; }, "Updated grid column span."); }} />
+              <NumberField label="Grid row" value={selectedNode.layout.gridRow?.start} min={1} max={100} onCommit={(value) => updateNode((node) => { if (value === undefined) delete node.layout.gridRow; else node.layout.gridRow = { start: Math.round(value), span: node.layout.gridRow?.span ?? 1 }; }, "Updated grid row placement.")} />
+              <NumberField label="Row span" value={selectedNode.layout.gridRow?.span} min={1} max={100} onCommit={(value) => { if (value !== undefined) updateNode((node) => { node.layout.gridRow = { start: node.layout.gridRow?.start ?? 1, span: Math.round(value) }; }, "Updated grid row span."); }} />
+            </div> : null}
             {selectedNode.kind === "adaptive" && selectedNode.layout.adaptive ? (
               <div className="grid grid-cols-2 gap-2">
                 {(["compact", "regular"] as const).map((deviceClass) => (

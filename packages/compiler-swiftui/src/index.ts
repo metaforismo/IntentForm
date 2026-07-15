@@ -182,7 +182,7 @@ function swiftNode(node: PlatformIRNode, guardedPrimaryId?: string): string {
   }
   source += `\n                        .accessibilityIdentifier("intentform.${escapeSwift(node.id)}")`;
 
-  source = `IntentFormNodeLayout(\n                        axis: "${node.layout.axis}",\n                        width: "${node.layout.width}",\n                        height: "${node.layout.height}",\n                        fixedWidth: ${swiftOptionalNumber(node.layout.fixedWidth)},\n                        fixedHeight: ${swiftOptionalNumber(node.layout.fixedHeight)},\n                        minWidth: ${swiftOptionalNumber(node.layout.minWidth)},\n                        maxWidth: ${swiftOptionalNumber(node.layout.maxWidth)},\n                        minHeight: ${swiftOptionalNumber(node.layout.minHeight)},\n                        maxHeight: ${swiftOptionalNumber(node.layout.maxHeight)},\n                        x: ${node.layout.position?.x ?? 0},\n                        y: ${node.layout.position?.y ?? 0},\n                        z: ${node.layout.position?.z ?? 0},\n                        gap: ${node.layout.gap},\n                        padding: ${node.layout.padding},\n                        align: "${node.layout.align}",\n                        overflow: "${node.layout.overflow}",\n                        role: "${escapeSwift(node.style.role)}",\n                        emphasis: "${node.style.emphasis}",\n                        importance: "${node.intent.importance}",\n                        purpose: "${escapeSwift(node.intent.purpose)}"\n                    ) {\n                        ${source}\n                    }`;
+  source = `IntentFormNodeLayout(\n                        axis: "${node.layout.axis}",\n                        width: "${node.layout.width}",\n                        height: "${node.layout.height}",\n                        fixedWidth: ${swiftOptionalNumber(node.layout.fixedWidth)},\n                        fixedHeight: ${swiftOptionalNumber(node.layout.fixedHeight)},\n                        minWidth: ${swiftOptionalNumber(node.layout.minWidth)},\n                        maxWidth: ${swiftOptionalNumber(node.layout.maxWidth)},\n                        minHeight: ${swiftOptionalNumber(node.layout.minHeight)},\n                        maxHeight: ${swiftOptionalNumber(node.layout.maxHeight)},\n                        flexGrow: ${node.layout.flexGrow ?? 0},\n                        x: ${node.layout.position?.x ?? 0},\n                        y: ${node.layout.position?.y ?? 0},\n                        z: ${node.layout.position?.z ?? 0},\n                        gap: ${node.layout.gap},\n                        paddingTop: ${node.layout.paddingBySide.top},\n                        paddingRight: ${node.layout.paddingBySide.right},\n                        paddingBottom: ${node.layout.paddingBySide.bottom},\n                        paddingLeft: ${node.layout.paddingBySide.left},\n                        align: "${node.layout.align}",\n                        overflow: "${node.layout.overflow}",\n                        role: "${escapeSwift(node.style.role)}",\n                        emphasis: "${node.style.emphasis}",\n                        importance: "${node.intent.importance}",\n                        purpose: "${escapeSwift(node.intent.purpose)}"\n                    ) {\n                        ${source}\n                    }`;
 
   if (node.visibility.length > 0) {
     const condition = node.visibility.map((visibility) => visibility.expression
@@ -627,11 +627,15 @@ struct IntentFormNodeLayout<Content: View>: View {
     let maxWidth: CGFloat?
     let minHeight: CGFloat?
     let maxHeight: CGFloat?
+    let flexGrow: Double
     let x: CGFloat
     let y: CGFloat
     let z: Double
     let gap: CGFloat
-    let padding: CGFloat
+    let paddingTop: CGFloat
+    let paddingRight: CGFloat
+    let paddingBottom: CGFloat
+    let paddingLeft: CGFloat
     let align: String
     let overflow: String
     let role: String
@@ -650,11 +654,15 @@ struct IntentFormNodeLayout<Content: View>: View {
         maxWidth: CGFloat?,
         minHeight: CGFloat?,
         maxHeight: CGFloat?,
+        flexGrow: Double,
         x: CGFloat,
         y: CGFloat,
         z: Double,
         gap: CGFloat,
-        padding: CGFloat,
+        paddingTop: CGFloat,
+        paddingRight: CGFloat,
+        paddingBottom: CGFloat,
+        paddingLeft: CGFloat,
         align: String,
         overflow: String,
         role: String,
@@ -672,11 +680,15 @@ struct IntentFormNodeLayout<Content: View>: View {
         self.maxWidth = maxWidth
         self.minHeight = minHeight
         self.maxHeight = maxHeight
+        self.flexGrow = flexGrow
         self.x = x
         self.y = y
         self.z = z
         self.gap = gap
-        self.padding = padding
+        self.paddingTop = paddingTop
+        self.paddingRight = paddingRight
+        self.paddingBottom = paddingBottom
+        self.paddingLeft = paddingLeft
         self.align = align
         self.overflow = overflow
         self.role = role
@@ -728,7 +740,8 @@ struct IntentFormNodeLayout<Content: View>: View {
                 maxHeight: resolvedMaxHeight,
                 alignment: frameAlignment
             )
-            .padding(padding)
+            .padding(EdgeInsets(top: paddingTop, leading: paddingLeft, bottom: paddingBottom, trailing: paddingRight))
+            .layoutPriority(flexGrow)
             .offset(x: x, y: y)
             .zIndex(z)
             .opacity(emphasis == "quiet" ? 0.72 : 1)

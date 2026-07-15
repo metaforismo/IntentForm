@@ -1,0 +1,98 @@
+{
+  "schemaVersion": "0.9.0",
+  "dependencies": [],
+  "product": {
+    "name": "Migration fixture",
+    "audience": ["interface teams"],
+    "principles": ["Preserve authored identities"]
+  },
+  "tokens": {
+    "defaultMode": "default",
+    "activeMode": "default",
+    "modes": {
+      "default": {
+        "name": "Default",
+        "values": {
+          "colors": {
+            "color.accent": "#397461",
+            "color.surface": "#fbfcf9"
+          },
+          "spacing": {
+            "space.16": 16,
+            "space.20": 20
+          },
+          "radii": {
+            "radius.surface": 24
+          }
+        }
+      }
+    },
+    "aliases": {},
+    "deprecated": {},
+    "extensions": {}
+  },
+  "assets": [],
+  "devices": {
+    "registryVersion": "1.0.0",
+    "defaultProfile": "neutral.phone.compact",
+    "profiles": [
+      { "source": "registry", "id": "neutral.phone.compact", "version": "1.0.0", "checksum": "ae4082997f9f0dc717cec7153360db679659bab8fb7cd11b2456b5649fdc8748" },
+      { "source": "registry", "id": "neutral.phone.regular", "version": "1.0.0", "checksum": "64d11e7538a5f266e86bb937815586c9036ace48a05068b59e8047d611a2ebcd" },
+      { "source": "registry", "id": "precision.iphone-15-pro", "version": "1.0.0", "checksum": "86588d8e47733455640cdb2b36473ac49ef01cdecef20260d139150f7e5b82f8" },
+      { "source": "registry", "id": "neutral.phone.landscape", "version": "1.0.0", "checksum": "cada0b6cde87aea7ae019600fdaee82a60afac2e32ad31cbd4edec36435ff9e8" },
+      { "source": "registry", "id": "neutral.android.phone", "version": "1.0.0", "checksum": "b18d36ba3f58185c692f427c24ee124ce44dd0b1ec6e1ca2622b3c921967f79e" },
+      { "source": "registry", "id": "precision.pixel-phone", "version": "1.0.0", "checksum": "bef83b2f33b83a9677053f209f14c8d2b885eaa2178395675d5842292b17c104" },
+      { "source": "registry", "id": "neutral.tablet.regular", "version": "1.0.0", "checksum": "a50c179c4f41ea0b8081f1b886ae86bbeb1a925c6fa40aa6c93338be15ea29a0" },
+      { "source": "registry", "id": "precision.ipad.portrait", "version": "1.0.0", "checksum": "76bdbd5240d58be6460bf6af3b2c49df21e2b07f99916f35b70f5a67f34f5443" },
+      { "source": "registry", "id": "precision.ipad.landscape", "version": "1.0.0", "checksum": "e8a15b194d3ea14758efb9bcc1a58bd3a2bf536411bef9a2427325c464a6198c" },
+      { "source": "registry", "id": "neutral.tablet.split", "version": "1.0.0", "checksum": "003ed405ad16c5b5569dff4a932e74991143c2b8e264d0919e98a0846332aba1" },
+      { "source": "registry", "id": "neutral.window.custom", "version": "1.0.0", "checksum": "48fd5ad07d2a6cc63b925985716c0d136412ef1cfdfb16e2e85bf644e58c121c" },
+      { "source": "registry", "id": "precision.browser.desktop", "version": "1.0.0", "checksum": "9e060dad6ec357e90f45863f235291336529ab462985959028f0472f2cb96f1c" }
+    ]
+  },
+  "platforms": [
+    {
+      "target": "compose",
+      "enabled": false,
+      "capabilities": ["vendor-special-mode"]
+    }
+  ],
+  "components": [],
+  "screens": [
+    {
+      "id": "home",
+      "title": "Home",
+      "purpose": "Explain migration state",
+      "route": "/",
+      "nodes": [
+        {
+          "id": "home.status",
+          "kind": "status-message",
+          "intent": { "purpose": "Explain the current state", "label": "Ready", "importance": "supporting" },
+          "layout": {
+            "axis": "vertical",
+            "width": "fill",
+            "height": "hug",
+            "align": "stretch",
+            "justify": "start",
+            "overflow": "visible",
+            "columns": 2,
+            "splitRatio": 0.5,
+            "gapToken": "space.16",
+            "paddingToken": "space.20"
+          },
+          "style": { "role": "surface", "emphasis": "normal" },
+          "accessibility": { "label": "Migration is ready", "live": "polite" },
+          "states": [],
+          "interactions": [],
+          "platformOverrides": { "compose": { "vendor-mode": true } },
+          "provenance": { "author": "system", "revision": 0 },
+          "children": []
+        }
+      ]
+    }
+  ],
+  "flows": [],
+  "contracts": [],
+  "fixtures": []
+}

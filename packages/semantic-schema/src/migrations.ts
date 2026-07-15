@@ -6,8 +6,8 @@ import {
 } from "./index";
 import { defaultDeviceConfiguration } from "@intentform/device-registry";
 
-export const CURRENT_SCHEMA_VERSION = "0.8.0" as const;
-export const SUPPORTED_SCHEMA_VERSIONS = ["0.0.1", "0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", CURRENT_SCHEMA_VERSION] as const;
+export const CURRENT_SCHEMA_VERSION = "0.9.0" as const;
+export const SUPPORTED_SCHEMA_VERSIONS = ["0.0.1", "0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", CURRENT_SCHEMA_VERSION] as const;
 
 export type SupportedSchemaVersion = typeof SUPPORTED_SCHEMA_VERSIONS[number];
 export type MigrationDiagnosticSeverity = "info" | "warning" | "error";
@@ -150,12 +150,16 @@ const migrationSteps: Partial<Record<SupportedSchemaVersion, MigrationStep>> = {
     convert: (input) => ({ ...structuredClone(input), schemaVersion: "0.7.0" }),
   },
   "0.7.0": {
-    toVersion: CURRENT_SCHEMA_VERSION,
+    toVersion: "0.8.0",
     convert: (input) => ({
       ...structuredClone(input),
-      schemaVersion: CURRENT_SCHEMA_VERSION,
+      schemaVersion: "0.8.0",
       dependencies: [],
     }),
+  },
+  "0.8.0": {
+    toVersion: CURRENT_SCHEMA_VERSION,
+    convert: (input) => ({ ...structuredClone(input), schemaVersion: CURRENT_SCHEMA_VERSION }),
   },
 };
 

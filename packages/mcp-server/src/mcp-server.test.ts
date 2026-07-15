@@ -188,7 +188,7 @@ describe("IntentForm agent project store", () => {
     expect(preview).toMatchObject({
       status: "migration-required",
       fromVersion: "0.0.1",
-      toVersion: "0.8.0",
+      toVersion: "0.9.0",
       sourceFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
     expect(readdirSync(dir)).toEqual(["graph.json"]);
@@ -199,7 +199,7 @@ describe("IntentForm agent project store", () => {
     expect(applied).toMatchObject({
       status: "current",
       fromVersion: "0.0.1",
-      toVersion: "0.8.0",
+      toVersion: "0.9.0",
       fingerprint: expect.stringMatching(/^[a-f0-9]{8}$/),
     });
     expect(applied.checkpoint).toMatch(/migration-checkpoints/);
@@ -208,7 +208,7 @@ describe("IntentForm agent project store", () => {
     expect(loadProject(dir).graph).toEqual(migratedLegacyDemoGraph());
     expect(projectHistory(dir)).toMatchObject({
       integrity: "valid",
-      operations: [{ kind: "save", author: "system", sourceId: "0.0.1->0.8.0" }],
+      operations: [{ kind: "save", author: "system", sourceId: "0.0.1->0.9.0" }],
     });
     expect(compileProject(dir, "react", false).fileCount).toBeGreaterThan(0);
     expect(compileProject(dir, "swiftui", false).fileCount).toBeGreaterThan(0);
@@ -273,7 +273,7 @@ describe("IntentForm agent project store", () => {
 
     expect(applied).toMatchObject({ status: "current", checkpoint: expect.any(String) });
     expect(applied).not.toHaveProperty("graph");
-    expect(previewMigration(dir)).toMatchObject({ status: "current", fromVersion: "0.8.0" });
+    expect(previewMigration(dir)).toMatchObject({ status: "current", fromVersion: "0.9.0" });
   });
 
   it("writes atomically and rejects a stale writer without losing the winning graph", () => {
@@ -393,7 +393,7 @@ describe("IntentForm agent project store", () => {
     });
     expect(componentSchema(dir, "intent.balance-summary")).toMatchObject({
       abiVersion: "1.0.0",
-      schemaVersion: "0.8.0",
+      schemaVersion: "0.9.0",
       definitions: [{ id: "intent.balance-summary", version: "1.0.0" }],
     });
 
