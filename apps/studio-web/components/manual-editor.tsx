@@ -63,6 +63,21 @@ import { Inspector } from "./editor/inspector";
 import { LayersPanel } from "./editor/layers-panel";
 import { CommandMenu, ShortcutsSheet, type EditorCommand } from "./editor/overlays";
 import {
+  NODE_CLIPBOARD_MIME,
+  STYLE_CLIPBOARD_MIME,
+  createNodeClipboardPayload,
+  createStyleClipboardPayload,
+  parseNodeClipboardPayload,
+  parseStyleClipboardPayload,
+  pasteNodesTransaction,
+  pasteStyleTransaction,
+  plainTextFromHtml,
+  serializeClipboardPayload,
+  type NodeClipboardPayload,
+  type PasteMode,
+  type StyleClipboardPayload,
+} from "./editor/clipboard";
+import {
   duplicateNodesTransaction,
   duplicateNodeTransaction,
   duplicateScreenTransaction,
@@ -283,6 +298,9 @@ export function ManualEditor({
     return { rail: 268, inspector: 304 };
   });
   const canvasApi = useRef<CanvasApi>(null);
+  const nodeClipboard = useRef<NodeClipboardPayload | null>(null);
+  const styleClipboard = useRef<StyleClipboardPayload | null>(null);
+  const pendingPasteMode = useRef<PasteMode>("after");
   const structureTriggerRef = useRef<HTMLButtonElement>(null);
   const inspectorTriggerRef = useRef<HTMLButtonElement>(null);
   const insertTriggerRef = useRef<HTMLButtonElement>(null);
@@ -679,6 +697,119 @@ export function ManualEditor({
     }
   }, [commitDraft, graph, normalizedSelection, onNotice, onSelectNode]);
 
+  const copySelection = useCallback((data?: DataTransfer) => {
+    if (!screen || normalizedSelection.length === 0) return false;
+    try {
+      const payload = createNodeClipboardPayload(graph, screen.id, normalizedSelection);
+      const serialized = serializeClipboardPayload(payload);
+      nodeClipboard.current = payload;
+      data?.setData(NODE_CLIPBOARD_MIME, serialized);
+      data?.setData("text/plain", payload.nodes.map((node) => node.intent.label ?? node.intent.purpose).join("\n"));
+      if (!data) void navigator.clipboard?.writeText(serialized).catch(() => undefined);
+      onNotice(`Copied ${payload.nodes.length} semantic ${payload.nodes.length === 1 ? "layer" : "layers"}.`);
+      return true;
+    } catch (error) {
+      onNotice(editorTransactionError(error));
+      return false;
+    }
+  }, [graph, normalizedSelection, onNotice, screen]);
+
+  const pastePayload = useCallback((payload: NodeClipboardPayload, mode: PasteMode, notice?: string) => {
+    if (!screen) return;
+    try {
+      const result = pasteNodesTransaction(graph, screen.id, normalizedSelection, payload, mode);
+      const committed = commitDraft(result.graph, notice ?? `${mode === "replace" ? "Replaced the selection with" : "Pasted"} ${result.nodeIds.length} semantic ${result.nodeIds.length === 1 ? "layer" : "layers"}.`);
+      if (committed) {
+        setSelectedNodeIds(result.nodeIds);
+        onSelectNode(result.nodeIds.at(-1) ?? null);
+      }
+    } catch (error) {
+      onNotice(editorTransactionError(error));
+    }
+  }, [commitDraft, graph, normalizedSelection, onNotice, onSelectNode, screen]);
+
+  const plainTextPayload = useCallback((text: string): NodeClipboardPayload | null => {
+    if (!screen) return null;
+    const value = Array.from(text.trim()).slice(0, 240).join("");
+    if (!value) return null;
+    return {
+      format: "intentform/nodes",
+      version: 1,
+      nodes: [{
+        id: `${screen.id}.pasted-text`,
+        kind: "text",
+        intent: { purpose: "Preserve pasted text content", label: value, importance: "supporting" },
+        layout: newNodeLayout("text"),
+        style: { role: "text", emphasis: "normal" },
+        accessibility: { label: value, live: "off" },
+        states: insertionStateBindings(activeVisualState),
+        interactions: [],
+        provenance: { author: "human", revision: 0 },
+        children: [],
+      }],
+    };
+  }, [activeVisualState, screen]);
+
+  const pasteFromData = useCallback((data: DataTransfer, mode: PasteMode) => {
+    const structured = data.getData(NODE_CLIPBOARD_MIME);
+    if (structured) {
+      try {
+        const payload = parseNodeClipboardPayload(structured);
+        nodeClipboard.current = payload;
+        pastePayload(payload, mode);
+      } catch (error) {
+        onNotice(editorTransactionError(error));
+      }
+      return;
+    }
+    const html = data.getData("text/html");
+    if (html) {
+      const extracted = plainTextFromHtml(html);
+      const payload = plainTextPayload(extracted.text);
+      if (payload) pastePayload(payload, mode, extracted.diagnostics[0]?.message);
+      else onNotice(extracted.diagnostics[0]?.message ?? "The pasted HTML contained no editable text.");
+      return;
+    }
+    const payload = plainTextPayload(data.getData("text/plain"));
+    if (payload) pastePayload(payload, mode, "Pasted plain text as an editable semantic text layer.");
+  }, [onNotice, pastePayload, plainTextPayload]);
+
+  const pasteInternal = useCallback((mode: PasteMode) => {
+    if (!nodeClipboard.current) {
+      onNotice("Nothing from IntentForm is available to paste yet.");
+      return;
+    }
+    pastePayload(nodeClipboard.current, mode);
+  }, [onNotice, pastePayload]);
+
+  const copyStyles = useCallback((data?: DataTransfer) => {
+    const source = normalizedSelection.length === 1 ? locateEditorNode(graph, normalizedSelection[0]!)?.node : null;
+    if (!source) {
+      onNotice("Select one layer before copying styles.");
+      return;
+    }
+    const payload = createStyleClipboardPayload(source);
+    styleClipboard.current = payload;
+    data?.setData(STYLE_CLIPBOARD_MIME, serializeClipboardPayload(payload));
+    onNotice(`Copied styles from ${source.intent.label ?? source.id}.`);
+  }, [graph, normalizedSelection, onNotice]);
+
+  const pasteStyles = useCallback((data?: DataTransfer) => {
+    try {
+      const serialized = data?.getData(STYLE_CLIPBOARD_MIME);
+      const payload = serialized ? parseStyleClipboardPayload(serialized) : styleClipboard.current;
+      if (!payload) {
+        onNotice("Nothing from IntentForm is available in the style clipboard.");
+        return;
+      }
+      styleClipboard.current = payload;
+      const next = pasteStyleTransaction(graph, normalizedSelection, payload);
+      commitDraft(next, `Applied copied styles to ${normalizedSelection.length} ${normalizedSelection.length === 1 ? "layer" : "layers"}.`);
+    } catch (error) {
+      onNotice(editorTransactionError(error));
+    }
+  }, [commitDraft, graph, normalizedSelection, onNotice]);
+
   const moveSelection = useCallback((direction: -1 | 1) => {
     if (normalizedSelection.length === 0) return;
     try {
@@ -1010,6 +1141,12 @@ export function ManualEditor({
     undo: () => {},
     redo: () => {},
     togglePanel: (_panel: "structure" | "inspector") => {},
+    copy: (_data?: DataTransfer): boolean => false,
+    cut: (_data?: DataTransfer) => {},
+    paste: (_data: DataTransfer, _mode: PasteMode) => {},
+    pasteInternal: (_mode: PasteMode) => {},
+    copyStyles: (_data?: DataTransfer) => {},
+    pasteStyles: (_data?: DataTransfer) => {},
   });
   keyActions.current = {
     escape: () => {
@@ -1047,6 +1184,12 @@ export function ManualEditor({
     undo: () => { if (canUndo) onUndo(); },
     redo: () => { if (canRedo) onRedo(); },
     togglePanel: toggleEditorPanel,
+    copy: copySelection,
+    cut: (data) => { if (copySelection(data)) deleteSelection(); },
+    paste: pasteFromData,
+    pasteInternal,
+    copyStyles,
+    pasteStyles,
   };
 
   useEffect(() => {
@@ -1065,6 +1208,25 @@ export function ManualEditor({
         return;
       }
       if (isFormControl(event.target)) return;
+      if (modifier && event.altKey && key === "c") {
+        event.preventDefault();
+        keyActions.current.copyStyles();
+        return;
+      }
+      if (modifier && event.altKey && key === "v") {
+        event.preventDefault();
+        keyActions.current.pasteStyles();
+        return;
+      }
+      if (modifier && event.shiftKey && key === "r") {
+        event.preventDefault();
+        keyActions.current.pasteInternal("replace");
+        return;
+      }
+      if (modifier && key === "v") {
+        pendingPasteMode.current = event.shiftKey ? "in-place" : "after";
+        return;
+      }
       if (event.key === " ") {
         event.preventDefault();
         setSpaceHeld(true);
@@ -1128,13 +1290,35 @@ export function ManualEditor({
       if (event.key === " ") setSpaceHeld(false);
     };
     const onBlur = () => setSpaceHeld(false);
+    const onCopy = (event: ClipboardEvent) => {
+      if (isFormControl(event.target) || !event.clipboardData) return;
+      if (keyActions.current.copy(event.clipboardData)) event.preventDefault();
+    };
+    const onCut = (event: ClipboardEvent) => {
+      if (isFormControl(event.target) || !event.clipboardData) return;
+      event.preventDefault();
+      keyActions.current.cut(event.clipboardData);
+    };
+    const onPaste = (event: ClipboardEvent) => {
+      if (isFormControl(event.target) || !event.clipboardData) return;
+      event.preventDefault();
+      const mode = pendingPasteMode.current;
+      pendingPasteMode.current = "after";
+      keyActions.current.paste(event.clipboardData, mode);
+    };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", onBlur);
+    window.addEventListener("copy", onCopy);
+    window.addEventListener("cut", onCut);
+    window.addEventListener("paste", onPaste);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
+      window.removeEventListener("copy", onCopy);
+      window.removeEventListener("cut", onCut);
+      window.removeEventListener("paste", onPaste);
     };
   }, [commandOpen, insertOpen, mobilePanel, shortcutsOpen, zoomMenuOpen]);
 
@@ -1168,9 +1352,16 @@ export function ManualEditor({
       { label: "Delete current screen", section: "Edit", icon: Trash, action: () => deleteScreen(screen.id) },
     ] : []),
     ...(normalizedSelection.length > 0 ? [
+      { label: `Copy selected ${normalizedSelection.length === 1 ? "layer" : "layers"}`, shortcut: "⌘C", section: "Edit", icon: Copy, action: () => { copySelection(); } },
+      { label: `Cut selected ${normalizedSelection.length === 1 ? "layer" : "layers"}`, shortcut: "⌘X", section: "Edit", icon: Copy, action: () => { if (copySelection()) deleteSelection(); } },
       { label: `Duplicate selected ${normalizedSelection.length === 1 ? "layer" : "layers"}`, shortcut: "⌘D", section: "Edit", icon: Copy, action: duplicateSelection },
       { label: `Delete selected ${normalizedSelection.length === 1 ? "layer" : "layers"}`, shortcut: "⌫", section: "Edit", icon: Trash, action: deleteSelection },
+      { label: "Paste to replace", shortcut: "⇧⌘R", section: "Edit", icon: Copy, action: () => pasteInternal("replace") },
+      { label: "Copy styles", shortcut: "⌥⌘C", section: "Edit", icon: PaintBrush, action: () => copyStyles() },
+      { label: "Paste styles", shortcut: "⌥⌘V", section: "Edit", icon: PaintBrush, action: () => pasteStyles() },
     ] : []),
+    { label: "Paste", shortcut: "⌘V", section: "Edit", icon: Copy, action: () => pasteInternal("after") },
+    { label: "Paste in place", shortcut: "⇧⌘V", section: "Edit", icon: Copy, action: () => pasteInternal("in-place") },
     ...(normalizedSelection.length > 1 ? [
       { label: "Group selected layers", section: "Edit", icon: Stack, action: groupSelection },
     ] : []),
@@ -1313,6 +1504,11 @@ export function ManualEditor({
           onGroupSelection={groupSelection}
           onDuplicateSelection={duplicateSelection}
           onDeleteSelection={deleteSelection}
+          onCopySelection={() => { copySelection(); }}
+          onCutSelection={() => { if (copySelection()) deleteSelection(); }}
+          onPaste={pasteInternal}
+          onCopyStyles={() => copyStyles()}
+          onPasteStyles={() => pasteStyles()}
           onMoveSelection={moveSelection}
           onNodeCommand={handleNodeCommand}
           onRenameNode={(nodeId, _screenId, label) => updateNodeById(nodeId, (draft) => {

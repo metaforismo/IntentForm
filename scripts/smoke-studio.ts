@@ -699,6 +699,73 @@ try {
       }
       await page.getByRole("button", { name: "Undo" }).click();
       await page.getByLabel("Fixed width").waitFor({ state: "detached" });
+
+      await page.keyboard.press("Escape");
+      await page.getByTestId("canvas-node-layout-lab.grid-a").dblclick();
+      const textEditor = page.getByLabel("Edit layer text");
+      await textEditor.waitFor();
+      await textEditor.dispatchEvent("compositionstart", { data: "مرحبا" });
+      await textEditor.fill("مرحبا 👩🏽‍💻\ncafé");
+      await textEditor.dispatchEvent("compositionend", { data: "مرحبا" });
+      await page.keyboard.press("Control+Enter");
+      await page.getByTestId("canvas-node-layout-lab.grid-a").getByText(/مرحبا 👩🏽‍💻/).waitFor();
+      await page.getByRole("button", { name: "Undo" }).click();
+      await page.getByTestId("canvas-node-layout-lab.grid-a").getByText("Grid A", { exact: true }).waitFor();
+      await nestedLeafLayer.click();
+      await page.getByRole("button", { name: "Move selected layer", exact: true }).focus();
+      await page.keyboard.press("Enter");
+      await textEditor.fill("This edit must be cancelled");
+      await page.keyboard.press("Escape");
+      await textEditor.waitFor({ state: "detached" });
+      await page.getByTestId("canvas-node-layout-lab.grid-a").getByText("Grid A", { exact: true }).waitFor();
+
+      await page.keyboard.press("Control+k");
+      await page.getByLabel("Search commands").fill("Copy selected layer");
+      await page.getByRole("button", { name: "Copy selected layer", exact: true }).click();
+      await page.getByTestId("layer-layout-lab.overlay").click();
+      await page.keyboard.press("Control+k");
+      await page.getByLabel("Search commands").fill("Paste");
+      await page.getByRole("button", { name: "Paste", exact: true }).click();
+      await page.getByTestId("layer-layout-lab.grid-a-copy").waitFor();
+      await page.waitForFunction(() => document.querySelector('[data-container-id="layout-lab.overlay"]')
+        ?.querySelector('[data-testid="canvas-node-layout-lab.grid-a-copy"]'));
+      await page.getByRole("button", { name: "Undo" }).click();
+      await page.getByTestId("layer-layout-lab.grid-a-copy").waitFor({ state: "detached" });
+
+      await page.getByTestId("layer-layout-lab.grid-b").click();
+      await page.keyboard.press("Shift+Control+r");
+      await page.getByTestId("layer-layout-lab.grid-b").waitFor({ state: "detached" });
+      await page.getByTestId("layer-layout-lab.grid-a-copy").waitFor();
+      await page.getByRole("button", { name: "Undo" }).click();
+      await page.getByTestId("layer-layout-lab.grid-b").waitFor();
+
+      await nestedLeafLayer.click();
+      await page.getByTestId("semantic-inspector").getByRole("button", { name: "Strong", exact: true }).click();
+      await page.keyboard.press("Control+k");
+      await page.getByLabel("Search commands").fill("Copy styles");
+      await page.getByRole("button", { name: "Copy styles", exact: true }).click();
+      await page.getByTestId("layer-layout-lab.grid-b").click();
+      await page.keyboard.press("Control+k");
+      await page.getByLabel("Search commands").fill("Paste styles");
+      await page.getByRole("button", { name: "Paste styles", exact: true }).click();
+      if (await page.getByTestId("semantic-inspector").getByRole("button", { name: "Strong", exact: true }).getAttribute("aria-pressed") !== "true") {
+        throw new Error("Style clipboard did not apply the copied semantic emphasis");
+      }
+      await page.getByRole("button", { name: "Undo" }).click();
+      await page.getByRole("button", { name: "Undo" }).click();
+
+      await page.getByTestId("layer-layout-lab.overlay").click();
+      await page.evaluate(() => {
+        const data = new DataTransfer();
+        data.setData("text/html", '<style>p{color:red}</style><p dir="rtl">نص <strong>آمن</strong> 🌍</p><script>alert(1)</script>');
+        window.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+      });
+      await page.getByTestId("layer-layout-lab.pasted-text").waitFor();
+      await page.getByRole("status").getByText(/Pasted HTML as safe text; unsupported markup and styles were ignored/i).waitFor();
+      await page.getByTestId("canvas-node-layout-lab.pasted-text").getByText("نص آمن 🌍", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Undo" }).click();
+      await page.getByTestId("layer-layout-lab.pasted-text").waitFor({ state: "detached" });
+
       const adaptivePreview = page.getByTestId("canvas-node-layout-lab.adaptive").locator('[data-container-id="layout-lab.adaptive"]');
       if (await adaptivePreview.getAttribute("data-layout-mode") !== "stack") {
         throw new Error("Compact canvas did not resolve the shared adaptive mode to stack");

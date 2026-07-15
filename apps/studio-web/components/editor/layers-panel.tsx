@@ -94,23 +94,52 @@ function TokenNumberField({
   min?: number;
   onCommit(next: number): void;
 }) {
+  const [draft, setDraft] = useState(String(value));
+  const focused = useRef(false);
+  useEffect(() => { if (!focused.current) setDraft(String(value)); }, [value]);
+  const commit = () => {
+    const next = Number(draft);
+    if (Number.isFinite(next) && next >= min && next !== value) onCommit(next);
+    else setDraft(String(value));
+  };
   return (
     <label className="grid grid-cols-[1fr_76px] items-center gap-2 text-[11px] text-[var(--muted)]">
       <span className="truncate font-mono text-[11px]">{label}</span>
       <input
-        key={`${label}-${value}`}
         type="number"
         min={min}
-        defaultValue={value}
-        onBlur={(event) => {
-          const next = Number(event.target.value);
-          if (Number.isFinite(next) && next >= min && next !== value) onCommit(next);
-        }}
+        value={draft}
+        onFocus={() => { focused.current = true; }}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => { focused.current = false; commit(); }}
         onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); }}
         className="min-h-8 rounded-lg border border-[var(--line)] bg-[var(--field)] px-2 text-right font-mono text-[11px] text-[var(--t-strong)] outline-none transition-colors hover:border-[var(--line-strong)] focus:border-[var(--accent)]"
       />
     </label>
   );
+}
+
+function TokenHexField({ label, value, onCommit }: { label: string; value: string; onCommit(next: string): void }) {
+  const [draft, setDraft] = useState(value);
+  const focused = useRef(false);
+  const composing = useRef(false);
+  useEffect(() => { if (!focused.current && !composing.current) setDraft(value); }, [value]);
+  const commit = (source = draft) => {
+    const next = source.trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(next) && next !== value) onCommit(next);
+    else setDraft(value);
+  };
+  return <input
+    aria-label={`Hex for ${label}`}
+    value={draft}
+    onFocus={() => { focused.current = true; }}
+    onChange={(event) => setDraft(event.target.value)}
+    onCompositionStart={() => { composing.current = true; }}
+    onCompositionEnd={(event) => { composing.current = false; if (!focused.current) commit(event.currentTarget.value); }}
+    onBlur={() => { focused.current = false; if (!composing.current) commit(); }}
+    onKeyDown={(event) => { if (event.key === "Enter" && !composing.current) event.currentTarget.blur(); else if (event.key === "Escape") { setDraft(value); event.currentTarget.blur(); } }}
+    className="min-h-8 rounded-lg border border-[var(--line)] bg-[var(--field)] px-2 font-mono text-[11px] text-[var(--t-strong)] outline-none transition-colors hover:border-[var(--line-strong)] focus:border-[var(--accent)]"
+  />;
 }
 
 export function LayersPanel({
@@ -580,17 +609,7 @@ export function LayersPanel({
                     className="h-8 w-full cursor-pointer rounded-lg border border-[var(--line)] bg-[var(--field)] p-0.5"
                   />
                   <span className="truncate font-mono text-[11px] text-[var(--muted)]">{key}</span>
-                  <input
-                    key={`${key}-${value}`}
-                    aria-label={`Hex for ${key}`}
-                    defaultValue={value}
-                    onBlur={(event) => {
-                      const next = event.target.value.trim();
-                      if (/^#[0-9a-fA-F]{6}$/.test(next) && next !== value) onUpdateTokens((tokens) => { tokens.modes[tokens.activeMode]!.values.colors[key] = next; }, `Set ${key}.`);
-                    }}
-                    onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); }}
-                    className="min-h-8 rounded-lg border border-[var(--line)] bg-[var(--field)] px-2 font-mono text-[11px] text-[var(--t-strong)] outline-none transition-colors hover:border-[var(--line-strong)] focus:border-[var(--accent)]"
-                  />
+                  <TokenHexField label={key} value={value} onCommit={(next) => onUpdateTokens((tokens) => { tokens.modes[tokens.activeMode]!.values.colors[key] = next; }, `Set ${key}.`)} />
                 </div>
               ))}
             </div>

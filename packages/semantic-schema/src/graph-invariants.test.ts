@@ -447,8 +447,12 @@ describe("semantic graph invariants", () => {
     expectInvalid((graph) => { graph.screens[0]!.nodes[0]!.layout.gapToken = "constructor"; }, /Reserved token key/);
     expectInvalid((graph) => { graph.tokens.modes.default!.values.colors["color.accent"] = "url(javascript:alert(1))"; }, /Invalid string/);
     expectInvalid((graph) => { graph.tokens.modes.default!.values.spacing["space.16"] = 513; }, /Too big/);
-    expectInvalid((graph) => { graph.screens[0]!.nodes[0]!.intent.label = "Submit\nmalicious"; }, /Control characters are not allowed/);
-    expectInvalid((graph) => { graph.screens[0]!.nodes[0]!.intent.label = "Submit\u202Ehidden"; }, /Control characters are not allowed/);
+    const multiline = structuredClone(makeValidGraph());
+    multiline.screens[0]!.nodes[0]!.intent.label = "Submit\nsecurely";
+    multiline.screens[0]!.nodes[0]!.accessibility.label = "Submit\nsecurely";
+    expect(parseGraph(multiline).screens[0]!.nodes[0]!.intent.label).toBe("Submit\nsecurely");
+    expectInvalid((graph) => { graph.screens[0]!.nodes[0]!.intent.label = "Submit\tmalicious"; }, /Control characters other than line feeds are not allowed/);
+    expectInvalid((graph) => { graph.screens[0]!.nodes[0]!.intent.label = "Submit\u202Ehidden"; }, /Control characters other than line feeds are not allowed/);
     expectInvalid((graph) => {
       graph.screens[0]!.nodes[0]!.platformOverrides = { ghost: { flag: true } };
     }, /Unknown platform override target/);

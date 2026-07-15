@@ -216,24 +216,23 @@ export function Inspector({
                     </label>
                   );
                 }
+                if (field.type === "number") return (
+                  <NumberField
+                    key={field.name}
+                    label={field.name}
+                    ariaLabel={`Fixture ${field.name}`}
+                    value={typeof value === "number" ? value : undefined}
+                    onCommit={(next) => { if (next !== undefined && next !== value) onUpdateFixture(field.name, next); }}
+                  />
+                );
                 return (
-                  <label key={field.name} className="grid gap-1.5 text-[11px] font-medium text-[var(--muted)]">
-                    {field.name}
-                    <input
-                      key={`${screen.id}-${visualState}-${field.name}-${String(value ?? "")}`}
-                      aria-label={`Fixture ${field.name}`}
-                      type={field.type === "number" ? "number" : "text"}
-                      inputMode={field.type === "number" || field.type === "money" ? "decimal" : undefined}
-                      defaultValue={typeof value === "string" || typeof value === "number" ? value : ""}
-                      onBlur={(event) => {
-                        const next = field.type === "number" ? Number(event.target.value) : event.target.value;
-                        if (Number.isNaN(next) || next === value) return;
-                        onUpdateFixture(field.name, next);
-                      }}
-                      onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); }}
-                      className="min-h-8 rounded-lg border border-[var(--line)] bg-[var(--field)] px-2.5 font-mono text-[11px] font-normal text-[var(--t-strong)] outline-none transition-colors hover:border-[var(--line-strong)] focus:border-[var(--accent)] focus:shadow-[0_0_0_3px_color-mix(in_oklab,var(--accent)_12%,transparent)]"
-                    />
-                  </label>
+                  <TextField
+                    key={field.name}
+                    label={field.name}
+                    ariaLabel={`Fixture ${field.name}`}
+                    value={typeof value === "string" ? value : typeof value === "number" ? String(value) : ""}
+                    onCommit={(next) => { if (next !== value) onUpdateFixture(field.name, next); }}
+                  />
                 );
               })}
             </div>

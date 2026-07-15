@@ -16,26 +16,26 @@ export function PropertyRow({ label, children, error, htmlFor }: { label: ReactN
   </div>;
 }
 
-export function CompositionSafeField({ label, value, placeholder, multiline = false, mixed = false, onCommit }: { label: string; value: string; placeholder?: string; multiline?: boolean; mixed?: boolean; onCommit(next: string): void }) {
+export function CompositionSafeField({ label, ariaLabel, value, placeholder, multiline = false, mixed = false, onCommit }: { label: string; ariaLabel?: string; value: string; placeholder?: string; multiline?: boolean; mixed?: boolean; onCommit(next: string): void }) {
   const id = useId();
   const [draft, setDraft] = useState(value);
-  const [focused, setFocused] = useState(false);
+  const focused = useRef(false);
   const composing = useRef(false);
-  useEffect(() => { if (!focused && !composing.current) setDraft(value); }, [focused, value]);
-  const commit = () => {
+  useEffect(() => { if (!focused.current && !composing.current) setDraft(value); }, [value]);
+  const commit = (source = draft) => {
     if (composing.current) return;
-    const next = draft.trim();
+    const next = source.trim();
     if (!mixed && next === value) return;
     onCommit(next);
   };
   const shared = "w-full rounded-[5px] border border-[var(--if-border)] bg-[var(--if-input)] px-2 text-[12px] text-[var(--if-text)] outline-none hover:border-[var(--if-border-strong)] focus:border-[var(--if-blue)] focus:ring-1 focus:ring-[var(--if-blue)] placeholder:text-[var(--if-text-tertiary)]";
-  const props = { id, value: draft, placeholder: mixed ? "Mixed" : placeholder, onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraft(event.target.value), onFocus: () => setFocused(true), onBlur: () => { setFocused(false); commit(); }, onCompositionStart: () => { composing.current = true; }, onCompositionEnd: () => { composing.current = false; } };
+  const props = { id, "aria-label": ariaLabel, value: draft, placeholder: mixed ? "Mixed" : placeholder, onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraft(event.target.value), onFocus: () => { focused.current = true; }, onBlur: () => { focused.current = false; commit(); }, onCompositionStart: () => { composing.current = true; }, onCompositionEnd: (event: React.CompositionEvent<HTMLInputElement | HTMLTextAreaElement>) => { composing.current = false; if (!focused.current) commit(event.currentTarget.value); } };
   return <PropertyRow label={label} htmlFor={id}>{multiline
     ? <textarea {...props} rows={2} className={`${shared} min-h-14 resize-y py-1.5 leading-5`} />
     : <input {...props} onKeyDown={(event) => { if (event.key === "Enter" && !composing.current) event.currentTarget.blur(); }} className={`${shared} h-7`} />}</PropertyRow>;
 }
 
-export function NumericScrubField({ label, value, min = -10_000, max = 10_000, step = 1, disabled = false, mixed = false, onCommit }: { label: string; value: number | undefined; min?: number; max?: number; step?: number; disabled?: boolean; mixed?: boolean; onCommit(next: number | undefined): void }) {
+export function NumericScrubField({ label, ariaLabel, value, min = -10_000, max = 10_000, step = 1, disabled = false, mixed = false, onCommit }: { label: string; ariaLabel?: string; value: number | undefined; min?: number; max?: number; step?: number; disabled?: boolean; mixed?: boolean; onCommit(next: number | undefined): void }) {
   const id = useId();
   const [draft, setDraft] = useState(value === undefined ? "" : String(value));
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +53,7 @@ export function NumericScrubField({ label, value, min = -10_000, max = 10_000, s
     setDraft(String(next)); setError(null); onCommit(next);
   };
   return <PropertyRow label={<button type="button" disabled={disabled} title="Drag to scrub; double click to reset" onDoubleClick={() => { setDraft(""); onCommit(undefined); }} onPointerDown={(event) => { if (disabled) return; scrub.current = { x: event.clientX, value: Number(draft) || value || 0 }; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (!scrub.current) return; const next = Math.min(max, Math.max(min, scrub.current.value + (event.clientX - scrub.current.x) * step)); setDraft(String(Number(next.toFixed(6)))); }} onPointerUp={(event) => { if (!scrub.current) return; scrub.current = null; event.currentTarget.releasePointerCapture(event.pointerId); commit(); }} className="h-7 cursor-ew-resize truncate text-left text-[var(--if-text-secondary)] disabled:cursor-default">{label}</button>} htmlFor={id} error={error}>
-    <input id={id} type="text" inputMode="decimal" value={draft} disabled={disabled} placeholder={mixed ? "Mixed" : "Auto"} onFocus={() => { focused.current = true; }} onChange={(event) => { setDraft(event.target.value); setError(null); }} onBlur={() => { focused.current = false; commit(); }} onKeyDown={(event) => { if (event.key === "ArrowUp" || event.key === "ArrowDown") { event.preventDefault(); setStepped(event.key === "ArrowUp" ? 1 : -1, event.shiftKey, event.altKey); } else if (event.key === "Enter") event.currentTarget.blur(); else if (event.key === "Escape") { setDraft(value === undefined ? "" : String(value)); setError(null); event.currentTarget.blur(); } }} className="h-7 w-full rounded-[5px] border border-[var(--if-border)] bg-[var(--if-input)] px-2 font-mono text-[11px] text-[var(--if-text)] outline-none hover:border-[var(--if-border-strong)] focus:border-[var(--if-blue)] focus:ring-1 focus:ring-[var(--if-blue)] disabled:opacity-45" />
+    <input id={id} aria-label={ariaLabel} type="text" inputMode="decimal" value={draft} disabled={disabled} placeholder={mixed ? "Mixed" : "Auto"} onFocus={() => { focused.current = true; }} onChange={(event) => { setDraft(event.target.value); setError(null); }} onBlur={() => { focused.current = false; commit(); }} onKeyDown={(event) => { if (event.key === "ArrowUp" || event.key === "ArrowDown") { event.preventDefault(); setStepped(event.key === "ArrowUp" ? 1 : -1, event.shiftKey, event.altKey); } else if (event.key === "Enter") event.currentTarget.blur(); else if (event.key === "Escape") { setDraft(value === undefined ? "" : String(value)); setError(null); event.currentTarget.blur(); } }} className="h-7 w-full rounded-[5px] border border-[var(--if-border)] bg-[var(--if-input)] px-2 font-mono text-[11px] text-[var(--if-text)] outline-none hover:border-[var(--if-border-strong)] focus:border-[var(--if-blue)] focus:ring-1 focus:ring-[var(--if-blue)] disabled:opacity-45" />
   </PropertyRow>;
 }
 

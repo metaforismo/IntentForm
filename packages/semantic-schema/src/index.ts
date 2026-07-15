@@ -63,10 +63,15 @@ export const GRAPH_LIMITS = {
 // Block line separators and bidirectional controls as well as ASCII controls;
 // graph-authored text is lowered into generated React and Swift source.
 const controlCharacterPattern = /[\u0000-\u001F\u007F\u2028-\u202E\u2066-\u2069]/;
+const displayControlCharacterPattern = /[\u0000-\u0009\u000B-\u001F\u007F\u2028-\u202E\u2066-\u2069]/;
 const boundedStringSchema = (maximum: number = GRAPH_LIMITS.maxTextLength) => z.string()
   .max(maximum)
   .refine((value) => !controlCharacterPattern.test(value), "Control characters are not allowed");
 const safeTextSchema = (maximum: number = GRAPH_LIMITS.maxTextLength) => boundedStringSchema(maximum).min(1);
+const safeDisplayTextSchema = (maximum: number = GRAPH_LIMITS.maxTextLength) => z.string()
+  .min(1)
+  .max(maximum)
+  .refine((value) => !displayControlCharacterPattern.test(value), "Control characters other than line feeds are not allowed");
 const idSchema = z.string()
   .min(1)
   .max(GRAPH_LIMITS.maxIdLength)
@@ -565,7 +570,7 @@ const semanticNodeBaseSchema = z.strictObject({
   kind: semanticNodeKindSchema,
   intent: z.strictObject({
     purpose: safeTextSchema().min(3),
-    label: safeTextSchema(240).optional(),
+    label: safeDisplayTextSchema(240).optional(),
     importance: z.enum(["primary", "secondary", "supporting"]).default("supporting"),
   }),
   layout: semanticLayoutSchema,
@@ -578,7 +583,7 @@ const semanticNodeBaseSchema = z.strictObject({
     hidden: z.boolean().default(false),
   }).optional(),
   accessibility: z.strictObject({
-    label: safeTextSchema(240),
+    label: safeDisplayTextSchema(240),
     hint: safeTextSchema(500).optional(),
     live: z.enum(["off", "polite", "assertive"]).default("off"),
   }),

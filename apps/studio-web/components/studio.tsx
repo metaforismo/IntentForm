@@ -300,7 +300,7 @@ export function Studio() {
   }, [draftReady, graph, localProjectFingerprint, projectSource, projectType]);
 
   useEffect(() => {
-    if (/failed|could not|invalid|quota|unavailable|rejected/i.test(notice)) setNoticeOpen(true);
+    if (/failed|could not|invalid|quota|unavailable|rejected|ignored|unsupported/i.test(notice)) setNoticeOpen(true);
   }, [notice]);
 
   useEffect(() => {
