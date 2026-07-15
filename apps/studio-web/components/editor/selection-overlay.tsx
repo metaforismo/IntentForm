@@ -42,6 +42,7 @@ interface SelectionOverlayProps {
   onMoveFreeform(positions: Readonly<Record<string, Point>>): void;
   onResize(nodeId: string, size: ResizeCandidate): void;
   onAnchor(nodeId: string, placement: "inline" | "persistent-bottom"): void;
+  onEditNode(nodeId: string): void;
   onOpenContextMenu(clientPosition?: Point): void;
 }
 
@@ -95,6 +96,7 @@ export function SelectionOverlay({
   onMoveFreeform,
   onResize,
   onAnchor,
+  onEditNode,
   onOpenContextMenu,
 }: SelectionOverlayProps) {
   const [box, setBox] = useState<MeasuredBox | null>(null);
@@ -448,6 +450,11 @@ export function SelectionOverlay({
           onPointerMove={moveDrag}
           onPointerUp={finishDrag}
           onPointerCancel={finishDrag}
+          onDoubleClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (normalizedIds.length === 1) onEditNode(normalizedIds[0]!);
+          }}
           onContextMenu={(event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -457,6 +464,9 @@ export function SelectionOverlay({
             if (event.shiftKey && event.key === "F10") {
               event.preventDefault();
               onOpenContextMenu();
+            } else if (event.key === "Enter" && normalizedIds.length === 1) {
+              event.preventDefault();
+              onEditNode(normalizedIds[0]!);
             }
           }}
           className="pointer-events-auto absolute inset-0 cursor-move bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-[var(--select)] focus-visible:ring-offset-2"

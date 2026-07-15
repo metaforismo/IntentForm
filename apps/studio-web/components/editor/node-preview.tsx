@@ -231,7 +231,7 @@ export function NodePreview({
 
   switch (node.kind) {
     case "text":
-      return <p className="text-[14px] leading-relaxed">{node.intent.label}</p>;
+      return <p className="whitespace-pre-wrap text-[14px] leading-relaxed">{node.intent.label}</p>;
     case "image":
       return <div className="grid min-h-28 place-items-center rounded-xl border border-dashed text-[12px] text-zinc-500" style={{ borderColor: hairline }}>Image · {node.intent.label}</div>;
     case "shape":

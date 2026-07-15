@@ -63,7 +63,7 @@ export function MenuItem({
   onClick?: () => void;
 }) {
   return (
-    <button type="button" onClick={onClick} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-2.5 text-left text-[11px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
+    <button type="button" aria-label={label} onClick={onClick} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-2.5 text-left text-[11px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
       <span className="grid size-7 place-items-center rounded-md border border-[var(--line)] bg-[var(--chip)] text-[var(--t-strong)]">{icon}</span>
       <span className="flex-1">{label}</span>
       {shortcut ? <kbd className="font-mono text-[9px] text-[var(--faint)]">{shortcut}</kbd> : null}

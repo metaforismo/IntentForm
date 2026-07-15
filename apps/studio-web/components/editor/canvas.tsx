@@ -7,7 +7,9 @@ import {
   Copy,
   Eye,
   Lock,
+  PaintBrush,
   PencilSimple,
+  Scissors,
   Trash,
   Warning,
 } from "@phosphor-icons/react";
@@ -81,6 +83,11 @@ interface CanvasStageProps {
   onGroupSelection(): void;
   onDuplicateSelection(): void;
   onDeleteSelection(): void;
+  onCopySelection(): void;
+  onCutSelection(): void;
+  onPaste(mode: "after" | "in-place" | "replace"): void;
+  onCopyStyles(): void;
+  onPasteStyles(): void;
   onMoveSelection(direction: -1 | 1): void;
   onNodeCommand(command: NodeCommand, nodeId: string, screenId: string): void;
   onRenameNode(nodeId: string, screenId: string, label: string): void;
@@ -118,6 +125,11 @@ export function CanvasStage({
   onGroupSelection,
   onDuplicateSelection,
   onDeleteSelection,
+  onCopySelection,
+  onCutSelection,
+  onPaste,
+  onCopyStyles,
+  onPasteStyles,
   onMoveSelection,
   onNodeCommand,
   onRenameNode,
@@ -133,9 +145,11 @@ export function CanvasStage({
   const contextMenuReturnFocus = useRef<HTMLElement | null>(null);
   const renameReturnFocus = useRef<HTMLElement | null>(null);
   const renameWasOpen = useRef(false);
+  const renameComposing = useRef(false);
+  const renameBlurredDuringComposition = useRef(false);
   const visibilityFrame = useRef<number | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string; screenId: string } | null>(null);
-  const [rename, setRename] = useState<{ nodeId: string; screenId: string; x: number; y: number; width: number; value: string } | null>(null);
+  const [rename, setRename] = useState<{ nodeId: string; screenId: string; x: number; y: number; width: number; height: number; value: string; multiline: boolean } | null>(null);
 
   const frameSpatialIndex = useMemo(
     () => createHorizontalFrameIndex(graph.screens.map((screen) => screen.id), profile.width, FRAME_GAP),
@@ -359,11 +373,35 @@ export function CanvasStage({
       nodeId: node.id,
       screenId,
       x: nodeRect.left - viewportRect.left,
-      y: nodeRect.bottom - viewportRect.top + 8,
-      width: Math.max(220, Math.min(360, nodeRect.width)),
+      y: nodeRect.top - viewportRect.top,
+      width: Math.max(80, nodeRect.width),
+      height: Math.max(36, nodeRect.height),
       value: node.intent.label ?? "",
+      multiline: node.kind === "text" || node.intent.label?.includes("\n") === true,
     });
+    renameComposing.current = false;
+    renameBlurredDuringComposition.current = false;
   }, []);
+
+  useEffect(() => {
+    if (rename || previewMode || selectedNodeIds.length !== 1) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target;
+      if (target instanceof HTMLInputElement
+        || target instanceof HTMLTextAreaElement
+        || target instanceof HTMLSelectElement
+        || target instanceof HTMLButtonElement
+        || target instanceof HTMLAnchorElement
+        || (target instanceof HTMLElement && target.isContentEditable)) return;
+      const node = findSemanticNode(graph.screens.find((item) => item.id === selectedScreen)?.nodes ?? [], selectedNodeIds[0]!);
+      if (!node?.intent.label) return;
+      event.preventDefault();
+      startRename(node, selectedScreen);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [graph.screens, previewMode, rename, selectedNodeIds, selectedScreen, startRename]);
 
   const openContextMenu = (
     element: HTMLElement,
@@ -385,9 +423,9 @@ export function CanvasStage({
     });
   };
 
-  const commitRename = () => {
+  const commitRename = (source = rename?.value ?? "") => {
     if (!rename) return;
-    const value = rename.value.trim();
+    const value = source.trim();
     setRename(null);
     if (value) onRenameNode(rename.nodeId, rename.screenId, value);
   };
@@ -620,7 +658,13 @@ export function CanvasStage({
                         }}
                         onDoubleClick={(event) => {
                           event.stopPropagation();
-                          if (!previewMode && node.intent.label !== undefined) startRename(node, screen.id);
+                          if (previewMode) return;
+                          const layer = event.target instanceof Element
+                            ? event.target.closest<HTMLElement>('[data-testid^="canvas-node-"]')
+                            : null;
+                          const nestedId = layer?.dataset.testid?.slice("canvas-node-".length);
+                          const target = nestedId ? findSemanticNode(screen.nodes, nestedId) ?? node : node;
+                          if (target.intent.label !== undefined) startRename(target, screen.id);
                         }}
                         onContextMenu={(event) => {
                           if (previewMode) return;
@@ -701,13 +745,17 @@ export function CanvasStage({
           screenId={selectedScreen}
           selectedNodeIds={selectedNodeIds}
           worldRef={worldRef}
-          enabled={!previewMode && tool === "select"}
+          enabled={!previewMode && tool === "select" && !rename}
           breakpoint={profile.breakpoint}
           getScale={() => viewRef.current.scale}
           onReorder={onReorderSelection}
           onMoveFreeform={onMoveFreeform}
           onResize={onResizeNode}
           onAnchor={onAnchor}
+          onEditNode={(nodeId) => {
+            const node = findSemanticNode(graph.screens.find((item) => item.id === selectedScreen)?.nodes ?? [], nodeId);
+            if (node?.intent.label !== undefined) startRename(node, selectedScreen);
+          }}
           onOpenContextMenu={(clientPosition) => {
             const nodeId = selectedNodeId ?? selectedNodeIds.at(-1);
             const escaped = nodeId && typeof CSS !== "undefined" && CSS.escape ? CSS.escape(nodeId) : nodeId;
@@ -718,18 +766,34 @@ export function CanvasStage({
       </div>
 
       {rename ? (
-        <div className="absolute z-20" style={{ left: rename.x, top: rename.y, width: rename.width }}>
-          <input
+        <div className="absolute z-20" style={{ left: rename.x, top: rename.y, width: rename.width, minHeight: rename.height }}>
+          <textarea
             autoFocus
-            aria-label="Rename layer label"
+            aria-label="Edit layer text"
+            dir="auto"
             value={rename.value}
             onChange={(event) => setRename((current) => current ? { ...current, value: event.target.value } : current)}
-            onBlur={commitRename}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") commitRename();
-              if (event.key === "Escape") setRename(null);
+            onFocus={(event) => event.currentTarget.setSelectionRange(event.currentTarget.value.length, event.currentTarget.value.length)}
+            onCompositionStart={() => { renameComposing.current = true; }}
+            onCompositionEnd={(event) => {
+              renameComposing.current = false;
+              if (renameBlurredDuringComposition.current) commitRename(event.currentTarget.value);
             }}
-            className="floating-chrome w-full rounded-lg px-3 py-2 text-[12px] text-[var(--ink)] outline-none"
+            onBlur={() => {
+              if (renameComposing.current) renameBlurredDuringComposition.current = true;
+              else commitRename();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                setRename(null);
+              } else if (event.key === "Enter" && !renameComposing.current && (!rename.multiline || event.metaKey || event.ctrlKey)) {
+                event.preventDefault();
+                commitRename();
+              }
+            }}
+            className="floating-chrome min-h-full w-full resize-none rounded-[4px] border border-[var(--select)] px-2 py-1.5 text-[13px] leading-relaxed text-[var(--ink)] outline-none ring-2 ring-[var(--select)]/20"
           />
         </div>
       ) : null}
@@ -739,8 +803,8 @@ export function CanvasStage({
           ref={contextMenuRef}
           role="menu"
           aria-label="Layer actions"
-          className="menu-pop absolute z-20 w-64 p-1.5"
-          style={{ left: Math.min(contextMenu.x, (viewportRef.current?.clientWidth ?? 600) - 220), top: Math.min(contextMenu.y, (viewportRef.current?.clientHeight ?? 500) - 240) }}
+          className="menu-pop absolute z-20 max-h-[min(520px,calc(100%-16px))] w-[248px] overflow-y-auto p-1"
+          style={{ left: Math.min(contextMenu.x, (viewportRef.current?.clientWidth ?? 600) - 256), top: Math.max(8, Math.min(contextMenu.y, (viewportRef.current?.clientHeight ?? 500) - 420)) }}
           onPointerDown={(event) => event.stopPropagation()}
           onKeyDown={(event) => {
             const items = [...event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]')];
@@ -759,12 +823,19 @@ export function CanvasStage({
           }}
         >
           {([
-            { label: "Rename label", icon: PencilSimple, run: () => {
+            { label: "Edit text", icon: PencilSimple, run: () => {
               const screen = graph.screens.find((item) => item.id === contextMenu.screenId);
               const node = screen ? findSemanticNode(screen.nodes, contextMenu.nodeId) : undefined;
               if (node && screen) startRename(node, screen.id);
             } },
+            { label: "Cut", icon: Scissors, shortcut: "⌘X", run: onCutSelection },
+            { label: "Copy", icon: Copy, shortcut: "⌘C", run: onCopySelection },
+            { label: "Paste", icon: Copy, shortcut: "⌘V", run: () => onPaste("after") },
+            { label: "Paste in place", icon: Copy, shortcut: "⇧⌘V", run: () => onPaste("in-place") },
+            { label: "Paste to replace", icon: Copy, shortcut: "⇧⌘R", run: () => onPaste("replace") },
             { label: selectedNodeIds.length > 1 ? "Duplicate selection" : "Duplicate", icon: Copy, shortcut: "⌘D", run: () => selectedNodeIds.length > 1 && selectedNodeIds.includes(contextMenu.nodeId) ? onDuplicateSelection() : onNodeCommand("duplicate", contextMenu.nodeId, contextMenu.screenId) },
+            { label: "Copy styles", icon: PaintBrush, shortcut: "⌥⌘C", run: onCopyStyles },
+            { label: "Paste styles", icon: PaintBrush, shortcut: "⌥⌘V", run: onPasteStyles },
             { label: "Move up", icon: ArrowUp, shortcut: "⌥↑", run: () => selectedNodeIds.length > 1 && selectedNodeIds.includes(contextMenu.nodeId) ? onMoveSelection(-1) : onNodeCommand("move-up", contextMenu.nodeId, contextMenu.screenId) },
             { label: "Move down", icon: ArrowDown, shortcut: "⌥↓", run: () => selectedNodeIds.length > 1 && selectedNodeIds.includes(contextMenu.nodeId) ? onMoveSelection(1) : onNodeCommand("move-down", contextMenu.nodeId, contextMenu.screenId) },
             { label: findSemanticNode(graph.screens.find((item) => item.id === contextMenu.screenId)?.nodes ?? [], contextMenu.nodeId)?.editor?.hidden ? "Show" : "Hide", icon: Eye, shortcut: "⇧⌘H", run: () => onNodeCommand("toggle-hidden", contextMenu.nodeId, contextMenu.screenId) },
