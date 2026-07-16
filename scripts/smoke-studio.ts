@@ -312,7 +312,7 @@ try {
       await page.waitForURL(`${origin}/`);
       await page.getByRole("button", { name: /Verdant Pay/ }).waitFor();
 
-      await page.getByRole("button", { name: "New file" }).click();
+      await page.locator("header").getByRole("button", { name: "New project" }).click();
       await page.getByRole("heading", { name: "New project" }).waitFor();
       await page.getByLabel("Project name").fill("Northline Field Notes");
       await page.getByLabel("Primary audience").fill("Distributed research teams");
@@ -411,6 +411,10 @@ try {
       await page.getByRole("dialog", { name: "Agent review" }).getByRole("button", { name: "Reject" }).click();
       await page.getByText("No transaction is waiting for review.", { exact: false }).waitFor();
       await page.getByRole("button", { name: "Close agent review" }).click();
+      const agentTrigger = page.getByRole("button", { name: "Ask agent" });
+      if (await agentTrigger.evaluate((element) => document.activeElement === element) !== true) {
+        throw new Error("Closing agent review did not return focus to Ask agent");
+      }
       await page.getByRole("button", { name: "Native outputs" }).click();
       await page.getByRole("button", { name: "History", exact: true }).click();
       const historyPanel = page.getByRole("region", { name: "History & branches" });
@@ -490,7 +494,7 @@ try {
     name: "Expo Adaptive project compiler",
     run: async (page) => {
       await gotoStudio(page, origin, "/");
-      await page.getByRole("button", { name: "New file" }).click();
+      await page.locator("header").getByRole("button", { name: "New project" }).click();
       await page.getByLabel("Project name").fill("Trail Ledger");
       await page.getByLabel("Primary audience").fill("Field operations teams");
       await page.getByLabel("First outcome").fill("Record a verified field observation");
@@ -544,7 +548,7 @@ try {
       && message.text().includes("allow-scripts"),
     run: async (page) => {
       await gotoStudio(page, origin, "/");
-      await page.getByRole("button", { name: "New file" }).click();
+      await page.locator("header").getByRole("button", { name: "New project" }).click();
       const responsiveWebType = page.getByRole("radio", { name: /Responsive web/ });
       await page.getByText("Responsive web", { exact: true }).first().click();
       if (!await responsiveWebType.isChecked()) throw new Error("Responsive-web project type could not be selected");
@@ -1333,7 +1337,7 @@ try {
     run: async (componentPage) => {
       await gotoStudio(componentPage, origin);
       await componentPage.getByRole("button", { name: "Layout lab 20", exact: true }).click();
-      await componentPage.getByRole("tab", { name: "Library", exact: true }).click();
+      await componentPage.getByRole("tab", { name: "Components", exact: true }).click();
       const library = componentPage.getByTestId("component-library-panel");
       await library.getByText("Local components", { exact: true }).waitFor();
       await library.getByRole("button", { name: "Insert Primary action" }).click();
@@ -1370,7 +1374,7 @@ try {
 
       await componentPage.getByRole("tab", { name: "Layers", exact: true }).click();
       await componentPage.getByTestId("layer-layout-lab.grid-a").click();
-      await componentPage.getByRole("tab", { name: "Library", exact: true }).click();
+      await componentPage.getByRole("tab", { name: "Components", exact: true }).click();
       await library.getByRole("button", { name: "Create", exact: true }).click();
       await library.getByText("Grid A", { exact: true }).waitFor();
       await inspector.getByText("local.grid-a · v1.0.0", { exact: true }).waitFor();

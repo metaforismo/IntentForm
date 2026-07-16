@@ -171,6 +171,7 @@ export function Studio() {
   const resetDialog = useRef<HTMLElement>(null);
   const resetReturnFocus = useRef<HTMLElement | null>(null);
   const resetShouldRestoreFocus = useRef(false);
+  const themeTrigger = useRef<HTMLButtonElement>(null);
   const agentTrigger = useRef<HTMLButtonElement>(null);
   const agentCloseButton = useRef<HTMLButtonElement>(null);
 
@@ -845,7 +846,7 @@ export function Studio() {
   return (
     <main className="studio-grain h-[100dvh] overflow-hidden text-[var(--ink)]">
       <a className="skip-link" href="#studio-workspace">Skip to workspace</a>
-      <div className="grid h-full min-h-0 grid-rows-[36px_40px_minmax(0,1fr)] bg-[var(--if-panel)]">
+      <div className="grid h-full min-h-0 grid-rows-[34px_38px_minmax(0,1fr)] bg-[var(--if-panel)]">
         <div className="relative z-[6] flex min-w-0 items-end border-b border-[var(--line)] bg-[var(--app-bg,var(--canvas))] px-2 pt-1">
           <div role="tablist" aria-label="Open project documents" className="flex min-w-0 items-end gap-px overflow-x-auto [scrollbar-width:none]">
           {openTabs.map((tab) => {
@@ -863,21 +864,21 @@ export function Studio() {
                 }}
                 onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setActiveTab(tab); setStage(tab === "output" ? "outputs" : "canvas"); } }}
                 onAuxClick={(event) => { if (event.button === 1) closeTab(tab); }}
-                className={`group flex h-9 min-w-0 max-w-56 items-center gap-2 rounded-t-[7px] border border-b-0 px-3 text-[11px] ${active ? "border-[var(--line)] bg-[var(--surface)] text-[var(--ink)]" : "border-transparent text-[var(--t-strong)] hover:bg-[var(--hover)]"}`}
+                className={`group flex h-[33px] min-w-0 max-w-56 items-center gap-1.5 rounded-t-[6px] border border-b-0 px-2.5 text-[10.5px] leading-[15px] ${active ? "border-[var(--line)] bg-[var(--surface)] font-medium text-[var(--ink)]" : "border-transparent font-normal text-[var(--faint)] hover:bg-[var(--hover)] hover:text-[var(--muted)]"}`}
               >
                 <BracketsCurly size={13} className="shrink-0 text-[var(--accent)]" />
                 <span className="truncate">{label}</span>
                 {tab === "design" && localChangesAreUnsaved ? <span className="size-1.5 shrink-0 rounded-full bg-[var(--warning,#e4ad5a)]" aria-label="Unsaved local changes" /> : null}
-                {tab === "design" && activity.length > 0 ? <span className="size-1.5 shrink-0 rounded-full bg-[var(--success,#55c58b)]" aria-label="Agent activity" /> : null}
+                {tab === "design" && agentDrawerOpen ? <span className="size-1.5 shrink-0 rounded-full bg-[var(--success,#55c58b)]" aria-label="Agent operation active" /> : null}
                 <span data-close-tab aria-hidden="true" className="grid size-5 shrink-0 place-items-center rounded opacity-0 hover:bg-[var(--control-hover,var(--hover))] group-hover:opacity-100 group-focus-visible:opacity-100"><X size={11} /></span>
               </div>
             );
           })}
           </div>
-          <button type="button" aria-label="Open another document" onClick={() => { const tab = openTabs.includes("output") ? "design" : "output"; setOpenTabs((tabs) => tabs.includes(tab) ? tabs : [...tabs, tab]); setActiveTab(tab); }} className="mb-1 grid size-7 shrink-0 place-items-center rounded-[7px] text-[var(--muted)] hover:bg-[var(--hover)]"><Plus size={13} /></button>
+          <button type="button" aria-label="Open another document" onClick={() => { const tab = openTabs.includes("output") ? "design" : "output"; setOpenTabs((tabs) => tabs.includes(tab) ? tabs : [...tabs, tab]); setActiveTab(tab); }} className="mb-0.5 grid size-7 shrink-0 place-items-center rounded-[5px] text-[var(--muted)] hover:bg-[var(--hover)]"><Plus size={13} /></button>
         </div>
-        <header className="studio-topbar relative z-[5] grid h-10 grid-cols-[auto_minmax(0,1fr)_auto] items-center overflow-visible border-b border-[var(--if-border-subtle)] px-2">
-          <div className="flex min-w-0 items-center gap-2.5">
+        <header className="studio-topbar relative z-[5] grid h-[38px] grid-cols-[auto_minmax(0,1fr)_auto] items-center overflow-visible border-b border-[var(--if-border-subtle)] px-2">
+          <div className="flex min-w-0 items-center gap-2">
             <div className="relative">
               <button
                 ref={projectMenuTrigger}
@@ -885,9 +886,9 @@ export function Studio() {
                 aria-label="IntentForm project menu"
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen((open) => !open)}
-                className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-[var(--accent-deep)] text-white shadow-[inset_0_1px_0_var(--float-inset)] transition-transform active:scale-[.96]"
+                className="grid size-7 shrink-0 place-items-center rounded-[6px] bg-[var(--accent-deep)] text-white transition-transform active:scale-[.96]"
               >
-                <BracketsCurly size={16} weight="bold" />
+                <BracketsCurly size={14} weight="bold" />
               </button>
               {menuOpen ? (
                 <>
@@ -919,18 +920,18 @@ export function Studio() {
               ) : null}
             </div>
             <div className="hidden min-w-0 sm:block">
-              <div className="flex items-center gap-1 text-[13px] font-semibold tracking-[-.01em]">
+              <div className="flex items-center gap-1 text-[12.5px] font-medium leading-[17px] tracking-[-.01em]">
                 <span className="truncate">{graph.product.name}</span><CaretDown size={10} className="text-[var(--muted)]" />
               </div>
-              <span className="block truncate font-mono text-[10px] text-[var(--muted)]">{graph.product.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.intentform</span>
+              <span className="block truncate font-mono text-[9.5px] leading-[13px] text-[var(--faint)]">{graph.product.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.intentform</span>
             </div>
             <div className="flex items-center gap-1 text-[9px] font-semibold text-[var(--muted)] sm:hidden" aria-label={mode === "live" ? `Live model: ${model}` : `Deterministic replay: ${model}`}>
-              <span className={`size-1.5 rounded-full ${mode === "live" ? "bg-[var(--accent)]" : "bg-amber-500"}`} aria-hidden="true" />
+              <span className={`size-1.5 rounded-full ${mode === "live" ? "bg-[var(--success)]" : "bg-[var(--warn)]"}`} aria-hidden="true" />
               {mode === "live" ? "Live" : "Replay"}
             </div>
           </div>
 
-          <nav aria-label="Workspace" className="mx-auto flex max-w-[260px] min-w-0 items-center overflow-x-auto rounded-md border border-[var(--if-border)] bg-[var(--if-panel-alt)] p-0.5 [scrollbar-width:none]">
+          <nav aria-label="Workspace" className="mx-auto flex h-[26px] w-[204px] min-w-0 items-center overflow-x-auto rounded-[5px] bg-[var(--if-panel-alt)] p-px [scrollbar-width:none]">
             {primaryStages.map((item) => {
               const Icon = item.icon;
               const active = stage === item.id;
@@ -942,12 +943,12 @@ export function Studio() {
                   aria-label={item.label}
                   aria-current={active ? "page" : undefined}
                   onClick={() => setStage(item.id)}
-                  className={`group relative flex h-7 min-w-[72px] items-center justify-center gap-1.5 rounded-[4px] px-2 text-[11px] font-medium ${active ? "bg-[var(--if-raised)] text-[var(--if-text)]" : "text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)] hover:text-[var(--if-text)]"}`}
+                  className={`group relative flex h-6 min-w-[66px] flex-1 items-center justify-center gap-1 rounded-[4px] px-1.5 text-[10.5px] font-medium leading-[15px] ${active ? "bg-[var(--if-raised)] text-[var(--if-text)] shadow-[0_1px_2px_rgb(0_0_0/10%)]" : "text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)] hover:text-[var(--if-text)]"}`}
                 >
-                  <Icon size={14} weight={active ? "fill" : "regular"} />
+                  <Icon size={12} weight={active ? "fill" : "regular"} />
                   <span>{item.shortLabel}</span>
                   {item.id === "verify" && errorCount > 0 ? (
-                    <span className="absolute -right-0.5 -top-0.5 grid size-3.5 place-items-center rounded-full bg-[var(--danger)] font-mono text-[10px] font-bold text-white">{errorCount}</span>
+                    <span className="absolute -right-0.5 -top-0.5 grid size-3 place-items-center rounded-full bg-[var(--danger)] font-mono text-[8px] font-medium text-white">{errorCount}</span>
                   ) : null}
                 </button>
               );
@@ -956,17 +957,17 @@ export function Studio() {
 
           <div className="flex items-center justify-end gap-1">
             <button
-              ref={agentTrigger}
+              ref={themeTrigger}
               type="button"
               aria-label="Toggle color theme"
               aria-pressed={theme === "dark"}
               onClick={toggleTheme}
-              className="hidden size-8 place-items-center rounded-lg text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)] sm:grid"
+              className="hidden size-7 place-items-center rounded-[5px] text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)] sm:grid"
             >
               {theme === "dark" ? <Sun size={14} weight="fill" /> : <Moon size={14} />}
             </button>
             <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
-              <button ref={noticeTrigger} type="button" aria-label="Show workspace status" aria-expanded={noticeOpen} onClick={() => setNoticeOpen((open) => !open)} className="grid size-8 place-items-center rounded-lg text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]">
+              <button ref={noticeTrigger} type="button" aria-label="Show workspace status" aria-expanded={noticeOpen} onClick={() => setNoticeOpen((open) => !open)} className="grid size-7 place-items-center rounded-[5px] text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]">
                 {noticeIsError ? <Warning size={14} weight="fill" className="text-[var(--danger)]" /> : <CheckCircle size={14} weight="fill" className="text-[var(--accent)]" />}
               </button>
               {noticeOpen ? (
@@ -990,15 +991,16 @@ export function Studio() {
             <button
               type="button"
               onClick={() => setStage("outputs")}
-              className="hidden h-8 items-center gap-1.5 rounded-md border border-[var(--if-border)] bg-[var(--if-raised)] px-3 text-[11px] font-medium hover:bg-[var(--if-hover)] sm:inline-flex"
+              className="hidden h-7 items-center gap-1.5 rounded-[5px] border border-[var(--if-border)] bg-[var(--if-raised)] px-2.5 text-[10.5px] font-medium hover:bg-[var(--if-hover)] sm:inline-flex"
             >
               <Code size={13} /> Build
             </button>
             <button
+              ref={agentTrigger}
               type="button"
               aria-expanded={agentDrawerOpen}
               onClick={() => setAgentDrawerOpen(true)}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--if-blue-action)] px-3 text-[11px] font-semibold text-white hover:bg-[var(--if-blue-action-hover)] disabled:cursor-wait disabled:opacity-70"
+              className="inline-flex h-7 items-center gap-1.5 rounded-[5px] bg-[var(--if-blue-action)] px-2.5 text-[10.5px] font-medium text-white hover:bg-[var(--if-blue-action-hover)] disabled:cursor-wait disabled:opacity-70"
             >
               <Lightning size={14} weight="fill" />
               <span className="hidden sm:inline">Ask agent</span>
@@ -1013,13 +1015,13 @@ export function Studio() {
           ) : null}
           {requestFailure ? (
             <div className="pointer-events-none absolute inset-x-0 top-3 z-[8] flex justify-center px-3">
-              <div role="alert" className="pointer-events-auto flex max-w-2xl items-center gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-950 shadow-lg">
-                <Warning size={16} weight="fill" className="shrink-0 text-red-600" />
+              <div role="alert" className="pointer-events-auto flex max-w-2xl items-center gap-3 rounded-[8px] border border-[var(--danger)]/35 bg-[var(--danger-soft)] px-3 py-2 text-[11px] text-[var(--ink)] shadow-[var(--if-shadow-menu)]">
+                <Warning size={15} weight="fill" className="shrink-0 text-[var(--danger)]" />
                 <span className="min-w-0 flex-1 leading-relaxed">{requestFailure.message}</span>
-                <button type="button" onClick={() => retryRequest.current?.()} disabled={isPending} className="shrink-0 rounded-lg bg-red-900 px-3 py-2 font-semibold text-white disabled:opacity-50">
+                <button type="button" onClick={() => retryRequest.current?.()} disabled={isPending} className="h-7 shrink-0 rounded-[5px] bg-[var(--danger)] px-2.5 font-medium text-white disabled:opacity-50">
                   {requestFailure.retryLabel}
                 </button>
-                <button type="button" aria-label="Dismiss request error" onClick={() => setRequestFailure(null)} className="shrink-0 rounded-lg px-2 py-2 font-semibold text-red-800 hover:bg-red-100">
+                <button type="button" aria-label="Dismiss request error" onClick={() => setRequestFailure(null)} className="h-7 shrink-0 rounded-[5px] px-2 font-medium text-[var(--danger)] hover:bg-[var(--hover)]">
                   Dismiss
                 </button>
               </div>
@@ -1157,15 +1159,15 @@ export function Studio() {
         </div>
       ) : null}
       {resetConfirmOpen ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/35 p-4 backdrop-blur-[2px]" onPointerDown={(event) => { if (event.target === event.currentTarget) cancelProjectReset(); }}>
-          <section ref={resetDialog} role="alertdialog" aria-modal="true" aria-labelledby="reset-project-title" aria-describedby="reset-project-description" className="menu-pop w-full max-w-md p-5 shadow-2xl">
-            <span className="grid size-10 place-items-center rounded-xl bg-red-100 text-red-700"><ArrowsCounterClockwise size={18} weight="bold" /></span>
-            <h2 id="reset-project-title" className="mt-4 text-lg font-semibold tracking-[-.03em]">Reset this workspace?</h2>
+        <div className="fixed inset-0 z-50 grid place-items-center bg-[var(--backdrop)] p-4" onPointerDown={(event) => { if (event.target === event.currentTarget) cancelProjectReset(); }}>
+          <section ref={resetDialog} role="alertdialog" aria-modal="true" aria-labelledby="reset-project-title" aria-describedby="reset-project-description" className="menu-pop w-full max-w-md rounded-[10px] p-4">
+            <span className="grid size-8 place-items-center rounded-[6px] bg-[var(--danger-soft)] text-[var(--danger)]"><ArrowsCounterClockwise size={16} weight="bold" /></span>
+            <h2 id="reset-project-title" className="mt-3 text-[15px] font-[550] leading-[21px] tracking-[-.02em]">Reset this workspace?</h2>
             <p id="reset-project-description" className="mt-2 text-[12px] leading-relaxed text-[var(--muted)]">This replaces the current semantic graph with the verified sample and removes its browser recovery. Export first if you need to keep this version.</p>
-            {localChangesAreUnsaved ? <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-950">This local project also has changes that have not been saved to disk.</p> : null}
-            <div className="mt-5 flex justify-end gap-2">
-              <button ref={resetCancelButton} type="button" onClick={cancelProjectReset} className="min-h-10 rounded-xl border border-[var(--line)] px-4 text-[12px] font-semibold hover:bg-[var(--hover)]">Cancel</button>
-              <button type="button" onClick={confirmProjectReset} className="min-h-10 rounded-xl bg-red-700 px-4 text-[12px] font-semibold text-white hover:bg-red-800">Reset workspace</button>
+            {localChangesAreUnsaved ? <p className="mt-3 rounded-[6px] bg-[var(--warn-soft)] px-3 py-2 text-[11px] font-medium text-[var(--warn)]">This local project also has changes that have not been saved to disk.</p> : null}
+            <div className="mt-4 flex justify-end gap-2">
+              <button ref={resetCancelButton} type="button" onClick={cancelProjectReset} className="h-8 rounded-[6px] border border-[var(--line)] px-3 text-[11px] font-medium hover:bg-[var(--hover)]">Cancel</button>
+              <button type="button" onClick={confirmProjectReset} className="h-8 rounded-[6px] bg-[var(--danger)] px-3 text-[11px] font-medium text-white hover:brightness-95">Reset workspace</button>
             </div>
           </section>
         </div>

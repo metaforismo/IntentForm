@@ -3,7 +3,6 @@
 import {
   ArrowDown,
   ArrowUp,
-  CheckCircle,
   Copy,
   Eye,
   Lock,
@@ -553,25 +552,21 @@ export function CanvasStage({
                   title="Double-click to zoom to this screen"
                   onClick={() => { onSelectScreen(screen.id); onSelectNode(screen.nodes[0]?.id ?? null); }}
                   onDoubleClick={() => fitScreen(screen.id, true)}
-                  className={`flex min-w-0 items-baseline gap-2 rounded-md px-1.5 py-1 text-left text-[12px] font-semibold tracking-[-.01em] ${isSelectedScreen ? "text-[var(--accent-dark)]" : "text-[var(--muted)] hover:text-[var(--ink)]"}`}
+                  className={`flex min-w-0 items-baseline gap-2 rounded-[5px] px-1.5 py-1 text-left text-[11.5px] font-medium tracking-[-.01em] ${isSelectedScreen ? "text-[var(--accent-dark)]" : "text-[var(--muted)] hover:text-[var(--ink)]"}`}
                 >
                   <span className="min-w-0 truncate">{screen.title}</span>
                   {isSelectedScreen && !headerCompact ? <span className="shrink-0 font-mono text-[10px] font-normal text-[var(--faint)]">{screen.route}</span> : null}
                   {state !== "idle" && !headerCompact ? <span className="shrink-0 rounded-full bg-[var(--chip)] px-1.5 py-0.5 font-mono text-[10px] font-medium capitalize text-[var(--muted)]">{state}</span> : null}
                 </button>
                 {status.errors > 0 ? (
-                  <button type="button" onClick={onOpenVerify} className="flex shrink-0 items-center gap-1 rounded-full bg-[var(--danger-soft)] px-2 py-1 text-[10px] font-semibold text-[var(--danger)] hover:brightness-95">
+                  <button type="button" onClick={onOpenVerify} className="flex h-6 shrink-0 items-center gap-1 rounded-[5px] bg-[var(--danger-soft)] px-1.5 text-[10px] font-medium text-[var(--danger)] hover:brightness-95">
                     <Warning size={11} weight="fill" /> {status.errors} {status.errors === 1 ? "issue" : "issues"}
                   </button>
                 ) : status.warnings > 0 ? (
-                  <button type="button" onClick={onOpenVerify} className="flex shrink-0 items-center gap-1 rounded-full bg-[var(--warn-soft)] px-2 py-1 text-[10px] font-semibold text-[var(--warn)] hover:brightness-95">
+                  <button type="button" onClick={onOpenVerify} className="flex h-6 shrink-0 items-center gap-1 rounded-[5px] bg-[var(--warn-soft)] px-1.5 text-[10px] font-medium text-[var(--warn)] hover:brightness-95">
                     <Warning size={11} weight="fill" /> {status.warnings}
                   </button>
-                ) : (
-                  <span className="flex shrink-0 items-center gap-1 rounded-full bg-[var(--accent-soft)] px-2 py-1 text-[10px] font-semibold text-[var(--accent-dark)]">
-                    <CheckCircle size={11} weight="fill" /> Pass
-                  </span>
-                )}
+                ) : null}
               </div>
 
               <div
@@ -803,7 +798,7 @@ export function CanvasStage({
           ref={contextMenuRef}
           role="menu"
           aria-label="Layer actions"
-          className="menu-pop absolute z-20 max-h-[min(520px,calc(100%-16px))] w-[248px] overflow-y-auto p-1"
+          className="menu-pop absolute z-20 max-h-[min(460px,calc(100%-16px))] w-[240px] overflow-y-auto p-1"
           style={{ left: Math.min(contextMenu.x, (viewportRef.current?.clientWidth ?? 600) - 256), top: Math.max(8, Math.min(contextMenu.y, (viewportRef.current?.clientHeight ?? 500) - 420)) }}
           onPointerDown={(event) => event.stopPropagation()}
           onKeyDown={(event) => {
@@ -849,9 +844,9 @@ export function CanvasStage({
                 type="button"
                 role="menuitem"
                 onClick={() => { item.run(); setContextMenu(null); }}
-                className={`flex min-h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[11px] ${"danger" in item && item.danger ? "text-[var(--danger)] hover:bg-[var(--danger-soft)]" : "text-[var(--t-strong)] hover:bg-[var(--hover)]"}`}
+                className={`flex h-7 w-full items-center gap-2 rounded-[4px] px-2 text-left text-[11.5px] font-normal leading-4 ${"danger" in item && item.danger ? "text-[var(--danger)] hover:bg-[var(--danger-soft)]" : "text-[var(--t-strong)] hover:bg-[var(--hover)]"}`}
               >
-                <Icon size={13} />
+                <Icon size={12} className="text-[var(--muted)]" />
                 <span className="flex-1">{item.label}</span>
                 {"shortcut" in item && item.shortcut ? <kbd className="font-mono text-[9px] text-[var(--faint)]">{item.shortcut}</kbd> : null}
               </button>
