@@ -5,6 +5,7 @@ import {
   ArrowUp,
   Copy,
   CaretDown,
+  CaretDoubleUp,
   CaretRight,
   DownloadSimple,
   DotsSixVertical,
@@ -336,6 +337,8 @@ export function LayersPanel({
   }, [graph.screens]);
 
   const allNodes = useMemo(() => flattenSemanticNodes(screen.nodes), [screen.nodes]);
+  const containerIds = useMemo(() => allNodes.filter(isContainerNode).map((node) => node.id), [allNodes]);
+  const allLayersCollapsed = containerIds.length > 0 && containerIds.every((id) => collapsedIds.has(id));
   const nodesById = useMemo(() => new Map(allNodes.map((node) => [node.id, node])), [allNodes]);
   const nodeIndex = useMemo(() => buildNodeIndex(screen.nodes), [screen.nodes]);
   const query = layerQuery.trim().toLowerCase();
@@ -707,7 +710,14 @@ export function LayersPanel({
           </div>
 
           <div className="px-2 pb-1 pt-1.5">
-            <PanelHeading label="Layers" />
+            <PanelHeading label="Layers" action={
+              <IconButton
+                ariaLabel={allLayersCollapsed ? "Expand all layers" : "Collapse all layers"}
+                title={allLayersCollapsed ? "Expand all" : "Collapse all"}
+                onClick={() => setCollapsedIds(allLayersCollapsed ? new Set() : new Set(containerIds))}
+                size={7}
+              ><CaretDoubleUp size={12} className={allLayersCollapsed ? "rotate-180" : ""} /></IconButton>
+            } />
             <label className="mt-0.5 flex h-7 items-center gap-2 rounded-[5px] border border-[var(--line)] bg-[var(--field)] px-2 text-[var(--muted)] transition-colors focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_2px_color-mix(in_oklab,var(--accent)_12%,transparent)] hover:border-[var(--line-strong)]">
               <MagnifyingGlass size={13} aria-hidden="true" className="shrink-0" />
               <span className="sr-only">Search layers</span>

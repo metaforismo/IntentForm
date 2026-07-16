@@ -35,6 +35,22 @@ export interface FreeformMoveCandidate {
   snappedY: boolean;
 }
 
+export type SelectionAlignment =
+  | "left"
+  | "horizontal-center"
+  | "right"
+  | "top"
+  | "vertical-center"
+  | "bottom"
+  | "distribute-horizontal"
+  | "distribute-vertical";
+
+export interface AlignmentItem extends Point {
+  id: string;
+  width: number;
+  height: number;
+}
+
 export interface ResizeCandidate {
   width: number;
   height: number;
@@ -196,6 +212,51 @@ export function resolveFreeformMove(
     snappedX: x.guide,
     snappedY: y.guide,
   };
+}
+
+/** Resolves freeform multi-selection alignment from measured canvas geometry.
+ * Outer items stay fixed during distribution; intermediate gaps are exact even
+ * when the selected layers have different sizes or signed coordinates. */
+export function resolveSelectionAlignment(
+  items: readonly AlignmentItem[],
+  action: SelectionAlignment,
+): Record<string, Point> {
+  const positions = Object.fromEntries(items.map((item) => [item.id, { x: item.x, y: item.y }]));
+  if (items.length < 2) return positions;
+  const left = Math.min(...items.map((item) => item.x));
+  const right = Math.max(...items.map((item) => item.x + item.width));
+  const top = Math.min(...items.map((item) => item.y));
+  const bottom = Math.max(...items.map((item) => item.y + item.height));
+
+  if (action === "distribute-horizontal" || action === "distribute-vertical") {
+    if (items.length < 3) return positions;
+    const horizontal = action === "distribute-horizontal";
+    const ordered = [...items].sort((a, b) => horizontal
+      ? a.x - b.x || a.id.localeCompare(b.id)
+      : a.y - b.y || a.id.localeCompare(b.id));
+    const totalSize = ordered.reduce((sum, item) => sum + (horizontal ? item.width : item.height), 0);
+    const span = horizontal ? right - left : bottom - top;
+    const gap = (span - totalSize) / (ordered.length - 1);
+    let cursor = horizontal ? left : top;
+    for (const item of ordered) {
+      positions[item.id] = horizontal
+        ? { x: cursor, y: item.y }
+        : { x: item.x, y: cursor };
+      cursor += (horizontal ? item.width : item.height) + gap;
+    }
+    return positions;
+  }
+
+  for (const item of items) {
+    const current = positions[item.id]!;
+    if (action === "left") current.x = left;
+    else if (action === "horizontal-center") current.x = left + (right - left - item.width) / 2;
+    else if (action === "right") current.x = right - item.width;
+    else if (action === "top") current.y = top;
+    else if (action === "vertical-center") current.y = top + (bottom - top - item.height) / 2;
+    else if (action === "bottom") current.y = bottom - item.height;
+  }
+  return positions;
 }
 
 function snappedDimension(value: number, minimum: number, maximum: number): number {

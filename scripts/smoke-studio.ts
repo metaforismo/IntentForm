@@ -869,6 +869,8 @@ try {
       }
       await page.getByRole("button", { name: "Clear layer search" }).click();
       await page.getByRole("button", { name: "Layout lab 20", exact: true }).click();
+      await page.getByTestId("canvas-viewport").dispatchEvent("pointerdown", { button: 0 });
+      await page.getByTestId("inspector-no-selection").getByText("No layer selected", { exact: true }).waitFor();
       const adaptiveLayer = page.getByTestId("layer-layout-lab.adaptive");
       const nestedGridLayer = page.getByTestId("layer-layout-lab.grid");
       const nestedLeafLayer = page.getByTestId("layer-layout-lab.grid-a");
@@ -926,6 +928,28 @@ try {
       }
       await page.getByRole("button", { name: "Undo" }).click();
       await page.getByTestId("layer-layout-lab.group-1").waitFor({ state: "detached" });
+
+      const freeformA = page.getByTestId("layer-layout-lab.freeform-a");
+      const freeformB = page.getByTestId("layer-layout-lab.freeform-b");
+      await freeformA.click();
+      await freeformB.click({ modifiers: [additiveSelectionModifier] });
+      const alignLeft = page.getByRole("button", { name: "Align left", exact: true });
+      if (await alignLeft.isDisabled()) throw new Error("Freeform multi-selection did not enable exact alignment");
+      if (!await page.getByRole("button", { name: "Distribute horizontally", exact: true }).isDisabled()) {
+        throw new Error("Two-layer selection incorrectly enabled distribution");
+      }
+      await alignLeft.click();
+      await page.waitForFunction(() => {
+        const first = document.querySelector<HTMLElement>('[data-testid="canvas-node-layout-lab.freeform-a"]')?.getBoundingClientRect();
+        const second = document.querySelector<HTMLElement>('[data-testid="canvas-node-layout-lab.freeform-b"]')?.getBoundingClientRect();
+        return first && second && Math.abs(first.left - second.left) < 1;
+      });
+      await page.getByRole("button", { name: "Undo" }).click();
+      await page.waitForFunction(() => {
+        const first = document.querySelector<HTMLElement>('[data-testid="canvas-node-layout-lab.freeform-a"]')?.getBoundingClientRect();
+        const second = document.querySelector<HTMLElement>('[data-testid="canvas-node-layout-lab.freeform-b"]')?.getBoundingClientRect();
+        return first && second && Math.abs(first.left - second.left) > 1;
+      });
       await nestedLeafLayer.click();
       await page.waitForFunction(() => document.querySelector('[data-testid="selection-overlay"]')?.getAttribute("data-selection-ids") === "layout-lab.grid-a");
 
@@ -933,6 +957,10 @@ try {
       await gridLayer.getByRole("button", { name: /^Collapse / }).click();
       await nestedLeafLayer.waitFor({ state: "detached" });
       await gridLayer.getByRole("button", { name: /^Expand / }).click();
+      await nestedLeafLayer.waitFor();
+      await page.getByRole("button", { name: "Collapse all layers" }).click();
+      await nestedLeafLayer.waitFor({ state: "detached" });
+      await page.getByRole("button", { name: "Expand all layers" }).click();
       await nestedLeafLayer.waitFor();
       const lockLeaf = nestedLeafLayer.getByRole("button", { name: /^Lock / });
       await lockLeaf.click();
@@ -1236,6 +1264,29 @@ try {
       const lastLayerAction = layerActions.getByRole("menuitem").last();
       if (await lastLayerAction.evaluate((element) => document.activeElement === element) !== true) {
         throw new Error("Keyboard context menu did not support End navigation");
+      }
+      await page.keyboard.press("Home");
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown");
+      const pasteMenuItem = layerActions.getByRole("menuitem", { name: "Paste", exact: true });
+      if (await pasteMenuItem.evaluate((element) => document.activeElement === element) !== true) {
+        throw new Error("Context menu root navigation did not reach Paste");
+      }
+      await page.keyboard.press("ArrowRight");
+      const pasteOptions = page.getByRole("menu", { name: "Paste options" });
+      await pasteOptions.waitFor();
+      const firstPasteOption = pasteOptions.getByRole("menuitem").first();
+      if (await firstPasteOption.evaluate((element) => document.activeElement === element) !== true) {
+        throw new Error("Right arrow did not enter the Paste submenu");
+      }
+      await page.keyboard.press("End");
+      if (await pasteOptions.getByRole("menuitem", { name: "Paste to replace" }).evaluate((element) => document.activeElement === element) !== true) {
+        throw new Error("Paste submenu did not support End navigation");
+      }
+      await page.keyboard.press("ArrowLeft");
+      if (await pasteMenuItem.evaluate((element) => document.activeElement === element) !== true) {
+        throw new Error("Left arrow did not return to the Paste parent item");
       }
       await page.keyboard.press("Escape");
       await layerActions.waitFor({ state: "detached" });

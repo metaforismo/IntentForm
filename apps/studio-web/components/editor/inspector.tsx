@@ -1,10 +1,18 @@
 "use client";
 
 import {
+  AlignBottomSimple,
+  AlignCenterHorizontalSimple,
+  AlignCenterVerticalSimple,
+  AlignLeftSimple,
+  AlignRightSimple,
+  AlignTopSimple,
   ArrowDown,
   ArrowUp,
+  Columns,
   Copy,
   Cursor,
+  Rows,
   Stack,
   Trash,
   X,
@@ -25,6 +33,7 @@ import {
   SearchablePicker,
 } from "../ui/editor-controls";
 import { nodeNames, type DeviceProfile, type VisualState } from "./support";
+import type { SelectionAlignment } from "./direct-manipulation";
 
 export function SegmentedControl<T extends string>({
   label,
@@ -66,8 +75,8 @@ const adaptiveModes = [
 
 function Section({ title, children }: { title?: string; children: React.ReactNode }) {
   return (
-    <section className="grid gap-3 px-3.5 pb-4 pt-3">
-      {title ? <h3 className="text-[11px] font-semibold tracking-[.01em] text-[var(--muted)]">{title}</h3> : null}
+    <section className="grid gap-2 px-3 pb-3 pt-2.5">
+      {title ? <h3 className="text-[10.5px] font-medium leading-[15px] text-[var(--muted)]">{title}</h3> : null}
       {children}
     </section>
   );
@@ -97,6 +106,8 @@ interface InspectorProps {
   onReorder(direction: -1 | 1): void;
   onDelete(): void;
   onGroup(): void;
+  selectionCanAlign: boolean;
+  onAlignSelection(action: SelectionAlignment): void;
   canDelete: boolean;
   onScreenTitle(title: string): void;
   onScreenPurpose(purpose: string): void;
@@ -127,6 +138,8 @@ export function Inspector({
   onReorder,
   onDelete,
   onGroup,
+  selectionCanAlign,
+  onAlignSelection,
   canDelete,
   onScreenTitle,
   onScreenPurpose,
@@ -177,9 +190,9 @@ export function Inspector({
       aria-label="Design inspector"
       className={`${visible ? "block" : "hidden"} ${desktopVisible ? "xl:block" : "xl:hidden"} absolute inset-y-0 right-0 z-[3] w-[304px] min-h-0 overflow-y-auto overflow-x-hidden border-l border-[var(--line)] bg-[var(--chrome)] text-[var(--t-strong)] shadow-[-24px_0_52px_-32px_var(--shadow-strong)] xl:relative xl:z-[1] xl:w-auto xl:shadow-none`}
     >
-      <div className="sticky top-0 z-[1] flex h-10 items-center justify-between border-b border-[var(--line)] bg-[var(--chrome)] pl-3.5 pr-2">
+      <div className="sticky top-0 z-[1] flex h-9 items-center justify-between border-b border-[var(--line)] bg-[var(--chrome)] pl-3 pr-1.5">
         <div className="flex items-baseline gap-2">
-          <span className="text-[12px] font-semibold text-[var(--ink)]">Design</span>
+          <span className="text-[11px] font-medium text-[var(--ink)]">Design</span>
           <span className="rounded bg-[var(--accent-soft)] px-1.5 py-px font-mono text-[9px] text-[var(--accent-text)]">semantic</span>
         </div>
         <IconButton ariaLabel="Close design inspector" onClick={onClose}><X size={13} /></IconButton>
@@ -245,11 +258,11 @@ export function Inspector({
       ) : null}
 
       {selectionCount > 1 ? (
-        <div data-testid="multi-selection-inspector" className="border-b border-[var(--line)] px-3.5 py-3">
+        <div data-testid="multi-selection-inspector" className="border-b border-[var(--line)] px-3 py-2.5">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <span className="block text-[12px] font-semibold text-[var(--ink)]">{selectionCount} layers selected</span>
-              <span className="mt-0.5 block text-[10px] text-[var(--faint)]">Drag as a block, or group into one semantic stack.</span>
+              <span className="block text-[11.5px] font-medium text-[var(--ink)]">{selectionCount} layers selected</span>
+              <span className="mt-0.5 block text-[10px] leading-[14px] text-[var(--faint)]">Shared freeform geometry can be aligned without grouping.</span>
             </div>
             <div className="flex shrink-0 gap-0.5">
               <IconButton ariaLabel="Group selected layers" onClick={onGroup}><Stack size={13} /></IconButton>
@@ -257,13 +270,34 @@ export function Inspector({
               <IconButton ariaLabel="Delete selected layers" onClick={onDelete} danger><Trash size={13} /></IconButton>
             </div>
           </div>
+          <div className="mt-2 grid grid-cols-[1fr_auto] gap-2 border-t border-[var(--line)] pt-2">
+            <div role="group" aria-label="Align selected layers" className="grid grid-cols-6 gap-px rounded-[5px] bg-[var(--hover)] p-px">
+              {([
+                ["left", "Align left", AlignLeftSimple],
+                ["horizontal-center", "Align horizontal centers", AlignCenterHorizontalSimple],
+                ["right", "Align right", AlignRightSimple],
+                ["top", "Align top", AlignTopSimple],
+                ["vertical-center", "Align vertical centers", AlignCenterVerticalSimple],
+                ["bottom", "Align bottom", AlignBottomSimple],
+              ] as const).map(([action, label, AlignmentIcon]) => (
+                <button key={action} type="button" aria-label={label} title={label} disabled={!selectionCanAlign} onClick={() => onAlignSelection(action)} className="grid h-7 min-w-0 place-items-center rounded-[4px] text-[var(--muted)] hover:bg-[var(--field)] hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-30"><AlignmentIcon size={13} /></button>
+              ))}
+            </div>
+            <div role="group" aria-label="Distribute selected layers" className="grid grid-cols-2 gap-px rounded-[5px] bg-[var(--hover)] p-px">
+              <button type="button" aria-label="Distribute horizontally" title="Distribute horizontally" disabled={!selectionCanAlign || selectionCount < 3} onClick={() => onAlignSelection("distribute-horizontal")} className="grid size-7 place-items-center rounded-[4px] text-[var(--muted)] hover:bg-[var(--field)] hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-30"><Columns size={13} /></button>
+              <button type="button" aria-label="Distribute vertically" title="Distribute vertically" disabled={!selectionCanAlign || selectionCount < 3} onClick={() => onAlignSelection("distribute-vertical")} className="grid size-7 place-items-center rounded-[4px] text-[var(--muted)] hover:bg-[var(--field)] hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-30"><Rows size={13} /></button>
+            </div>
+          </div>
+          {!selectionCanAlign ? <p className="mt-1.5 text-[9.5px] leading-[14px] text-[var(--faint)]">Alignment is available when every selected layer has freeform coordinates.</p> : null}
         </div>
       ) : selectedNode ? (
         <div data-testid="semantic-inspector" className="divide-y divide-[var(--line)]">
-          <div className="flex items-center justify-between py-2 pl-3.5 pr-2">
+          <div className="flex items-center justify-between py-2 pl-3 pr-1.5">
             <div className="min-w-0">
-              <span className="block text-[12px] font-semibold text-[var(--ink)]">{nodeNames[selectedNode.kind]}</span>
-              <span className="mt-0.5 block truncate font-mono text-[10px] text-[var(--faint)]">{selectedNode.id}</span>
+              <span className="block truncate text-[11.5px] font-medium text-[var(--ink)]">{selectedNode.intent.label ?? nodeNames[selectedNode.kind]}</span>
+              <span className="mt-0.5 flex min-w-0 items-center gap-1 font-mono text-[9.5px] leading-[14px] text-[var(--faint)]">
+                <span>{nodeNames[selectedNode.kind]}</span><span aria-hidden="true">·</span><span className="truncate">{selectedNode.id}</span>
+              </span>
             </div>
             <div className="flex shrink-0 gap-0.5">
               <IconButton ariaLabel="Duplicate layer" onClick={onDuplicate}><Copy size={13} /></IconButton>
@@ -681,10 +715,14 @@ export function Inspector({
           </Section>
         </div>
       ) : (
-        <div className="grid min-h-56 place-items-center p-6 text-center">
-          <div>
-            <span className="mx-auto grid size-10 place-items-center rounded-xl border border-[var(--line)] bg-[var(--field)] text-[var(--muted)]"><Cursor size={18} /></span>
-            <p className="mt-3 text-[12px] text-[var(--muted)]">Select a layer to edit its semantic properties.</p>
+        <div data-testid="inspector-no-selection" className="border-b border-[var(--line)] px-3 py-4">
+          <div className="flex items-start gap-2.5">
+            <span className="grid size-7 shrink-0 place-items-center rounded-[5px] bg-[var(--hover)] text-[var(--muted)]"><Cursor size={13} /></span>
+            <div className="min-w-0">
+              <span className="block text-[11.5px] font-medium text-[var(--ink)]">No layer selected</span>
+              <p className="mt-0.5 text-[10px] leading-[15px] text-[var(--muted)]">Select a layer on the canvas or in Layers. Screen settings remain available above.</p>
+              <span className="mt-1.5 block truncate font-mono text-[9.5px] text-[var(--faint)]">{screen.title} · {screen.route}</span>
+            </div>
           </div>
         </div>
       )}

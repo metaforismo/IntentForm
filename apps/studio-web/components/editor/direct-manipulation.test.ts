@@ -7,6 +7,7 @@ import {
   resolveFreeformMove,
   resolveReorderCandidate,
   resolveResizeCandidate,
+  resolveSelectionAlignment,
   selectionParentId,
   updateNodeSelection,
 } from "./direct-manipulation";
@@ -85,6 +86,43 @@ describe("direct manipulation candidate engine", () => {
   it("preserves signed freeform coordinates beyond the semantic origin", () => {
     expect(resolveFreeformMove({ a: { x: 4, y: 6 } }, { x: -40, y: -40 }).positions.a)
       .toEqual({ x: -32, y: -32 });
+  });
+
+  it("aligns mixed-size freeform selections against exact outer bounds", () => {
+    const items = [
+      { id: "a", x: -40, y: 12, width: 20, height: 30 },
+      { id: "b", x: 24, y: -16, width: 40, height: 10 },
+    ];
+    expect(resolveSelectionAlignment(items, "left")).toEqual({
+      a: { x: -40, y: 12 },
+      b: { x: -40, y: -16 },
+    });
+    expect(resolveSelectionAlignment(items, "horizontal-center")).toEqual({
+      a: { x: 2, y: 12 },
+      b: { x: -8, y: -16 },
+    });
+    expect(resolveSelectionAlignment(items, "bottom")).toEqual({
+      a: { x: -40, y: 12 },
+      b: { x: 24, y: 32 },
+    });
+  });
+
+  it("distributes variable-size selections while preserving the outer pair", () => {
+    const items = [
+      { id: "right", x: 100, y: 80, width: 20, height: 20 },
+      { id: "left", x: 0, y: 0, width: 10, height: 10 },
+      { id: "middle", x: 70, y: 35, width: 30, height: 30 },
+    ];
+    expect(resolveSelectionAlignment(items, "distribute-horizontal")).toEqual({
+      right: { x: 100, y: 80 },
+      left: { x: 0, y: 0 },
+      middle: { x: 40, y: 35 },
+    });
+    expect(resolveSelectionAlignment(items, "distribute-vertical")).toEqual({
+      right: { x: 100, y: 80 },
+      left: { x: 0, y: 0 },
+      middle: { x: 70, y: 30 },
+    });
   });
 
   it("snaps and bounds each resize handle deterministically", () => {
