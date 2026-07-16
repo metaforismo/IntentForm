@@ -32,6 +32,12 @@
   --if-red-soft: rgb(184 77 77 / 10%);
   --if-shadow-menu: 0 12px 32px rgb(20 20 20 / 16%);
   --if-shadow-dialog: 0 24px 70px rgb(20 20 20 / 20%);
+  --if-control-compact: 26px;
+  --if-control-standard: 28px;
+  --if-panel-header: 34px;
+  --if-command-bar: 38px;
+  --if-tab-strip: 34px;
+  --if-status-bar: 24px;
 
   /* Transitional aliases. New chrome uses --if-* directly. */
   --app-bg: var(--if-app); --canvas-bg: var(--if-canvas); --panel-bg: var(--if-panel); --panel-raised: var(--if-raised);
@@ -175,14 +181,14 @@ textarea:focus-visible,
    <select> semantics for accessibility and tests. */
 .select-control {
   appearance: none;
-  min-height: 32px;
-  padding: 0 24px 0 10px;
+  min-height: var(--if-control-standard);
+  padding: 0 22px 0 8px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 6px;
   background-color: var(--field);
   background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23808a84' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 8px center;
+  background-position: right 7px center;
   color: var(--t-strong);
   outline: none;
   transition: border-color 150ms ease, box-shadow 150ms ease;

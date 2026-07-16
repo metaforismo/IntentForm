@@ -42,12 +42,12 @@ export function IconButton({
 }
 
 export function Keycap({ children, className = "" }: { children: ReactNode; className?: string }) {
-  const base = "rounded-md border border-[var(--line)] bg-[var(--chip)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--muted)]";
+  const base = "rounded-[4px] border border-[var(--line)] bg-[var(--chip)] px-1.5 py-px font-mono text-[10px] leading-[14px] text-[var(--muted)]";
   return <kbd className={[className, base].filter(Boolean).join(" ")}>{children}</kbd>;
 }
 
 export function SectionLabel({ children, className = "" }: { children: ReactNode; className?: string }) {
-  const base = "text-[9px] font-semibold uppercase tracking-[.12em] text-[var(--faint)]";
+  const base = "text-[10.5px] font-medium leading-[15px] text-[var(--faint)]";
   return <span className={[className, base].filter(Boolean).join(" ")}>{children}</span>;
 }
 
@@ -63,10 +63,10 @@ export function MenuItem({
   onClick?: () => void;
 }) {
   return (
-    <button type="button" aria-label={label} onClick={onClick} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-2.5 text-left text-[11px] text-[var(--t-strong)] hover:bg-[var(--hover)]">
-      <span className="grid size-7 place-items-center rounded-md border border-[var(--line)] bg-[var(--chip)] text-[var(--t-strong)]">{icon}</span>
+    <button type="button" aria-label={label} onClick={onClick} className="flex h-7 w-full items-center gap-2 rounded-[4px] px-2 text-left text-[11.5px] font-normal leading-4 text-[var(--t-strong)] hover:bg-[var(--hover)]">
+      <span className="grid size-4 shrink-0 place-items-center text-[var(--muted)]">{icon}</span>
       <span className="flex-1">{label}</span>
-      {shortcut ? <kbd className="font-mono text-[9px] text-[var(--faint)]">{shortcut}</kbd> : null}
+      {shortcut ? <kbd className="font-mono text-[10px] text-[var(--faint)]">{shortcut}</kbd> : null}
     </button>
   );
 }

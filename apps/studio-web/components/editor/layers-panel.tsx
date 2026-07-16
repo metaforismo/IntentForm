@@ -87,8 +87,8 @@ function layerIcon(node: SemanticNode) {
 
 function PanelHeading({ label, action }: { label: string; action?: React.ReactNode }) {
   return (
-    <div className="flex min-h-8 items-center justify-between pl-1">
-      <span className="text-[11px] font-semibold tracking-[.01em] text-[var(--muted)]">{label}</span>
+    <div className="flex min-h-[34px] items-center justify-between pl-1">
+      <span className="text-[11px] font-medium leading-[15px] text-[var(--muted)]">{label}</span>
       {action}
     </div>
   );
@@ -586,7 +586,7 @@ export function LayersPanel({
             onSelectNode(node.id, "replace");
           }
         }}
-        className={`group relative flex h-7 w-full items-center rounded-md text-left text-[12px] outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--accent)] ${currentDrop === "inside" ? "bg-[var(--accent-soft)] ring-1 ring-inset ring-[var(--accent)]" : currentDrop === "before" ? "before:absolute before:inset-x-1 before:top-0 before:h-px before:bg-[var(--accent)]" : selectedNodeIds.includes(node.id) ? "bg-[var(--accent-soft)] font-medium text-[var(--accent-text)]" : nodeVisible ? "text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]" : "text-[var(--faint)] hover:bg-[var(--hover)]"}`}
+        className={`group relative flex h-7 w-full items-center rounded-[5px] text-left text-[11px] leading-[15px] outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--accent)] ${currentDrop === "inside" ? "bg-[var(--accent-soft)] ring-1 ring-inset ring-[var(--accent)]" : currentDrop === "before" ? "before:absolute before:inset-x-1 before:top-0 before:h-px before:bg-[var(--accent)]" : selectedNodeIds.includes(node.id) ? "bg-[var(--accent-soft)] font-medium text-[var(--accent-text)]" : nodeVisible ? "text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]" : "text-[var(--faint)] hover:bg-[var(--hover)]"}`}
         style={{ paddingLeft: 6 + depth * 14 }}
       >
         <button type="button" aria-label={`${collapsed ? "Expand" : "Collapse"} ${node.intent.label ?? nodeNames[node.kind]}`} disabled={!canContain} onClick={() => canContain && toggleCollapsed(node.id)} className={`grid size-5 shrink-0 place-items-center rounded ${canContain ? "hover:bg-[var(--field)]" : "pointer-events-none opacity-0"}`}>{collapsed ? <CaretRight size={10} /> : <CaretDown size={10} />}</button>
@@ -624,14 +624,20 @@ export function LayersPanel({
       aria-label="Pages and layers"
       className={`${visible ? "grid" : "hidden"} ${desktopVisible ? "xl:grid" : "xl:hidden"} absolute inset-y-0 left-0 z-[3] w-[268px] min-h-0 grid-rows-[auto_1fr] border-r border-[var(--line)] bg-[var(--chrome)] shadow-[24px_0_52px_-32px_var(--shadow-strong)] xl:relative xl:z-[1] xl:w-auto xl:shadow-none`}
     >
-      <div className="grid grid-cols-[minmax(0,1fr)_44px] items-center border-b border-[var(--line)] px-2 pt-1">
-        <div className="grid min-w-0 grid-cols-4 gap-px" role="tablist" aria-label="Left panel sections">
-          {([["layers", "Layers"], ["components", "Library"], ["assets", "Assets"], ["tokens", "Tokens"]] as const).map(([tab, label], tabIndex, tabs) => (
+      <div className="grid h-[34px] grid-cols-[minmax(0,1fr)_28px] items-center border-b border-[var(--line)] px-2">
+        <div className="flex min-w-0 items-center gap-0.5" role="tablist" aria-label="Left panel sections">
+          {([
+            ["layers", "Layers", TreeStructure],
+            ["components", "Components", Stack],
+            ["assets", "Assets", UploadSimple],
+            ["tokens", "Tokens", Selection],
+          ] as const).map(([tab, label, TabIcon], tabIndex, tabs) => (
             <button
               key={tab}
               id={`editor-${tab}-tab`}
               type="button"
               role="tab"
+              aria-label={label}
               aria-selected={railTab === tab}
               aria-controls={`editor-${tab}-tabpanel`}
               tabIndex={railTab === tab ? 0 : -1}
@@ -644,13 +650,15 @@ export function LayersPanel({
                 onRailTab(next);
                 requestAnimationFrame(() => document.getElementById(`editor-${next}-tab`)?.focus());
               }}
-              className={`min-h-9 min-w-0 border-b-2 px-1 text-[11px] font-medium transition-colors ${railTab === tab ? "border-[var(--accent)] text-[var(--ink)]" : "border-transparent text-[var(--muted)] hover:text-[var(--ink)]"}`}
+              title={label}
+              className={`flex h-7 min-w-7 items-center justify-center gap-1 rounded-[5px] px-1.5 text-[10.5px] font-medium leading-[15px] transition-colors ${railTab === tab ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"}`}
             >
-              {label}
+              <TabIcon size={13} weight={railTab === tab ? "fill" : "regular"} />
+              {railTab === tab ? <span className="truncate">{label}</span> : null}
             </button>
           ))}
         </div>
-        <IconButton ariaLabel="Close pages and layers" onClick={onClose} size={11}><X size={13} /></IconButton>
+        <IconButton ariaLabel="Close pages and layers" onClick={onClose} size={7}><X size={13} /></IconButton>
       </div>
 
       {railTab === "layers" ? (
@@ -675,15 +683,15 @@ export function LayersPanel({
                     onDragEnd={commitPageOrder}
                     className="relative"
                   >
-                    <div className={`group relative flex h-8 items-center overflow-hidden rounded-lg ${active ? "bg-[var(--accent-soft)]" : "hover:bg-[var(--hover)]"}`}>
+                    <div className={`group relative flex h-7 items-center overflow-hidden rounded-[5px] ${active ? "bg-[var(--accent-soft)]" : "hover:bg-[var(--hover)]"}`}>
                       <button
                         type="button"
                         onClick={() => { onSelectScreen(item.id); onSelectNode(item.nodes[0]?.id ?? null, "replace"); onDismissMobile(); }}
-                        className={`flex h-8 min-w-0 flex-1 items-center gap-2 pl-2 pr-2 text-left text-[12px] ${active ? "font-medium text-[var(--accent-text)]" : "text-[var(--muted)] group-hover:text-[var(--ink)]"}`}
+                        className={`flex h-7 min-w-0 flex-1 items-center gap-2 pl-2 pr-2 text-left text-[11px] leading-[15px] ${active ? "font-medium text-[var(--accent-text)]" : "font-normal text-[var(--muted)] group-hover:text-[var(--ink)]"}`}
                       >
                         <FrameCorners size={13} className="shrink-0 opacity-70" />
                         <span className="min-w-0 flex-1 truncate">{item.title}</span>
-                        <span className="shrink-0 font-mono text-[10px] text-[var(--faint)] transition-opacity group-hover:opacity-0">{flattenSemanticNodes(item.nodes).length}</span>
+                        {flattenSemanticNodes(item.nodes).length > 0 ? <span className="shrink-0 font-mono text-[9.5px] text-[var(--faint)] transition-opacity group-hover:opacity-0">{flattenSemanticNodes(item.nodes).length}</span> : null}
                       </button>
                       <span className={`pointer-events-none absolute inset-y-0 right-0 flex items-center gap-0.5 pl-3 pr-1 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 ${active ? "bg-gradient-to-l from-[var(--accent-soft)] via-[var(--accent-soft)] to-transparent" : "bg-gradient-to-l from-[var(--hover)] via-[var(--hover)] to-transparent"}`}>
                         <button type="button" aria-label={`Move screen ${item.title} up`} disabled={pageOrder.indexOf(item.id) === 0} onClick={() => movePage(item.id, -1)} className="grid size-6 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--field)] hover:text-[var(--ink)] disabled:opacity-25"><ArrowUp size={12} /></button>
@@ -700,10 +708,10 @@ export function LayersPanel({
 
           <div className="px-2 pb-1 pt-1.5">
             <PanelHeading label="Layers" />
-            <label className="mt-0.5 flex h-8 items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--field)] px-2.5 text-[var(--muted)] transition-colors focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_color-mix(in_oklab,var(--accent)_12%,transparent)] hover:border-[var(--line-strong)]">
+            <label className="mt-0.5 flex h-7 items-center gap-2 rounded-[5px] border border-[var(--line)] bg-[var(--field)] px-2 text-[var(--muted)] transition-colors focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_2px_color-mix(in_oklab,var(--accent)_12%,transparent)] hover:border-[var(--line-strong)]">
               <MagnifyingGlass size={13} aria-hidden="true" className="shrink-0" />
               <span className="sr-only">Search layers</span>
-              <input aria-label="Search layers" value={layerQuery} onChange={(event) => onLayerQuery(event.target.value)} placeholder="Find a layer" className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--t-strong)] outline-none placeholder:text-[var(--faint)]" />
+              <input aria-label="Search layers" value={layerQuery} onChange={(event) => onLayerQuery(event.target.value)} placeholder="Find a layer" className="min-w-0 flex-1 bg-transparent text-[11px] text-[var(--t-strong)] outline-none placeholder:text-[var(--faint)]" />
               {layerQuery ? <button type="button" aria-label="Clear layer search" onClick={() => onLayerQuery("")} className="grid size-5 shrink-0 place-items-center rounded hover:bg-[var(--hover)]"><X size={11} /></button> : null}
             </label>
           </div>

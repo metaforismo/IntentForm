@@ -1494,7 +1494,7 @@ export function ManualEditor({
 
   if (!screen) return null;
 
-  const floatingButton = "inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-[12px] font-medium text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]";
+  const floatingButton = "inline-flex h-7 items-center gap-1 rounded-[5px] px-2 text-[10.5px] font-medium leading-[15px] text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]";
 
   return (
     <div
@@ -1654,7 +1654,7 @@ export function ManualEditor({
         )}
 
         <div className="pointer-events-auto absolute inset-x-2 top-2 z-[2] flex flex-wrap items-start justify-between gap-2 sm:inset-x-3 sm:top-3 sm:flex-nowrap">
-          <div className="floating-chrome order-1 flex shrink-0 items-center gap-0.5 rounded-xl p-1 sm:order-none">
+          <div className="floating-chrome order-1 flex h-9 shrink-0 items-center gap-0.5 rounded-[8px] p-1 sm:order-none">
             <button
               ref={structureTriggerRef}
               type="button"
@@ -1671,9 +1671,9 @@ export function ManualEditor({
             </button>
           </div>
 
-          <div className="floating-chrome order-3 mx-auto flex shrink-0 items-center gap-0.5 rounded-xl p-1 sm:order-none sm:mx-0">
+          <div className="floating-chrome order-3 mx-auto flex h-9 shrink-0 items-center gap-0.5 rounded-[8px] p-1 sm:order-none sm:mx-0">
             {comparisonMode ? (
-              <span className="flex h-8 items-center gap-2 px-2.5 text-[11px] font-semibold text-[var(--accent-text)]"><ArrowsOutSimple size={14} /> {comparisonProfileIds.length} synchronized frames</span>
+              <span className="flex h-7 items-center gap-1.5 px-2 text-[10.5px] font-medium text-[var(--accent-text)]"><ArrowsOutSimple size={13} /> {comparisonProfileIds.length} synchronized frames</span>
             ) : <>
             {([
               { id: "select", label: "Select", icon: Cursor },
@@ -1682,18 +1682,18 @@ export function ManualEditor({
               const ToolIcon = item.icon;
               const active = tool === item.id && !(item.id === "select" && spaceHeld);
               return (
-                <button key={item.id} type="button" aria-label={item.label} aria-pressed={tool === item.id} onClick={() => setTool(item.id)} className={`grid size-8 place-items-center rounded-[9px] ${active || (item.id === "hand" && spaceHeld) ? "bg-[var(--accent)] text-white shadow-[0_4px_10px_-6px_rgba(36,84,68,.9)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
-                  <ToolIcon size={15} weight={tool === item.id ? "fill" : "regular"} />
+                <button key={item.id} type="button" aria-label={item.label} aria-pressed={tool === item.id} onClick={() => setTool(item.id)} className={`grid size-7 place-items-center rounded-[5px] ${active || (item.id === "hand" && spaceHeld) ? "bg-[var(--accent)] text-white" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
+                  <ToolIcon size={13} weight={tool === item.id ? "fill" : "regular"} />
                 </button>
               );
             })}
             <span className="mx-1 h-4 w-px bg-[var(--line)]" />
-            <button type="button" aria-label="Undo" disabled={!canUndo} onClick={onUndo} className="grid size-8 place-items-center rounded-lg text-[var(--muted)] hover:bg-[var(--hover)] disabled:opacity-25"><ArrowCounterClockwise size={15} /></button>
-            <button type="button" aria-label="Redo" disabled={!canRedo} onClick={onRedo} className="grid size-8 place-items-center rounded-lg text-[var(--muted)] hover:bg-[var(--hover)] disabled:opacity-25"><ArrowClockwise size={15} /></button>
+            <button type="button" aria-label="Undo" disabled={!canUndo} onClick={onUndo} className="grid size-7 place-items-center rounded-[5px] text-[var(--muted)] hover:bg-[var(--hover)] disabled:opacity-25"><ArrowCounterClockwise size={13} /></button>
+            <button type="button" aria-label="Redo" disabled={!canRedo} onClick={onRedo} className="grid size-7 place-items-center rounded-[5px] text-[var(--muted)] hover:bg-[var(--hover)] disabled:opacity-25"><ArrowClockwise size={13} /></button>
             <span className="mx-1 h-4 w-px bg-[var(--line)]" />
             <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
-              <button ref={insertTriggerRef} type="button" aria-label="Insert component" aria-expanded={insertOpen} onClick={() => setInsertOpen((open) => !open)} className={`grid size-8 place-items-center rounded-lg ${insertOpen ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
-                <Plus size={15} weight="bold" />
+              <button ref={insertTriggerRef} type="button" aria-label="Insert component" aria-expanded={insertOpen} onClick={() => setInsertOpen((open) => !open)} className={`grid size-7 place-items-center rounded-[5px] ${insertOpen ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
+                <Plus size={13} weight="bold" />
               </button>
               {insertOpen ? (
                 <div role="menu" aria-label="Insert semantic component" className="menu-pop absolute left-1/2 top-10 z-[3] w-[300px] -translate-x-1/2 p-1.5">
@@ -1720,11 +1720,11 @@ export function ManualEditor({
             </>}
           </div>
 
-          <div className="floating-chrome order-2 flex shrink-0 items-center gap-0.5 rounded-xl p-1 sm:order-none">
-            {!comparisonMode ? <button type="button" aria-label="Toggle preview mode" aria-pressed={previewMode} onClick={() => setPreviewMode((current) => !current)} className={`inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium ${previewMode ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
+          <div className="floating-chrome order-2 flex h-9 shrink-0 items-center gap-0.5 rounded-[8px] p-1 sm:order-none">
+            {!comparisonMode ? <button type="button" aria-label="Toggle preview mode" aria-pressed={previewMode} onClick={() => setPreviewMode((current) => !current)} className={`inline-flex h-7 items-center gap-1 rounded-[5px] px-2 text-[10.5px] font-medium ${previewMode ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
               <MonitorPlay size={13} weight={previewMode ? "fill" : "regular"} /> Preview
             </button> : null}
-            <button type="button" aria-label="Toggle responsive comparison" aria-pressed={comparisonMode} onClick={() => setComparisonMode((current) => !current)} className={`inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium ${comparisonMode ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
+            <button type="button" aria-label="Toggle responsive comparison" aria-pressed={comparisonMode} onClick={() => setComparisonMode((current) => !current)} className={`inline-flex h-7 items-center gap-1 rounded-[5px] px-2 text-[10.5px] font-medium ${comparisonMode ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
               <ArrowsOutSimple size={13} /> Compare
             </button>
             <button

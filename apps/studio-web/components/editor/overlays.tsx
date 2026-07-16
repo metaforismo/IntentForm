@@ -75,16 +75,16 @@ export function CommandMenu({
   const filtered = commands.filter((item) => item.label.toLowerCase().includes(query.trim().toLowerCase()));
   const sections = [...new Set(filtered.map((item) => item.section))];
   return (
-    <section ref={dialogRef} role="dialog" aria-modal="true" aria-label="Command menu" tabIndex={-1} className="command-menu absolute left-1/2 top-16 z-[5] w-[min(540px,calc(100%-32px))] -translate-x-1/2 overflow-hidden rounded-[14px] border border-[var(--line-strong)] bg-[var(--menu)] shadow-[0_28px_80px_-32px_var(--shadow-strong)] backdrop-blur-xl">
-      <div className="flex items-center gap-3 border-b border-[var(--line)] px-4 py-3">
-        <MagnifyingGlass size={15} className="text-[var(--muted)]" />
-        <input autoFocus aria-label="Search commands" value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Search workspace commands" className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--t-strong)] outline-none placeholder:text-[var(--faint)]" />
+    <section ref={dialogRef} role="dialog" aria-modal="true" aria-label="Command menu" tabIndex={-1} className="command-menu absolute left-1/2 top-14 z-[5] w-[min(520px,calc(100%-32px))] -translate-x-1/2 overflow-hidden rounded-[8px] border border-[var(--line-strong)] bg-[var(--menu)] shadow-[var(--if-shadow-menu)]">
+      <div className="flex h-10 items-center gap-2.5 border-b border-[var(--line)] px-3">
+        <MagnifyingGlass size={14} className="text-[var(--muted)]" />
+        <input autoFocus aria-label="Search commands" value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Search workspace commands" className="min-w-0 flex-1 bg-transparent text-[11.5px] text-[var(--t-strong)] outline-none placeholder:text-[var(--faint)]" />
         <Keycap>ESC</Keycap>
       </div>
-      <div className="max-h-[380px] overflow-auto p-1.5">
+      <div className="max-h-[360px] overflow-auto p-1">
         {sections.map((section) => (
           <div key={section}>
-            <SectionLabel className="block px-2.5 pb-1.5 pt-2">{section}</SectionLabel>
+            <SectionLabel className="block px-2 pb-1 pt-2">{section}</SectionLabel>
             {filtered.filter((item) => item.section === section).map((item) => {
               const ItemIcon = item.icon;
               return (
@@ -118,12 +118,12 @@ const shortcutRows: Array<[string, string]> = [
 export function ShortcutsSheet({ onClose }: { onClose(): void }) {
   const dialogRef = useDialogFocus(onClose);
   return (
-    <section ref={dialogRef} role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" tabIndex={-1} className="absolute left-1/2 top-16 z-[4] w-[min(440px,calc(100%-32px))] -translate-x-1/2 rounded-[14px] border border-[var(--line-strong)] bg-[var(--menu)] p-4 text-[var(--t-strong)] shadow-[0_28px_80px_-32px_var(--shadow-strong)] backdrop-blur-xl">
-      <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
-        <div><strong className="block text-[12px]">Workspace shortcuts</strong><span className="mt-1 block text-[10px] text-[var(--muted)]">Fast commands pause while you edit a field.</span></div>
-        <IconButton ariaLabel="Close keyboard shortcuts" onClick={onClose} size={8}><X size={14} /></IconButton>
+    <section ref={dialogRef} role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" tabIndex={-1} className="absolute left-1/2 top-14 z-[4] w-[min(420px,calc(100%-32px))] -translate-x-1/2 rounded-[8px] border border-[var(--line-strong)] bg-[var(--menu)] p-3 text-[var(--t-strong)] shadow-[var(--if-shadow-menu)]">
+      <div className="flex items-center justify-between border-b border-[var(--line)] pb-2">
+        <div><strong className="block text-[12px] font-medium">Workspace shortcuts</strong><span className="mt-0.5 block text-[10.5px] text-[var(--muted)]">Fast commands pause while you edit a field.</span></div>
+        <IconButton ariaLabel="Close keyboard shortcuts" onClick={onClose} size={7}><X size={13} /></IconButton>
       </div>
-      <dl className="mt-3 grid grid-cols-[1fr_auto] gap-x-6 gap-y-2 text-[11px] text-[var(--muted)]">
+      <dl className="mt-2.5 grid grid-cols-[1fr_auto] gap-x-6 gap-y-1.5 text-[11.5px] text-[var(--muted)]">
         {shortcutRows.map(([label, shortcut]) => (
           <div key={label} className="contents">
             <dt>{label}</dt>
