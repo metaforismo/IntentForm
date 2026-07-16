@@ -60,7 +60,9 @@ interface AgentActivityResponse {
 
 interface AgentActivityPanelProps {
   enabled: boolean;
+  projectId: string;
   projectName: string;
+  documentId: string;
   screenLabel: string;
   selectionLabel: string | null;
   onPreviewChanges: (changes: AgentReviewChange[]) => void;
@@ -87,7 +89,9 @@ function outcomeTone(outcome: AgentActivityEntry["outcome"]): string {
 
 export function AgentActivityPanel({
   enabled,
+  projectId,
   projectName,
+  documentId,
   screenLabel,
   selectionLabel,
   onPreviewChanges,
@@ -184,7 +188,7 @@ export function AgentActivityPanel({
           </div>
           <span className="inline-flex items-center gap-1 rounded border border-[var(--line)] px-2 py-1 text-[9px] font-semibold text-[var(--muted)]"><LockKey size={10} /> reviewed write</span>
         </div>
-        <dl className="mt-3 grid grid-cols-[76px_minmax(0,1fr)] gap-x-2 gap-y-1 text-[9px]"><dt className="text-[var(--faint)]">Project</dt><dd className="truncate">{projectName}</dd><dt className="text-[var(--faint)]">Page</dt><dd className="truncate">{screenLabel}</dd><dt className="text-[var(--faint)]">Selection</dt><dd className="truncate">{selectionLabel ?? "No selection"}</dd><dt className="text-[var(--faint)]">Authority</dt><dd>No shell · no filesystem escape · no network</dd></dl>
+        <dl className="mt-3 grid grid-cols-[76px_minmax(0,1fr)] gap-x-2 gap-y-1 text-[9px]"><dt className="text-[var(--faint)]">Project</dt><dd className="truncate">{projectName}</dd><dt className="text-[var(--faint)]">Project ID</dt><dd className="truncate font-mono">{projectId}</dd><dt className="text-[var(--faint)]">Document</dt><dd className="truncate font-mono">{documentId}</dd><dt className="text-[var(--faint)]">Page</dt><dd className="truncate">{screenLabel}</dd><dt className="text-[var(--faint)]">Selection</dt><dd className="truncate">{selectionLabel ?? "No selection"}</dd><dt className="text-[var(--faint)]">Authority</dt><dd>No shell · no filesystem escape · no network</dd></dl>
       </section>
 
       <div className="min-h-0 flex-1 overflow-auto">

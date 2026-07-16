@@ -37,12 +37,18 @@ import type { VerificationFinding } from "@intentform/verifier";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  clearBrowserProject,
-  loadBrowserProject,
-  saveBrowserProject,
+  activeBrowserProjectId,
+  browserProjectCatalog,
+  defaultWorkspaceState,
+  migrateLegacyBrowserProject,
+  normalizeWorkspaceState,
+  setActiveBrowserProject,
+  type BrowserCatalogProject,
+  type BrowserDocumentTab,
+  type BrowserWorkspaceState,
   type ProjectSource,
   type ProjectType,
-} from "../lib/browser-projects";
+} from "../lib/browser-project-catalog";
 import { hasUnsavedLocalChanges, serializedGraphFingerprint } from "../lib/project-save-state";
 import { ManualEditor, type WorkflowStage } from "./manual-editor";
 import { reconcileGraphSelection } from "./editor/direct-manipulation";
@@ -153,12 +159,19 @@ export function Studio() {
   const [localProjectFingerprint, setLocalProjectFingerprint] = useState<string | null>(null);
   const [projectType, setProjectType] = useState<ProjectType>("application");
   const [projectSource, setProjectSource] = useState<ProjectSource>("example");
-  const [openTabs, setOpenTabs] = useState(["design", "output"] as const as readonly ("design" | "output")[]);
-  const [activeTab, setActiveTab] = useState<"design" | "output">("design");
-  const [lastClosedTab, setLastClosedTab] = useState<"design" | "output" | null>(null);
+  const [catalogProject, setCatalogProject] = useState<BrowserCatalogProject | null>(null);
+  const [catalogSavedGraph, setCatalogSavedGraph] = useState<SemanticInterfaceGraph | null>(null);
+  const [catalogSaveState, setCatalogSaveState] = useState<"saved" | "dirty" | "saving" | "error">("saved");
+  const [workspace, setWorkspace] = useState<BrowserWorkspaceState>(() => defaultWorkspaceState(demoGraph));
+  const [pendingTabClose, setPendingTabClose] = useState<BrowserDocumentTab | null>(null);
   const lastCommit = useRef({ at: 0, notice: "" });
   const graphRef = useRef(graph);
   graphRef.current = graph;
+  const workspaceRef = useRef(workspace);
+  workspaceRef.current = workspace;
+  const catalogProjectRef = useRef<BrowserCatalogProject | null>(null);
+  catalogProjectRef.current = catalogProject;
+  const catalogSaveChain = useRef<Promise<void>>(Promise.resolve());
   const requestSequence = useRef(0);
   const activeRequest = useRef<{ id: number; controller: AbortController } | null>(null);
   const retryRequest = useRef<(() => void) | null>(null);
@@ -171,6 +184,7 @@ export function Studio() {
   const resetDialog = useRef<HTMLElement>(null);
   const resetReturnFocus = useRef<HTMLElement | null>(null);
   const resetShouldRestoreFocus = useRef(false);
+  const dirtyCloseCancelButton = useRef<HTMLButtonElement>(null);
   const themeTrigger = useRef<HTMLButtonElement>(null);
   const agentTrigger = useRef<HTMLButtonElement>(null);
   const agentCloseButton = useRef<HTMLButtonElement>(null);
@@ -197,38 +211,85 @@ export function Studio() {
     queueMicrotask(() => agentTrigger.current?.focus());
   };
 
+  const cancelDirtyClose = () => {
+    setPendingTabClose(null);
+    requestAnimationFrame(() => document.getElementById(`document-tab-${workspaceRef.current.openTabs.findIndex((tab) => tab.id === workspaceRef.current.activeTabId)}`)?.focus());
+  };
+
+  useEffect(() => {
+    if (!pendingTabClose) return;
+    requestAnimationFrame(() => dirtyCloseCancelButton.current?.focus());
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      cancelDirtyClose();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [pendingTabClose]);
+
+  const activateDocument = (tab: BrowserDocumentTab) => {
+    setWorkspace((current) => ({ ...current, activeTabId: tab.id }));
+    if (tab.kind === "screen") {
+      const screen = graphRef.current.screens.find((candidate) => candidate.id === tab.screenId);
+      if (screen) {
+        setSelectedScreen(screen.id);
+        setSelectedNodeId(screen.nodes[0]?.id ?? null);
+      }
+      setStage("canvas");
+      return;
+    }
+    setOutputTarget(tab.target);
+    setStage("outputs");
+  };
+
+  const closeDocument = (tab: BrowserDocumentTab, allowDirty = false) => {
+    if (!allowDirty && tab.kind === "screen" && catalogSaveState !== "saved") {
+      setPendingTabClose(tab);
+      return;
+    }
+    setWorkspace((current) => {
+      if (current.openTabs.length <= 1) return current;
+      const index = current.openTabs.findIndex((candidate) => candidate.id === tab.id);
+      const openTabs = current.openTabs.filter((candidate) => candidate.id !== tab.id);
+      const fallback = openTabs[Math.max(0, Math.min(index, openTabs.length - 1))] ?? openTabs[0]!;
+      if (current.activeTabId === tab.id) queueMicrotask(() => activateDocument(fallback));
+      return {
+        openTabs,
+        activeTabId: current.activeTabId === tab.id ? fallback.id : current.activeTabId,
+        recentlyClosed: [tab, ...current.recentlyClosed.filter((candidate) => candidate.id !== tab.id)].slice(0, 12),
+      };
+    });
+  };
+
+  const reopenLastDocument = () => {
+    setWorkspace((current) => {
+      const tab = current.recentlyClosed[0];
+      if (!tab) return current;
+      queueMicrotask(() => activateDocument(tab));
+      return {
+        openTabs: [...current.openTabs, tab],
+        activeTabId: tab.id,
+        recentlyClosed: current.recentlyClosed.slice(1),
+      };
+    });
+  };
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey)) return;
       if (event.key.toLowerCase() === "w") {
         event.preventDefault();
-        setOpenTabs((tabs) => {
-          if (tabs.length <= 1) return tabs;
-          const next = tabs.filter((tab) => tab !== activeTab);
-          setLastClosedTab(activeTab);
-          setActiveTab(next.at(-1) ?? "design");
-          return next;
-        });
-      } else if (event.shiftKey && event.key.toLowerCase() === "t" && lastClosedTab) {
+        const active = workspaceRef.current.openTabs.find((tab) => tab.id === workspaceRef.current.activeTabId);
+        if (active) closeDocument(active);
+      } else if (event.shiftKey && event.key.toLowerCase() === "t") {
         event.preventDefault();
-        setOpenTabs((tabs) => tabs.includes(lastClosedTab) ? tabs : [...tabs, lastClosedTab]);
-        setActiveTab(lastClosedTab);
-        setLastClosedTab(null);
+        reopenLastDocument();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeTab, lastClosedTab]);
-
-  const closeTab = (tab: "design" | "output") => {
-    setOpenTabs((tabs) => {
-      if (tabs.length <= 1) return tabs;
-      const next = tabs.filter((item) => item !== tab);
-      setLastClosedTab(tab);
-      if (activeTab === tab) setActiveTab(next.at(-1) ?? "design");
-      return next;
-    });
-  };
+  }, [catalogSaveState]);
 
   const toggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
@@ -256,26 +317,82 @@ export function Studio() {
     setNotice(`Applied reviewed HTML/CSS import: ${projection.importedNodes} nodes, ${projection.changes.length} semantic changes, ${projection.diagnostics.length} explicit diagnostics.`);
   };
 
+  const flushCatalogSave = (): Promise<boolean> => {
+    const next = catalogSaveChain.current.then(async () => {
+      const current = catalogProjectRef.current;
+      if (!current) return false;
+      const graphSnapshot = structuredClone(graphRef.current);
+      const workspaceSnapshot = structuredClone(workspaceRef.current);
+      setCatalogSaveState("saving");
+      const saved = await browserProjectCatalog().save(
+        current.id,
+        graphSnapshot,
+        workspaceSnapshot,
+        current.revision,
+        {
+          projectType,
+          source: projectSource,
+          ...(localProjectFingerprint ? { localFingerprint: localProjectFingerprint } : {}),
+        },
+      );
+      if (!saved.ok) {
+        setCatalogSaveState("error");
+        setNoticeText(saved.message);
+        return false;
+      }
+      catalogProjectRef.current = saved.project;
+      setCatalogProject(saved.project);
+      setCatalogSavedGraph(graphSnapshot);
+      const graphStillCurrent = stableSerialize(graphRef.current) === stableSerialize(graphSnapshot);
+      const workspaceStillCurrent = JSON.stringify(workspaceRef.current) === JSON.stringify(workspaceSnapshot);
+      setCatalogSaveState(graphStillCurrent && workspaceStillCurrent ? "saved" : "dirty");
+      return true;
+    });
+    catalogSaveChain.current = next.then(() => undefined).catch(() => {
+      setCatalogSaveState("error");
+      setNoticeText("The durable project save was interrupted. The previous revision remains intact.");
+    });
+    return next;
+  };
+
   useEffect(() => {
     let cancelled = false;
-    const restoreGraph = (
-      restored: SemanticInterfaceGraph,
-      metadata: { projectType: ProjectType; source: ProjectSource; localFingerprint?: string | undefined },
-      notice: string,
-    ) => {
+    const restoreProject = (project: BrowserCatalogProject, notice: string) => {
       if (cancelled) return;
-      const nextScreen = restored.screens.find((screen) => screen.id === selectedScreen) ?? restored.screens[0];
+      const restored = project.graph;
+      const legacyScreen = project.source === "recovery" && project.revision === 1
+        ? restored.screens.find((screen) => screen.id === selectedScreen)
+        : undefined;
+      const restoredWorkspace = legacyScreen
+        ? {
+            openTabs: [{ id: `screen:${legacyScreen.id}`, kind: "screen" as const, screenId: legacyScreen.id, title: legacyScreen.title }],
+            activeTabId: `screen:${legacyScreen.id}`,
+            recentlyClosed: [],
+          }
+        : normalizeWorkspaceState(restored, project.workspace);
+      const activeDocument = restoredWorkspace.openTabs.find((tab) => tab.id === restoredWorkspace.activeTabId);
+      const activeScreenId = activeDocument?.kind === "screen" ? activeDocument.screenId : restored.screens[0]?.id;
+      const nextScreen = restored.screens.find((screen) => screen.id === activeScreenId) ?? restored.screens[0];
       setGraph(restored);
       setBaseline(restored);
-      setProjectType(metadata.projectType);
-      if (metadata.projectType === "responsive-web" && restored.platforms.some((platform) => platform.target === "web" && platform.enabled)) {
+      setCatalogProject(project);
+      catalogProjectRef.current = project;
+      setCatalogSavedGraph(restored);
+      setCatalogSaveState("saved");
+      setWorkspace(restoredWorkspace);
+      setProjectType(project.projectType);
+      if (project.projectType === "responsive-web" && restored.platforms.some((platform) => platform.target === "web" && platform.enabled)) {
         setOutputTarget("web");
         setScenarioId(restored.web
           ? `web:${restored.web.defaultFrame}`
           : `device:${restored.devices.defaultProfile}`);
       }
-      setProjectSource(metadata.source);
-      setLocalProjectFingerprint(metadata.localFingerprint ?? null);
+      if (activeDocument?.kind === "output") {
+        setOutputTarget(activeDocument.target);
+        setStage("outputs");
+      }
+      setProjectSource(project.source);
+      setLocalProjectFingerprint(project.localFingerprint ?? null);
       setSelectedScreen(nextScreen?.id ?? "");
       setSelectedNodeId(nextScreen?.nodes[0]?.id ?? null);
       setNotice(notice);
@@ -283,16 +400,17 @@ export function Studio() {
     };
     void (async () => {
       try {
-        const recovered = loadBrowserProject(window.localStorage);
-        if (recovered.status === "ready") {
-          const restored = recovered.project.graph;
-          restoreGraph(restored, recovered.project, `Restored ${restored.product.name} from browser recovery.`);
-          return;
-        }
-        if (recovered.status === "invalid") {
-          setNotice("Browser recovery needs attention. Return to the project launcher to inspect or discard it.");
-          window.location.replace("/");
-          return;
+        const migration = await migrateLegacyBrowserProject(window.localStorage);
+        if (migration.warning) throw new Error(migration.warning);
+        const requestedId = new URLSearchParams(window.location.search).get("project");
+        const id = requestedId ?? activeBrowserProjectId(window.localStorage) ?? migration.migratedProjectId;
+        if (id) {
+          const project = await browserProjectCatalog().get(id);
+          if (project && !project.archivedAt) {
+            setActiveBrowserProject(window.localStorage, project.id);
+            restoreProject(project, `Opened ${project.name} from the durable browser catalog.`);
+            return;
+          }
         }
         if (window.intentformDesktop) {
           const response = await fetch("/api/project", { cache: "no-store" });
@@ -301,15 +419,19 @@ export function Studio() {
             throw new Error(result.error ?? "The granted desktop project could not be opened.");
           }
           const restored = parseGraph(result.graph);
-          restoreGraph(restored, {
+          const created = await browserProjectCatalog().create(restored, {
             projectType: restored.web ? "responsive-web" : "application",
             source: "local",
             localFingerprint: result.fingerprint,
-          }, `Opened ${restored.product.name} from the granted desktop project.`);
+          });
+          if (!created.ok) throw new Error(created.message);
+          setActiveBrowserProject(window.localStorage, created.project.id);
+          restoreProject(created.project, `Opened ${restored.product.name} from the granted desktop project.`);
           return;
         }
         window.location.replace("/");
-      } catch {
+      } catch (cause) {
+        setNotice(cause instanceof Error ? cause.message : "The selected project could not be opened.");
         window.location.replace("/");
       }
     })();
@@ -319,17 +441,17 @@ export function Studio() {
   }, []);
 
   useEffect(() => {
-    if (!draftReady) return;
-    const timeout = window.setTimeout(() => {
-      const saved = saveBrowserProject(window.localStorage, graph, {
-        projectType,
-        source: projectSource,
-        ...(localProjectFingerprint ? { localFingerprint: localProjectFingerprint } : {}),
-      });
-      if (!saved.ok) setNoticeText(saved.message);
-    }, 250);
+    if (!draftReady || !catalogProject || !catalogSavedGraph) return;
+    const graphChanged = stableSerialize(graph) !== stableSerialize(catalogSavedGraph);
+    const workspaceChanged = JSON.stringify(workspace) !== JSON.stringify(catalogProject.workspace);
+    if (!graphChanged && !workspaceChanged) {
+      setCatalogSaveState("saved");
+      return;
+    }
+    setCatalogSaveState("dirty");
+    const timeout = window.setTimeout(() => void flushCatalogSave(), 350);
     return () => window.clearTimeout(timeout);
-  }, [draftReady, graph, localProjectFingerprint, projectSource, projectType]);
+  }, [catalogProject, catalogSavedGraph, draftReady, graph, workspace]);
 
   useEffect(() => {
     if (/failed|could not|invalid|quota|unavailable|rejected|ignored|unsupported/i.test(notice)) setNoticeOpen(true);
@@ -567,9 +689,9 @@ export function Studio() {
   };
 
   const resetProject = () => {
-    clearBrowserProject(window.localStorage);
     setGraph(demoGraph);
     setBaseline(demoGraph);
+    setWorkspace(defaultWorkspaceState(demoGraph));
     setProjectType("application");
     setProjectSource("example");
     setLocalProjectFingerprint(null);
@@ -842,6 +964,34 @@ export function Studio() {
 
   const errorCount = verification.findings.filter((finding) => finding.severity === "error" && finding.status !== "suppressed").length;
   const noticeIsError = /failed|could not|invalid|quota|unavailable|rejected/i.test(notice);
+  const focusDocumentAt = (index: number) => {
+    const count = workspace.openTabs.length;
+    if (count === 0) return;
+    const normalized = ((index % count) + count) % count;
+    const tab = workspace.openTabs[normalized]!;
+    activateDocument(tab);
+    requestAnimationFrame(() => document.getElementById(`document-tab-${normalized}`)?.focus());
+  };
+  const openAnotherDocument = () => {
+    const openIds = new Set(workspace.openTabs.map((tab) => tab.id));
+    const screen = graph.screens.find((candidate) => !openIds.has(`screen:${candidate.id}`));
+    const target = graph.platforms
+      .filter((platform) => platform.enabled)
+      .map((platform) => platform.target)
+      .find((candidate): candidate is OutputTarget => candidate !== "compose" && !openIds.has(`output:${candidate}`));
+    const tab: BrowserDocumentTab | undefined = screen
+      ? { id: `screen:${screen.id}`, kind: "screen", screenId: screen.id, title: screen.title }
+      : target
+        ? { id: `output:${target}`, kind: "output", target, title: `${target} output` }
+        : workspace.recentlyClosed[0];
+    if (!tab) return;
+    setWorkspace((current) => ({
+      openTabs: current.openTabs.some((candidate) => candidate.id === tab.id) ? current.openTabs : [...current.openTabs, tab],
+      activeTabId: tab.id,
+      recentlyClosed: current.recentlyClosed.filter((candidate) => candidate.id !== tab.id),
+    }));
+    activateDocument(tab);
+  };
 
   return (
     <main className="studio-grain h-[100dvh] overflow-hidden text-[var(--ink)]">
@@ -849,33 +999,43 @@ export function Studio() {
       <div className="grid h-full min-h-0 grid-rows-[34px_38px_minmax(0,1fr)] bg-[var(--if-panel)]">
         <div className="relative z-[6] flex min-w-0 items-end border-b border-[var(--line)] bg-[var(--app-bg,var(--canvas))] px-2 pt-1">
           <div role="tablist" aria-label="Open project documents" className="flex min-w-0 items-end gap-px overflow-x-auto [scrollbar-width:none]">
-          {openTabs.map((tab) => {
-            const active = tab === activeTab;
-            const label = tab === "design" ? `${graph.product.name}.intentform` : "Generated output";
+          {workspace.openTabs.map((tab, tabIndex) => {
+            const active = tab.id === workspace.activeTabId;
+            const TabIcon = tab.kind === "screen" ? BracketsCurly : Code;
             return (
-              <div
-                key={tab}
+              <button
+                key={tab.id}
+                type="button"
+                id={`document-tab-${tabIndex}`}
                 role="tab"
                 tabIndex={active ? 0 : -1}
                 aria-selected={active}
-                onClick={(event) => {
-                  if ((event.target as HTMLElement).closest("[data-close-tab]")) { closeTab(tab); return; }
-                  setActiveTab(tab); setStage(tab === "output" ? "outputs" : "canvas");
+                aria-label={tab.title}
+                onClick={() => activateDocument(tab)}
+                onAuxClick={(event) => { if (event.button === 1) closeDocument(tab); }}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowLeft") { event.preventDefault(); focusDocumentAt(tabIndex - 1); }
+                  else if (event.key === "ArrowRight") { event.preventDefault(); focusDocumentAt(tabIndex + 1); }
+                  else if (event.key === "Home") { event.preventDefault(); focusDocumentAt(0); }
+                  else if (event.key === "End") { event.preventDefault(); focusDocumentAt(workspace.openTabs.length - 1); }
                 }}
-                onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setActiveTab(tab); setStage(tab === "output" ? "outputs" : "canvas"); } }}
-                onAuxClick={(event) => { if (event.button === 1) closeTab(tab); }}
-                className={`group flex h-[33px] min-w-0 max-w-56 items-center gap-1.5 rounded-t-[6px] border border-b-0 px-2.5 text-[10.5px] leading-[15px] ${active ? "border-[var(--line)] bg-[var(--surface)] font-medium text-[var(--ink)]" : "border-transparent font-normal text-[var(--faint)] hover:bg-[var(--hover)] hover:text-[var(--muted)]"}`}
+                className={`group flex h-[33px] min-w-0 max-w-56 items-center rounded-t-[6px] border border-b-0 text-[10.5px] leading-[15px] ${active ? "border-[var(--line)] bg-[var(--surface)] font-medium text-[var(--ink)]" : "border-transparent font-normal text-[var(--faint)] hover:bg-[var(--hover)] hover:text-[var(--muted)]"}`}
               >
-                <BracketsCurly size={13} className="shrink-0 text-[var(--accent)]" />
-                <span className="truncate">{label}</span>
-                {tab === "design" && localChangesAreUnsaved ? <span className="size-1.5 shrink-0 rounded-full bg-[var(--warning,#e4ad5a)]" aria-label="Unsaved local changes" /> : null}
-                {tab === "design" && agentDrawerOpen ? <span className="size-1.5 shrink-0 rounded-full bg-[var(--success,#55c58b)]" aria-label="Agent operation active" /> : null}
-                <span data-close-tab aria-hidden="true" className="grid size-5 shrink-0 place-items-center rounded opacity-0 hover:bg-[var(--control-hover,var(--hover))] group-hover:opacity-100 group-focus-visible:opacity-100"><X size={11} /></span>
-              </div>
+                <span className="flex h-full min-w-0 flex-1 items-center gap-1.5 px-2.5 text-left outline-none">
+                  <TabIcon size={13} className="shrink-0 text-[var(--accent)]" />
+                  <span className="truncate">{tab.title}</span>
+                  {tab.kind === "screen" && (catalogSaveState !== "saved" || localChangesAreUnsaved) ? <span className="size-1.5 shrink-0 rounded-full bg-[var(--warning,#e4ad5a)]" aria-label={localChangesAreUnsaved ? "Unsaved local changes" : "Unsaved project changes"} /> : null}
+                  {tab.kind === "screen" && agentDrawerOpen ? <span className="size-1.5 shrink-0 rounded-full bg-[var(--success,#55c58b)]" aria-label="Agent operation active" /> : null}
+                </span>
+              </button>
             );
           })}
           </div>
-          <button type="button" aria-label="Open another document" onClick={() => { const tab = openTabs.includes("output") ? "design" : "output"; setOpenTabs((tabs) => tabs.includes(tab) ? tabs : [...tabs, tab]); setActiveTab(tab); }} className="mb-0.5 grid size-7 shrink-0 place-items-center rounded-[5px] text-[var(--muted)] hover:bg-[var(--hover)]"><Plus size={13} /></button>
+          <button type="button" aria-label="Close active document" onClick={() => {
+            const active = workspace.openTabs.find((tab) => tab.id === workspace.activeTabId);
+            if (active) closeDocument(active);
+          }} disabled={workspace.openTabs.length <= 1} className="mb-0.5 grid size-7 shrink-0 place-items-center rounded-[5px] text-[var(--muted)] hover:bg-[var(--hover)] disabled:opacity-25"><X size={12} /></button>
+          <button type="button" aria-label="Open another document" onClick={openAnotherDocument} className="mb-0.5 grid size-7 shrink-0 place-items-center rounded-[5px] text-[var(--muted)] hover:bg-[var(--hover)]"><Plus size={13} /></button>
         </div>
         <header className="studio-topbar relative z-[5] grid h-[38px] grid-cols-[auto_minmax(0,1fr)_auto] items-center overflow-visible border-b border-[var(--if-border-subtle)] px-2">
           <div className="flex min-w-0 items-center gap-2">
@@ -1149,7 +1309,9 @@ export function Studio() {
             <header className="flex h-11 shrink-0 items-center justify-between border-b border-[var(--line)] px-3"><div><h2 id="agent-drawer-title" className="text-[12px] font-semibold">Agent review</h2><p className="font-mono text-[8px] text-[var(--faint)]">live transaction stream</p></div><button ref={agentCloseButton} type="button" aria-label="Close agent review" onClick={closeAgentDrawer} className="grid size-7 place-items-center rounded hover:bg-[var(--hover)]"><X size={13} /></button></header>
             <AgentActivityPanel
               enabled={localProjectFingerprint !== null}
+              projectId={catalogProject?.id ?? "unresolved"}
               projectName={graph.product.name}
+              documentId={workspace.activeTabId}
               screenLabel={graph.screens.find((screen) => screen.id === selectedScreen)?.title ?? selectedScreen}
               selectionLabel={selectedNodeId}
               onPreviewChanges={previewAgentChanges}
@@ -1158,12 +1320,37 @@ export function Studio() {
           </aside>
         </div>
       ) : null}
+      {pendingTabClose ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-[var(--backdrop)] p-4">
+          <section role="alertdialog" aria-modal="true" aria-labelledby="dirty-tab-title" aria-describedby="dirty-tab-description" className="menu-pop w-full max-w-md rounded-[10px] p-4">
+            <span className="grid size-8 place-items-center rounded-[6px] bg-[var(--warn-soft)] text-[var(--warn)]"><Warning size={16} weight="fill" /></span>
+            <h2 id="dirty-tab-title" className="mt-3 text-[15px] font-[550] leading-[21px]">Save changes before closing?</h2>
+            <p id="dirty-tab-description" className="mt-2 text-[12px] leading-relaxed text-[var(--muted)]">{pendingTabClose.title} has project changes that are not yet committed to the durable catalog.</p>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button ref={dirtyCloseCancelButton} type="button" onClick={cancelDirtyClose} className="h-8 rounded-[6px] px-3 text-[11px] font-medium hover:bg-[var(--hover)]">Cancel</button>
+              <button type="button" onClick={() => {
+                if (catalogSavedGraph) {
+                  setGraph(catalogSavedGraph);
+                  reconcileSelection(catalogSavedGraph);
+                }
+                closeDocument(pendingTabClose, true);
+                setPendingTabClose(null);
+              }} className="h-8 rounded-[6px] border border-[var(--line)] px-3 text-[11px] font-medium hover:bg-[var(--hover)]">Discard changes</button>
+              <button type="button" onClick={() => void (async () => {
+                if (!await flushCatalogSave()) return;
+                closeDocument(pendingTabClose, true);
+                setPendingTabClose(null);
+              })()} className="h-8 rounded-[6px] bg-[var(--accent)] px-3 text-[11px] font-medium text-white hover:brightness-95">Save and close</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
       {resetConfirmOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-[var(--backdrop)] p-4" onPointerDown={(event) => { if (event.target === event.currentTarget) cancelProjectReset(); }}>
           <section ref={resetDialog} role="alertdialog" aria-modal="true" aria-labelledby="reset-project-title" aria-describedby="reset-project-description" className="menu-pop w-full max-w-md rounded-[10px] p-4">
             <span className="grid size-8 place-items-center rounded-[6px] bg-[var(--danger-soft)] text-[var(--danger)]"><ArrowsCounterClockwise size={16} weight="bold" /></span>
             <h2 id="reset-project-title" className="mt-3 text-[15px] font-[550] leading-[21px] tracking-[-.02em]">Reset this workspace?</h2>
-            <p id="reset-project-description" className="mt-2 text-[12px] leading-relaxed text-[var(--muted)]">This replaces the current semantic graph with the verified sample and removes its browser recovery. Export first if you need to keep this version.</p>
+            <p id="reset-project-description" className="mt-2 text-[12px] leading-relaxed text-[var(--muted)]">This replaces the current semantic graph with the verified sample. The previous committed revision remains available as last-known-good recovery.</p>
             {localChangesAreUnsaved ? <p className="mt-3 rounded-[6px] bg-[var(--warn-soft)] px-3 py-2 text-[11px] font-medium text-[var(--warn)]">This local project also has changes that have not been saved to disk.</p> : null}
             <div className="mt-4 flex justify-end gap-2">
               <button ref={resetCancelButton} type="button" onClick={cancelProjectReset} className="h-8 rounded-[6px] border border-[var(--line)] px-3 text-[11px] font-medium hover:bg-[var(--hover)]">Cancel</button>
