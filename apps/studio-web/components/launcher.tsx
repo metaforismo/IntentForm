@@ -3,6 +3,7 @@
 import {
   ArrowLeft,
   ArrowRight,
+  Archive,
   BracketsCurly,
   Browser,
   BookOpen,
@@ -20,6 +21,8 @@ import {
   ClockCounterClockwise,
   House,
   MagnifyingGlass,
+  PencilSimple,
+  Trash,
   Warning,
   X,
 } from "@phosphor-icons/react";
@@ -30,12 +33,16 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   clearBrowserProject,
-  loadBrowserProject,
-  saveBrowserProject,
-  type BrowserProjectLoadResult,
   type BrowserProjectMetadata,
   type ProjectType,
 } from "../lib/browser-projects";
+import {
+  browserProjectCatalog,
+  clearActiveBrowserProject,
+  migrateLegacyBrowserProject,
+  setActiveBrowserProject,
+  type BrowserCatalogProject,
+} from "../lib/browser-project-catalog";
 import { createStarterGraph, projectExamples } from "../lib/project-starters";
 import { filterProjectExamples, projectMatchesQuery, type LauncherSection } from "../lib/launcher-model";
 
@@ -44,6 +51,7 @@ const MAX_IMPORT_BYTES = 512_000;
 type LauncherView = "projects" | "new";
 type CatalogView = "grid" | "list";
 type BridgeStatus = "checking" | "available" | "unavailable";
+type ProjectAction = { id: string; mode: "menu" | "rename" | "delete"; value?: string };
 
 interface LocalMigrationState {
   sourceFingerprint: string;
@@ -99,6 +107,80 @@ function ProjectThumbnail({ graph }: { graph: SemanticInterfaceGraph }) {
   );
 }
 
+function CatalogProjectCard({
+  project,
+  catalogView,
+  opening,
+  action,
+  onAction,
+  onOpen,
+  onRename,
+  onArchive,
+  onDelete,
+}: {
+  project: BrowserCatalogProject;
+  catalogView: CatalogView;
+  opening: string | null;
+  action: ProjectAction | null;
+  onAction(action: ProjectAction | null): void;
+  onOpen(): void;
+  onRename(name: string): void;
+  onArchive(): void;
+  onDelete(): void;
+}) {
+  const activeAction = action?.id === project.id ? action : null;
+  return (
+    <article className={`group relative overflow-hidden rounded-lg border border-[var(--if-border)] bg-[var(--if-panel)] ${project.archivedAt ? "opacity-65" : ""}`}>
+      <button type="button" disabled={opening !== null || Boolean(project.archivedAt)} onClick={onOpen} className={`w-full text-left disabled:cursor-not-allowed ${catalogView === "list" ? "grid grid-cols-[112px_minmax(0,1fr)]" : "block"}`}>
+        <ProjectThumbnail graph={project.graph} />
+        <span className="flex min-w-0 items-start gap-3 p-3">
+          <span className="min-w-0 flex-1">
+            <strong className="block truncate text-[13px] font-medium">{project.name}</strong>
+            <span className="mt-1 block truncate text-[11px] text-[var(--if-text-secondary)]">
+              {new Date(project.lastOpenedAt).toLocaleString()} · {projectTypeLabel(project.projectType)}
+            </span>
+            <span className="mt-2 flex flex-wrap items-center gap-2 font-mono text-[10px] text-[var(--if-text-tertiary)]">
+              <span>{project.thumbnail.screenCount} {project.thumbnail.screenCount === 1 ? "screen" : "screens"}</span>
+              <span>r{project.revision}</span>
+              {project.source === "local" ? <span className={project.missingLocalPath ? "text-[var(--if-red)]" : ""}>{project.missingLocalPath ? "Missing path" : "Desktop linked"}</span> : null}
+              {project.archivedAt ? <span>Archived</span> : null}
+            </span>
+          </span>
+        </span>
+      </button>
+      <button
+        type="button"
+        aria-label={`Project actions for ${project.name}`}
+        aria-expanded={activeAction?.mode === "menu"}
+        onClick={() => onAction(activeAction?.mode === "menu" ? null : { id: project.id, mode: "menu" })}
+        className="absolute right-2 top-2 grid size-7 place-items-center rounded-md bg-[var(--if-panel)]/90 text-[var(--if-text-secondary)] opacity-0 shadow-[var(--if-shadow-menu)] hover:bg-[var(--if-raised)] group-hover:opacity-100 focus-visible:opacity-100"
+      >
+        <DotsThree size={16} weight="bold" />
+      </button>
+      {activeAction?.mode === "menu" ? (
+        <div role="menu" aria-label={`Actions for ${project.name}`} className="absolute right-2 top-10 z-[2] w-36 rounded-lg border border-[var(--if-border)] bg-[var(--if-raised)] p-1 shadow-[var(--if-shadow-menu)]">
+          <button type="button" role="menuitem" onClick={() => onAction({ id: project.id, mode: "rename", value: project.name })} className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] hover:bg-[var(--if-hover)]"><PencilSimple size={12} /> Rename</button>
+          <button type="button" role="menuitem" onClick={onArchive} className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] hover:bg-[var(--if-hover)]"><Archive size={12} /> {project.archivedAt ? "Restore" : "Archive"}</button>
+          <button type="button" role="menuitem" onClick={() => onAction({ id: project.id, mode: "delete" })} className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] text-[var(--if-red)] hover:bg-[var(--if-red-soft)]"><Trash size={12} /> Delete</button>
+        </div>
+      ) : null}
+      {activeAction?.mode === "rename" ? (
+        <form className="absolute inset-x-2 bottom-2 z-[2] flex gap-1 rounded-lg border border-[var(--if-border)] bg-[var(--if-raised)] p-1.5 shadow-[var(--if-shadow-menu)]" onSubmit={(event) => { event.preventDefault(); onRename(activeAction.value ?? project.name); }}>
+          <input autoFocus aria-label={`Rename ${project.name}`} value={activeAction.value ?? ""} onChange={(event) => onAction({ ...activeAction, value: event.target.value })} className="h-7 min-w-0 flex-1 rounded border border-[var(--if-border)] bg-[var(--if-input)] px-2 text-[11px] outline-none focus:border-[var(--if-blue)]" />
+          <button type="submit" className="h-7 rounded bg-[var(--if-blue)] px-2 text-[10.5px] font-medium text-white">Save</button>
+          <button type="button" onClick={() => onAction(null)} className="h-7 rounded px-2 text-[10.5px] hover:bg-[var(--if-hover)]">Cancel</button>
+        </form>
+      ) : null}
+      {activeAction?.mode === "delete" ? (
+        <div role="alertdialog" aria-label={`Delete ${project.name}`} className="absolute inset-x-2 bottom-2 z-[2] rounded-lg border border-[var(--if-red)] bg-[var(--if-raised)] p-2 shadow-[var(--if-shadow-menu)]">
+          <p className="text-[11px]">Delete this project and its recovery history from this browser?</p>
+          <div className="mt-2 flex justify-end gap-1"><button type="button" onClick={() => onAction(null)} className="h-7 rounded px-2 text-[10.5px] hover:bg-[var(--if-hover)]">Cancel</button><button type="button" onClick={onDelete} className="h-7 rounded bg-[var(--if-red)] px-2 text-[10.5px] font-medium text-white">Delete</button></div>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
 export function Launcher() {
   const router = useRouter();
   const importInput = useRef<HTMLInputElement>(null);
@@ -107,7 +189,10 @@ export function Launcher() {
   const [catalogView, setCatalogView] = useState<CatalogView>("grid");
   const [section, setSection] = useState<LauncherSection>("recents");
   const [projectQuery, setProjectQuery] = useState("");
-  const [recovery, setRecovery] = useState<BrowserProjectLoadResult | null>(null);
+  const [projects, setProjects] = useState<BrowserCatalogProject[] | null>(null);
+  const [legacyWarning, setLegacyWarning] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [projectAction, setProjectAction] = useState<ProjectAction | null>(null);
   const [bridge, setBridge] = useState<BridgeStatus>("checking");
   const [localMigration, setLocalMigration] = useState<LocalMigrationState | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
@@ -123,12 +208,32 @@ export function Launcher() {
   const [startFrom, setStartFrom] = useState<"empty" | "patterns" | "example">("empty");
   const [projectTheme, setProjectTheme] = useState<"light" | "dark" | "both">("both");
 
-  useEffect(() => {
+  const refreshCatalog = async () => {
     try {
-      setRecovery(loadBrowserProject(window.localStorage));
+      const catalog = browserProjectCatalog();
+      setProjects(await catalog.list(true));
     } catch {
-      setRecovery({ status: "invalid", message: "Browser recovery storage is unavailable in this context." });
+      setProjects([]);
+      setError("The durable browser project catalog is unavailable in this context.");
     }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const migration = await migrateLegacyBrowserProject(window.localStorage);
+      if (cancelled) return;
+      if (migration.warning) setLegacyWarning(migration.warning);
+      try {
+        const entries = await browserProjectCatalog().list(true);
+        if (!cancelled) setProjects(entries);
+      } catch {
+        if (!cancelled) {
+          setProjects([]);
+          setError("The durable browser project catalog is unavailable in this context.");
+        }
+      }
+    })();
     const controller = new AbortController();
     void fetch("/api/project?capability=1", { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
@@ -138,8 +243,24 @@ export function Launcher() {
       .catch(() => {
         if (!controller.signal.aborted) setBridge("unavailable");
       });
-    return () => controller.abort();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, []);
+
+  useEffect(() => {
+    if (bridge !== "unavailable" || !projects?.some((project) => project.source === "local" && !project.missingLocalPath)) return;
+    let cancelled = false;
+    void (async () => {
+      const catalog = browserProjectCatalog();
+      await Promise.all(projects
+        .filter((project) => project.source === "local" && !project.missingLocalPath)
+        .map((project) => catalog.markMissing(project.id, true)));
+      if (!cancelled) await refreshCatalog();
+    })();
+    return () => { cancelled = true; };
+  }, [bridge, projects]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -167,18 +288,76 @@ export function Launcher() {
   ) => {
     setOpening(operationId);
     setError(null);
-    try {
-      const saved = saveBrowserProject(window.localStorage, graph, metadata);
-      if (!saved.ok) {
+    void (async () => {
+      try {
+        const created = await browserProjectCatalog().create(graph, metadata);
+        if (!created.ok) throw new Error(created.message);
+        setActiveBrowserProject(window.localStorage, created.project.id);
+        router.push("/studio");
+      } catch (cause) {
         setOpening(null);
-        setError(saved.message);
+        setError(validationMessage(cause));
+      }
+    })();
+  };
+
+  const openCatalogProject = (project: BrowserCatalogProject) => {
+    setOpening(project.id);
+    setError(null);
+    void (async () => {
+      const touched = await browserProjectCatalog().touch(project.id);
+      if (!touched.ok) {
+        setOpening(null);
+        setError(touched.message);
         return;
       }
+      setActiveBrowserProject(window.localStorage, project.id);
       router.push("/studio");
-    } catch (cause) {
+    })();
+  };
+
+  const renameCatalogProject = (project: BrowserCatalogProject, name: string) => {
+    setOpening(project.id);
+    void (async () => {
+      const renamed = await browserProjectCatalog().rename(project.id, name);
       setOpening(null);
-      setError(validationMessage(cause));
-    }
+      if (!renamed.ok) {
+        setError(renamed.message);
+        return;
+      }
+      setProjectAction(null);
+      await refreshCatalog();
+    })();
+  };
+
+  const archiveCatalogProject = (project: BrowserCatalogProject) => {
+    setOpening(project.id);
+    void (async () => {
+      const archived = await browserProjectCatalog().archive(project.id, !project.archivedAt);
+      setOpening(null);
+      if (!archived.ok) {
+        setError(archived.message);
+        return;
+      }
+      setProjectAction(null);
+      await refreshCatalog();
+    })();
+  };
+
+  const deleteCatalogProject = (project: BrowserCatalogProject) => {
+    setOpening(project.id);
+    void (async () => {
+      try {
+        await browserProjectCatalog().delete(project.id);
+        clearActiveBrowserProject(window.localStorage, project.id);
+        setProjectAction(null);
+        setOpening(null);
+        await refreshCatalog();
+      } catch {
+        setOpening(null);
+        setError("The project could not be deleted from this browser.");
+      }
+    })();
   };
 
   const openLocalProject = () => {
@@ -276,22 +455,17 @@ export function Launcher() {
     })();
   };
 
-  const discardRecovery = () => {
-    try {
-      clearBrowserProject(window.localStorage);
-      setRecovery({ status: "empty" });
-      setError(null);
-    } catch {
-      setError("The browser blocked removal of the recovery project.");
-    }
-  };
-
   const visibleExamples = filterProjectExamples(projectExamples, projectQuery);
-  const recoveryMatches = recovery?.status === "ready"
-    ? projectMatchesQuery(projectQuery, [recovery.project.graph.product.name, recovery.project.projectType, recovery.project.source])
-    : projectQuery.trim().length === 0;
+  const visibleProjects = (projects ?? []).filter((project) => {
+    if (!showArchived && project.archivedAt) return false;
+    return projectMatchesQuery(projectQuery, [project.name, project.projectType, project.source]);
+  });
+  const activeProjects = (projects ?? []).filter((project) => !project.archivedAt);
+  const recentProjects = section === "recents"
+    ? visibleProjects.filter((project) => !project.archivedAt).slice(0, 12)
+    : visibleProjects;
   const showRecents = section !== "examples";
-  const showExamples = section !== "recents" || recovery?.status === "empty";
+  const showExamples = section !== "recents" || activeProjects.length === 0;
   const displayedExamples = section === "recents" ? visibleExamples.slice(0, 3) : visibleExamples;
 
   const selectSection = (next: LauncherSection) => {
@@ -345,18 +519,30 @@ export function Launcher() {
 
         <div className="mx-auto max-w-[1440px] p-4 sm:p-6 lg:p-8">
           {error ? <div role="alert" className="mb-5 flex items-start gap-3 rounded-lg border border-[var(--if-red)] bg-[var(--if-red-soft)] px-3 py-2.5 text-[12px]"><Warning size={15} weight="fill" className="mt-0.5 shrink-0 text-[var(--if-red)]" /><span className="min-w-0 flex-1">{error}</span><button type="button" aria-label="Dismiss launcher error" onClick={() => setError(null)} className="rounded p-1 hover:bg-[var(--if-hover)]"><X size={13} /></button></div> : null}
+          {legacyWarning ? <div role="alert" className="mb-5 rounded-lg border border-[var(--if-amber)] bg-[var(--if-amber-soft)] p-4 text-[12px]"><strong>Recovery needs attention</strong><p className="mt-1 text-[var(--if-text-secondary)]">{legacyWarning}</p><button type="button" onClick={() => { clearBrowserProject(window.localStorage); setLegacyWarning(null); }} className="mt-3 rounded-md border border-[var(--if-border)] px-3 py-1.5 font-medium">Discard</button></div> : null}
           {localMigration ? <div role="status" className="mb-5 flex flex-wrap items-center gap-3 rounded-lg border border-[var(--if-amber)] bg-[var(--if-amber-soft)] px-3 py-2.5 text-[11px]"><Warning size={15} weight="fill" className="text-[var(--if-amber)]" /><span className="min-w-0 flex-1">Schema {localMigration.fromVersion} needs an atomic update to {localMigration.toVersion}.</span><button type="button" onClick={applyLocalMigration} disabled={opening !== null} className="rounded-md bg-[var(--if-amber)] px-3 py-1.5 font-semibold text-white">Checkpoint and update</button><button type="button" onClick={() => setLocalMigration(null)} className="rounded-md px-2 py-1.5 hover:bg-[var(--if-hover)]">Not now</button></div> : null}
 
           {showRecents ? <section aria-labelledby="recent-projects-title">
-            <div className="mb-4 flex items-center justify-between"><div><h2 id="recent-projects-title" className="text-[13px] font-medium">{section === "projects" ? "Recent projects" : "Recents"}</h2><p className="mt-0.5 text-[11px] text-[var(--if-text-secondary)]">Projects on this device</p></div>{recovery?.status === "ready" ? <button type="button" onClick={discardRecovery} className="text-[11px] text-[var(--if-text-secondary)] hover:text-[var(--if-red)]">Discard recovery</button> : null}</div>
-            {recovery === null ? <div className="aspect-[16/10] max-w-80 animate-pulse rounded-lg bg-[var(--if-panel-alt)]" /> : recovery.status === "ready" && recoveryMatches ? (
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div><h2 id="recent-projects-title" className="text-[13px] font-medium">{section === "projects" ? "Project catalog" : "Recents"}</h2><p className="mt-0.5 text-[11px] text-[var(--if-text-secondary)]">{projects?.length ?? 0} durable {projects?.length === 1 ? "project" : "projects"} on this device</p></div>
+              {section === "projects" && (projects ?? []).some((project) => project.archivedAt) ? <button type="button" aria-pressed={showArchived} onClick={() => setShowArchived((shown) => !shown)} className="h-7 rounded-md px-2 text-[10.5px] text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)]">{showArchived ? "Hide archived" : "Show archived"}</button> : null}
+            </div>
+            {projects === null ? <div className="aspect-[16/10] max-w-80 animate-pulse rounded-lg bg-[var(--if-panel-alt)]" /> : recentProjects.length > 0 ? (
               <div className={catalogView === "grid" ? "grid grid-cols-[repeat(auto-fill,minmax(260px,320px))] gap-5" : "grid gap-2"}>
-                <button type="button" disabled={opening !== null} onClick={() => persistAndOpen(recovery.project.graph, { projectType: recovery.project.projectType, source: "recovery", ...(recovery.project.localFingerprint ? { localFingerprint: recovery.project.localFingerprint } : {}) }, "recovery")} className={`group overflow-hidden rounded-lg border border-[var(--if-border)] bg-[var(--if-panel)] text-left hover:border-[var(--if-blue)] disabled:opacity-60 ${catalogView === "list" ? "grid grid-cols-[112px_minmax(0,1fr)]" : ""}`}>
-                  <ProjectThumbnail graph={recovery.project.graph} />
-                  <span className="flex items-start gap-3 p-3"><span className="min-w-0 flex-1"><strong className="block truncate text-[13px] font-medium">{recovery.project.graph.product.name}</strong><span className="mt-1 block truncate text-[11px] text-[var(--if-text-secondary)]">{new Date(recovery.project.savedAt).toLocaleString()} · {projectTypeLabel(recovery.project.projectType)}</span><span className="mt-2 inline-flex items-center gap-1.5 text-[10px] text-[var(--if-amber)]"><span className="size-1.5 rounded-full bg-current" />Recovery available</span></span><DotsThree size={16} className="shrink-0 text-[var(--if-text-tertiary)]" /></span>
-                </button>
+                {recentProjects.map((project) => <CatalogProjectCard
+                  key={project.id}
+                  project={project}
+                  catalogView={catalogView}
+                  opening={opening}
+                  action={projectAction}
+                  onAction={setProjectAction}
+                  onOpen={() => openCatalogProject(project)}
+                  onRename={(nextName) => renameCatalogProject(project, nextName)}
+                  onArchive={() => archiveCatalogProject(project)}
+                  onDelete={() => deleteCatalogProject(project)}
+                />)}
               </div>
-            ) : recovery.status === "invalid" && projectQuery.trim().length === 0 ? <div className="max-w-xl rounded-lg border border-[var(--if-amber)] bg-[var(--if-amber-soft)] p-4 text-[12px]"><strong>Recovery needs attention</strong><p className="mt-1 text-[var(--if-text-secondary)]">{recovery.message}</p><button type="button" onClick={discardRecovery} className="mt-3 rounded-md border border-[var(--if-border)] px-3 py-1.5 font-medium">Discard</button></div> : <div className="max-w-[560px] rounded-lg border border-dashed border-[var(--if-border)] px-5 py-6"><strong className="text-[13px] font-medium">{projectQuery.trim() ? `No recent project matches “${projectQuery.trim()}”` : "No recent projects"}</strong><p className="mt-1 text-[11px] text-[var(--if-text-secondary)]">Create a project, open a local file, or start from a working example.</p><div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => setView("new")} className="h-8 rounded-md bg-[var(--if-blue)] px-3 text-[11px] font-medium text-white">New project</button><button type="button" onClick={() => importInput.current?.click()} className="h-8 rounded-md border border-[var(--if-border)] px-3 text-[11px] font-medium">Open project</button><button type="button" onClick={() => selectSection("examples")} className="h-8 rounded-md px-3 text-[11px] font-medium text-[var(--if-blue-text)] hover:bg-[var(--if-hover)]">Explore examples</button></div></div>}
+            ) : <div className="max-w-[560px] rounded-lg border border-dashed border-[var(--if-border)] px-5 py-6"><strong className="text-[13px] font-medium">{projectQuery.trim() ? `No project matches “${projectQuery.trim()}”` : showArchived ? "No archived projects" : "No recent projects"}</strong><p className="mt-1 text-[11px] text-[var(--if-text-secondary)]">Create a project, open a local file, or start from a working example.</p><div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => setView("new")} className="h-8 rounded-md bg-[var(--if-blue)] px-3 text-[11px] font-medium text-white">New project</button><button type="button" onClick={() => importInput.current?.click()} className="h-8 rounded-md border border-[var(--if-border)] px-3 text-[11px] font-medium">Open project</button><button type="button" onClick={() => selectSection("examples")} className="h-8 rounded-md px-3 text-[11px] font-medium text-[var(--if-blue-text)] hover:bg-[var(--if-hover)]">Explore examples</button></div></div>}
           </section> : null}
 
           {showExamples ? <section aria-labelledby="example-projects-title" className={showRecents ? "mt-10 border-t border-[var(--if-border-subtle)] pt-7" : ""}>
@@ -375,7 +561,7 @@ export function Launcher() {
             <fieldset><legend className="text-[11px] font-medium">Project type</legend><div className="mt-2 grid gap-1 rounded-lg border border-[var(--if-border)] p-1">{projectTypeOptions.map((option) => { const Icon = option.icon; const selected = projectType === option.id; return <label key={option.id} className={`flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 ${selected ? "bg-[var(--if-blue-soft)]" : "hover:bg-[var(--if-hover)]"}`}><input type="radio" name="project-type" value={option.id} checked={selected} onChange={() => setProjectType(option.id)} className="sr-only" /><Icon size={15} className={selected ? "text-[var(--if-blue)]" : "text-[var(--if-text-secondary)]"} /><span className="min-w-0 flex-1"><strong className="block text-[12px] font-medium">{option.label}</strong><span className="block truncate text-[10px] text-[var(--if-text-secondary)]">{option.detail}</span></span>{selected ? <Check size={13} weight="bold" className="text-[var(--if-blue)]" /> : null}</label>; })}</div></fieldset>
             <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1.5 text-[11px] font-medium">Project name<input required maxLength={120} value={name} onChange={(event) => setName(event.target.value)} placeholder="Northline Field Notes" className="h-9 rounded-md border border-[var(--if-border)] bg-[var(--if-input)] px-3 text-[12px] font-normal outline-none focus:border-[var(--if-blue)]" /></label><label className="grid gap-1.5 text-[11px] font-medium">Primary audience<input required maxLength={240} value={audience} onChange={(event) => setAudience(event.target.value)} placeholder="Distributed research teams" className="h-9 rounded-md border border-[var(--if-border)] bg-[var(--if-input)] px-3 text-[12px] font-normal outline-none focus:border-[var(--if-blue)]" /></label><label className="grid gap-1.5 text-[11px] font-medium sm:col-span-2">First outcome<textarea required minLength={3} maxLength={500} value={purpose} onChange={(event) => setPurpose(event.target.value)} placeholder="Review and organize field observations" className="min-h-20 resize-y rounded-md border border-[var(--if-border)] bg-[var(--if-input)] px-3 py-2 text-[12px] font-normal outline-none focus:border-[var(--if-blue)]" /></label></div>
             <fieldset><legend className="text-[11px] font-medium">Targets</legend><div className="mt-2 grid gap-1 sm:grid-cols-2">{[["React", reactTarget, setReactTarget], ["SwiftUI", swiftTarget, setSwiftTarget], ["Expo Adaptive", expoTarget, setExpoTarget]] .map(([label, checked, setter]) => <label key={String(label)} className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-[11px] hover:bg-[var(--if-hover)]"><input type="checkbox" checked={Boolean(checked)} onChange={(event) => (setter as (value: boolean) => void)(event.target.checked)} className="accent-[var(--if-blue)]" />{String(label)}</label>)}{projectType === "responsive-web" ? <label className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-[11px] hover:bg-[var(--if-hover)]"><input type="checkbox" checked={webTarget} onChange={(event) => setWebTarget(event.target.checked)} className="accent-[var(--if-blue)]" />Responsive web</label> : null}</div></fieldset>
-            <div className="grid gap-3 sm:grid-cols-3"><label className="grid gap-1.5 text-[11px] font-medium">Starter<select value={startFrom} onChange={(event) => setStartFrom(event.target.value as typeof startFrom)} className="select-control h-9"><option value="empty">Empty</option><option value="patterns">Core patterns</option><option value="example">Example</option></select></label><label className="grid gap-1.5 text-[11px] font-medium">Theme<select value={projectTheme} onChange={(event) => setProjectTheme(event.target.value as typeof projectTheme)} className="select-control h-9"><option value="both">Light and dark</option><option value="light">Light</option><option value="dark">Dark</option></select></label><label className="grid gap-1.5 text-[11px] font-medium">Location<span className="flex h-9 items-center rounded-md border border-[var(--if-border)] bg-[var(--if-panel-alt)] px-3 text-[10px] font-normal text-[var(--if-text-secondary)]">Browser recovery</span></label></div>
+            <div className="grid gap-3 sm:grid-cols-3"><label className="grid gap-1.5 text-[11px] font-medium">Starter<select value={startFrom} onChange={(event) => setStartFrom(event.target.value as typeof startFrom)} className="select-control h-9"><option value="empty">Empty</option><option value="patterns">Core patterns</option><option value="example">Example</option></select></label><label className="grid gap-1.5 text-[11px] font-medium">Theme<select value={projectTheme} onChange={(event) => setProjectTheme(event.target.value as typeof projectTheme)} className="select-control h-9"><option value="both">Light and dark</option><option value="light">Light</option><option value="dark">Dark</option></select></label><label className="grid gap-1.5 text-[11px] font-medium">Location<span className="flex h-9 items-center rounded-md border border-[var(--if-border)] bg-[var(--if-panel-alt)] px-3 text-[10px] font-normal text-[var(--if-text-secondary)]">Durable browser catalog</span></label></div>
           </div>
           <footer className="flex items-center justify-between gap-4 border-t border-[var(--if-border-subtle)] px-5 py-4"><span className="min-w-0 truncate text-[10px] text-[var(--if-text-secondary)]">{name.trim() || "Untitled project"} · {projectTypeLabel(projectType)} · {projectTheme}</span><div className="flex gap-2"><button type="button" onClick={() => setView("projects")} className="h-8 rounded-md px-3 text-[11px] font-medium hover:bg-[var(--if-hover)]">Cancel</button><button type="submit" disabled={opening !== null} className="h-8 rounded-md bg-[var(--if-blue)] px-4 text-[11px] font-semibold text-white hover:bg-[var(--if-blue-hover)] disabled:opacity-60">Create project</button></div></footer>
         </motion.form>

@@ -29,7 +29,7 @@ async function gotoStudio(page: Page, targetOrigin: string, path = "/studio") {
           graph: JSON.parse(graphJson),
           savedAt: "2026-07-15T00:00:00.000Z",
           projectType: "application",
-          source: "example",
+          source: "recovery",
         }));
       } catch {
         // Sandboxed preview frames intentionally have no same-origin storage.
@@ -253,16 +253,16 @@ try {
       await page.keyboard.press("Control+k");
       const projectSearch = page.getByLabel("Search projects");
       await projectSearch.fill("aster original");
-      await page.getByRole("button", { name: /Aster Sound/ }).waitFor();
-      await page.getByRole("button", { name: /Verdant Pay/ }).waitFor({ state: "detached" });
-      await page.getByText(/No recent project matches/).waitFor();
+      await page.getByRole("button", { name: /^Aster Sound/ }).waitFor();
+      await page.getByRole("button", { name: /^Verdant Pay/ }).waitFor({ state: "detached" });
+      await page.getByText(/No project matches/).waitFor();
       await page.getByRole("button", { name: "Recents", exact: true }).click();
       await page.getByText("Working examples", { exact: true }).waitFor({ state: "detached" });
       await page.getByRole("button", { name: "Examples", exact: true }).click();
-      await page.getByText("Projects on this device", { exact: true }).waitFor({ state: "detached" });
+      await page.getByText(/durable projects? on this device/).waitFor({ state: "detached" });
       await page.getByRole("button", { name: "Projects", exact: true }).click();
       await projectSearch.fill("");
-      await page.getByRole("button", { name: /Verdant Pay/ }).waitFor();
+      await page.getByRole("button", { name: /^Verdant Pay/ }).waitFor();
       await page.locator("header").getByRole("button", { name: "Open project" }).click();
       await page.getByText(/Schema 0\.0\.1 needs an atomic update/).waitFor();
       await page.getByRole("button", { name: "Checkpoint and update" }).waitFor();
@@ -310,7 +310,7 @@ try {
       await page.getByRole("button", { name: "IntentForm project menu" }).click();
       await page.getByRole("menuitem", { name: "Back to project launcher" }).click();
       await page.waitForURL(`${origin}/`);
-      await page.getByRole("button", { name: /Verdant Pay/ }).waitFor();
+      await page.getByRole("button", { name: /^Verdant Pay/ }).waitFor();
 
       await page.locator("header").getByRole("button", { name: "New project" }).click();
       await page.getByRole("heading", { name: "New project" }).waitFor();
@@ -324,12 +324,21 @@ try {
       await page.waitForURL(`${origin}/studio`);
       await page.getByText("Northline Field Notes", { exact: true }).first().waitFor();
       await page.getByTestId("canvas-node-home.example").waitFor();
-      const createdTheme = await page.evaluate(() => {
-        const manifest = JSON.parse(localStorage.getItem("intentform-browser-project-v2-manifest") ?? "null") as { generation?: string; chunkCount?: number } | null;
-        if (!manifest?.generation || !manifest.chunkCount) return null;
-        const source = Array.from({ length: manifest.chunkCount }, (_, index) => localStorage.getItem(`intentform-browser-project-v2-chunk:${manifest.generation}:${String(index).padStart(3, "0")}`) ?? "").join("");
-        const project = JSON.parse(source) as { graph?: { tokens?: { activeMode?: string; modes?: Record<string, unknown> } } };
-        return { activeMode: project.graph?.tokens?.activeMode, modes: Object.keys(project.graph?.tokens?.modes ?? {}) };
+      const createdTheme = await page.evaluate(async () => {
+        const id = localStorage.getItem("intentform-active-project-id");
+        if (!id) return null;
+        const database = await new Promise<IDBDatabase>((resolve, reject) => {
+          const request = indexedDB.open("intentform-project-catalog", 1);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        const project = await new Promise<{ graph?: { tokens?: { activeMode?: string; modes?: Record<string, unknown> } } } | undefined>((resolve, reject) => {
+          const request = database.transaction("projects", "readonly").objectStore("projects").get(id);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        database.close();
+        return { activeMode: project?.graph?.tokens?.activeMode, modes: Object.keys(project?.graph?.tokens?.modes ?? {}) };
       });
       if (createdTheme?.activeMode !== "dark" || !createdTheme.modes.includes("dark")) throw new Error("Dark starter theme was not persisted");
 
@@ -337,7 +346,7 @@ try {
       await page.getByRole("menuitem", { name: "Back to project launcher" }).click();
       await page.waitForURL(`${origin}/`);
       await page.getByText("Northline Field Notes", { exact: true }).waitFor();
-      await page.getByRole("button", { name: /Northline Field Notes/ }).waitFor();
+      await page.getByRole("button", { name: /^Northline Field Notes/ }).waitFor();
 
       await page.setViewportSize({ width: 375, height: 667 });
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -345,11 +354,199 @@ try {
       await page.waitForTimeout(500);
       await page.screenshot({ path: join(root, "output/playwright/project-launcher-compact.png"), fullPage: true });
       await page.getByRole("button", { name: "Examples", exact: true }).click();
-      await page.getByRole("button", { name: /Verdant Pay/ }).click();
+      await page.getByRole("button", { name: /^Verdant Pay/ }).click();
       await page.waitForURL(`${origin}/studio`);
       await page.getByTestId("canvas-node-home.balance").waitFor();
       await page.getByRole("button", { name: "IntentForm project menu" }).click();
       await page.getByRole("menu").getByText("Verdant Pay", { exact: true }).waitFor();
+    },
+  });
+
+  await runSmokeScenario(browser, {
+    name: "durable project catalog and document tabs",
+    run: async (page) => {
+      const createProject = async (name: string) => {
+        await page.locator("header").getByRole("button", { name: "New project" }).click();
+        await page.getByLabel("Project name").fill(name);
+        await page.getByLabel("Primary audience").fill("Catalog regression team");
+        await page.getByLabel("First outcome").fill(`Open and recover ${name}`);
+        await page.getByRole("button", { name: "Create project" }).click();
+        await page.waitForURL(`${origin}/studio`);
+        await page.getByText(name, { exact: true }).first().waitFor();
+        await page.getByRole("button", { name: "IntentForm project menu" }).click();
+        await page.getByRole("menuitem", { name: "Back to project launcher" }).click();
+        await page.waitForURL(`${origin}/`);
+      };
+
+      await gotoStudio(page, origin, "/");
+      await createProject("Catalog Alpha");
+      await createProject("Catalog Beta");
+      await createProject("Catalog Gamma");
+      await page.getByRole("button", { name: /^Catalog Alpha/ }).waitFor();
+      await page.getByRole("button", { name: /^Catalog Beta/ }).waitFor();
+      await page.getByRole("button", { name: /^Catalog Gamma/ }).waitFor();
+
+      const initialCatalog = await page.evaluate(async () => {
+        const database = await new Promise<IDBDatabase>((resolve, reject) => {
+          const request = indexedDB.open("intentform-project-catalog", 1);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        const projects = await new Promise<Array<{ id: string; name: string; revision: number }>>((resolve, reject) => {
+          const request = database.transaction("projects", "readonly").objectStore("projects").getAll();
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        database.close();
+        return projects.map(({ id, name, revision }) => ({ id, name, revision }));
+      });
+      if (initialCatalog.length !== 3) throw new Error(`Expected 3 catalog projects, found ${initialCatalog.length}`);
+
+      await page.getByRole("button", { name: "Project actions for Catalog Beta" }).click();
+      await page.getByRole("menuitem", { name: "Rename" }).click();
+      await page.getByLabel("Rename Catalog Beta").fill("Catalog Beta Renamed");
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await page.getByRole("button", { name: /^Catalog Beta Renamed/ }).waitFor();
+
+      await page.getByRole("button", { name: "Project actions for Catalog Gamma" }).click();
+      await page.getByRole("menuitem", { name: "Archive" }).click();
+      await page.getByRole("button", { name: /^Catalog Gamma/ }).waitFor({ state: "detached" });
+      await page.getByRole("button", { name: "Projects", exact: true }).click();
+      await page.getByRole("button", { name: "Show archived" }).click();
+      await page.getByRole("button", { name: /^Catalog Gamma/ }).waitFor();
+      await page.getByText("Archived", { exact: true }).waitFor();
+
+      await page.getByRole("button", { name: /^Catalog Alpha/ }).click();
+      await page.waitForURL(`${origin}/studio`);
+      const documentTabs = page.getByRole("tablist", { name: "Open project documents" }).getByRole("tab");
+      if (await documentTabs.count() !== 1) throw new Error("A new project did not start with one real document tab");
+      await page.getByRole("button", { name: "Open another document" }).click();
+      if (await documentTabs.count() !== 2) throw new Error("Opening another document did not add a real tab");
+      await page.waitForTimeout(750);
+      await page.reload({ waitUntil: "networkidle" });
+      if (await documentTabs.count() !== 2) throw new Error("Open document tabs were not restored after refresh");
+
+      const activeLabel = await page.getByRole("tablist", { name: "Open project documents" }).getByRole("tab", { selected: true }).getAttribute("aria-label");
+      if (!activeLabel) throw new Error("The restored active document has no exact identity");
+      await page.getByRole("button", { name: "Close active document" }).click();
+      if (await documentTabs.count() !== 1) throw new Error("Closing a document did not remove its tab");
+      await page.keyboard.press("Control+Shift+t");
+      if (await documentTabs.count() !== 2) throw new Error("Reopen closed tab did not restore the document");
+
+      const persisted = await page.evaluate(async () => {
+        const id = localStorage.getItem("intentform-active-project-id");
+        if (!id) throw new Error("Active project identity was not persisted");
+        const database = await new Promise<IDBDatabase>((resolve, reject) => {
+          const request = indexedDB.open("intentform-project-catalog", 1);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        const project = await new Promise<{ revision: number; lastKnownGood?: { revision: number }; workspace: { openTabs: unknown[] }; graph: { screens: Array<{ title: string; nodes: Array<{ id: string }> }> } }>((resolve, reject) => {
+          const request = database.transaction("projects", "readonly").objectStore("projects").get(id);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        database.close();
+        return project;
+      });
+      if (persisted.revision < 2 || !persisted.lastKnownGood || persisted.lastKnownGood.revision >= persisted.revision) {
+        throw new Error("Catalog revisions did not preserve a valid last-known-good snapshot");
+      }
+      if (persisted.workspace.openTabs.length !== 2) throw new Error("Persisted workspace tab state is incomplete");
+
+      const firstScreen = persisted.graph.screens[0];
+      const firstNode = firstScreen?.nodes[0];
+      if (!firstScreen || !firstNode) throw new Error("Catalog project has no editable screen document");
+      await page.getByRole("tab", { name: firstScreen.title, exact: true }).click();
+      await page.getByTestId(`layer-${firstNode.id}`).click();
+      const label = page.getByTestId("semantic-inspector").getByLabel("Label", { exact: true });
+      await label.fill("Dirty close regression");
+      await label.press("Enter");
+      await page.locator('[aria-label="Unsaved project changes"]').waitFor();
+      await page.getByRole("button", { name: "Close active document" }).click();
+      await page.getByRole("alertdialog", { name: "Save changes before closing?" }).waitFor();
+      const dirtyCloseCancel = page.getByRole("button", { name: "Cancel", exact: true });
+      await dirtyCloseCancel.waitFor();
+      if (!(await dirtyCloseCancel.evaluate((element) => element === document.activeElement))) {
+        throw new Error("Dirty-close dialog did not focus the safe Cancel action");
+      }
+      await page.keyboard.press("Escape");
+      await page.getByRole("alertdialog", { name: "Save changes before closing?" }).waitFor({ state: "detached" });
+      if (await documentTabs.count() !== 2) throw new Error("Escape closed a dirty document");
+      const activeDocumentTab = page
+        .getByRole("tablist", { name: "Open project documents" })
+        .getByRole("tab", { selected: true });
+      if (!(await activeDocumentTab.evaluate((element) => element === document.activeElement))) {
+        throw new Error("Dirty-close cancellation did not restore focus to the active document");
+      }
+      await page.getByRole("button", { name: "Close active document" }).click();
+      await page.getByRole("button", { name: "Discard changes" }).click();
+      if (await documentTabs.count() !== 1) throw new Error("Discard did not close the dirty document");
+    },
+  });
+
+  await runSmokeScenario(browser, {
+    name: "catalog multi-window conflict protection",
+    run: async (firstPage) => {
+      await gotoStudio(firstPage, origin, "/");
+      await firstPage.locator("header").getByRole("button", { name: "New project" }).click();
+      await firstPage.getByLabel("Project name").fill("Concurrent Catalog");
+      await firstPage.getByLabel("Primary audience").fill("Multi-window editors");
+      await firstPage.getByLabel("First outcome").fill("Reject stale browser writes");
+      await firstPage.getByRole("button", { name: "Create project" }).click();
+      await firstPage.waitForURL(`${origin}/studio`);
+
+      const identity = await firstPage.evaluate(async () => {
+        const id = localStorage.getItem("intentform-active-project-id");
+        if (!id) throw new Error("Active project identity was not persisted");
+        const database = await new Promise<IDBDatabase>((resolve, reject) => {
+          const request = indexedDB.open("intentform-project-catalog", 1);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        const project = await new Promise<{ graph: { screens: Array<{ nodes: Array<{ id: string }> }> } }>((resolve, reject) => {
+          const request = database.transaction("projects", "readonly").objectStore("projects").get(id);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        database.close();
+        return { id, nodeId: project.graph.screens[0]!.nodes[0]!.id };
+      });
+
+      const secondPage = await firstPage.context().newPage();
+      await navigateToStudio(secondPage, origin, "/studio");
+      await secondPage.getByTestId(`layer-${identity.nodeId}`).waitFor();
+
+      await firstPage.getByTestId(`layer-${identity.nodeId}`).click();
+      const firstLabel = firstPage.getByTestId("semantic-inspector").getByLabel("Label", { exact: true });
+      await firstLabel.fill("Window one commit");
+      await firstLabel.press("Enter");
+      await firstPage.waitForTimeout(900);
+
+      await secondPage.getByTestId(`layer-${identity.nodeId}`).click();
+      const secondLabel = secondPage.getByTestId("semantic-inspector").getByLabel("Label", { exact: true });
+      await secondLabel.fill("Window two stale");
+      await secondLabel.press("Enter");
+      await secondPage.waitForTimeout(900);
+      await secondPage.getByRole("button", { name: "Show workspace status" }).click();
+      await secondPage.getByRole("status").getByText(/changed in another window/i).waitFor();
+
+      const storedLabel = await firstPage.evaluate(async ({ id, nodeId }) => {
+        const database = await new Promise<IDBDatabase>((resolve, reject) => {
+          const request = indexedDB.open("intentform-project-catalog", 1);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        const project = await new Promise<{ graph: { screens: Array<{ nodes: Array<{ id: string; intent?: { label?: string } }> }> } }>((resolve, reject) => {
+          const request = database.transaction("projects", "readonly").objectStore("projects").get(id);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        database.close();
+        return project.graph.screens.flatMap((screen) => screen.nodes).find((node) => node.id === nodeId)?.intent?.label;
+      }, identity);
+      if (storedLabel !== "Window one commit") throw new Error(`Stale window overwrote the catalog head: ${storedLabel}`);
+      await secondPage.close();
     },
   });
 
@@ -445,6 +642,7 @@ try {
       await gotoStudio(page, origin, "/");
       await page.locator("header").getByRole("button", { name: "Open project" }).click();
       await page.waitForURL(`${origin}/studio`);
+      await page.getByRole("button", { name: "Request payment 4", exact: true }).click();
       await page.getByTestId("layer-payment-request.confirm").click();
       const label = page.getByTestId("semantic-inspector").getByLabel("Label", { exact: true });
       const unsaved = page.locator('[aria-label="Unsaved local changes"]');
@@ -1393,6 +1591,7 @@ try {
         await gotoStudio(tokenPage, origin, "/");
         await tokenPage.locator("header").getByRole("button", { name: "Open project" }).click();
         await tokenPage.waitForURL(`${origin}/studio`);
+        await tokenPage.getByRole("button", { name: "Request payment 4", exact: true }).click();
       }
       await tokenPage.getByRole("tab", { name: "Tokens", exact: true }).click();
       await tokenPage.getByText("DTCG 2025.10", { exact: true }).waitFor();
