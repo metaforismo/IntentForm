@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  ArrowDown,
   ArrowUp,
+  CaretRight,
   Copy,
   Eye,
   Lock,
@@ -26,7 +26,13 @@ import {
 } from "react";
 import { NodePreview, semanticNodeBoxStyle } from "./node-preview";
 import { SelectionOverlay } from "./selection-overlay";
-import type { Point, ResizeCandidate, SelectionIntent } from "./direct-manipulation";
+import {
+  resolveSelectionAlignment,
+  type Point,
+  type ResizeCandidate,
+  type SelectionAlignment,
+  type SelectionIntent,
+} from "./direct-manipulation";
 import {
   FRAME_GAP,
   FRAME_HEADER_WORLD,
@@ -46,6 +52,7 @@ export interface CanvasApi {
   fitScreen(screenId: string, smooth?: boolean): void;
   zoomBy(factor: number): void;
   zoomTo(scale: number): void;
+  alignSelection(action: SelectionAlignment): boolean;
 }
 
 interface ViewTransform {
@@ -148,6 +155,7 @@ export function CanvasStage({
   const renameBlurredDuringComposition = useRef(false);
   const visibilityFrame = useRef<number | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string; screenId: string } | null>(null);
+  const [contextSubmenu, setContextSubmenu] = useState<"paste" | "arrange" | null>(null);
   const [rename, setRename] = useState<{ nodeId: string; screenId: string; x: number; y: number; width: number; height: number; value: string; multiline: boolean } | null>(null);
 
   const frameSpatialIndex = useMemo(
@@ -267,9 +275,32 @@ export function CanvasStage({
     zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, scale, true);
   }, [zoomAt]);
 
+  const alignSelection = useCallback((action: SelectionAlignment) => {
+    const viewport = viewportRef.current;
+    const screen = graph.screens.find((item) => item.id === selectedScreen);
+    if (!viewport || !screen || selectedNodeIds.length < 2) return false;
+    const scale = viewRef.current.scale;
+    const items = selectedNodeIds.flatMap((id) => {
+      const node = findSemanticNode(screen.nodes, id);
+      const position = node?.layout.position;
+      const element = viewport.querySelector<HTMLElement>(`[data-testid="canvas-node-${CSS.escape(id)}"]`);
+      const bounds = element?.getBoundingClientRect();
+      return position && bounds ? [{
+        id,
+        x: position.x,
+        y: position.y,
+        width: bounds.width / scale,
+        height: bounds.height / scale,
+      }] : [];
+    });
+    if (items.length !== selectedNodeIds.length) return false;
+    onMoveFreeform(resolveSelectionAlignment(items, action));
+    return true;
+  }, [graph.screens, onMoveFreeform, selectedNodeIds, selectedScreen]);
+
   useEffect(() => {
-    apiRef.current = { fitAll, fitScreen, zoomBy, zoomTo };
-  }, [apiRef, fitAll, fitScreen, zoomBy, zoomTo]);
+    apiRef.current = { fitAll, fitScreen, zoomBy, zoomTo, alignSelection };
+  }, [alignSelection, apiRef, fitAll, fitScreen, zoomBy, zoomTo]);
 
   useEffect(() => () => {
     if (visibilityFrame.current !== null) cancelAnimationFrame(visibilityFrame.current);
@@ -333,6 +364,7 @@ export function CanvasStage({
 
   useEffect(() => {
     if (!contextMenu) return;
+    setContextSubmenu(null);
     requestAnimationFrame(() => contextMenuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus());
     const close = () => setContextMenu(null);
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
@@ -463,6 +495,14 @@ export function CanvasStage({
   const visibleFrameSet = useMemo(() => new Set([...visibleFrameIds, selectedScreen]), [selectedScreen, visibleFrameIds]);
   const visibleFrames = frames.filter(({ screen }) => visibleFrameSet.has(screen.id));
   const visibleFlowEdges = flowEdges.filter((edge) => visibleFrameSet.has(edge.fromId) || visibleFrameSet.has(edge.toId));
+  const contextNode = contextMenu
+    ? findSemanticNode(graph.screens.find((item) => item.id === contextMenu.screenId)?.nodes ?? [], contextMenu.nodeId)
+    : undefined;
+  const contextTargetsSelection = Boolean(contextMenu && selectedNodeIds.length > 1 && selectedNodeIds.includes(contextMenu.nodeId));
+  const finishContextAction = (action: () => void) => {
+    action();
+    setContextMenu(null);
+  };
 
   return (
     <div
@@ -798,11 +838,13 @@ export function CanvasStage({
           ref={contextMenuRef}
           role="menu"
           aria-label="Layer actions"
-          className="menu-pop absolute z-20 max-h-[min(460px,calc(100%-16px))] w-[240px] overflow-y-auto p-1"
-          style={{ left: Math.min(contextMenu.x, (viewportRef.current?.clientWidth ?? 600) - 256), top: Math.max(8, Math.min(contextMenu.y, (viewportRef.current?.clientHeight ?? 500) - 420)) }}
+          className="menu-pop absolute z-20 w-[240px] overflow-visible p-1"
+          style={{ left: Math.max(8, Math.min(contextMenu.x, (viewportRef.current?.clientWidth ?? 600) - 248)), top: Math.max(8, Math.min(contextMenu.y, (viewportRef.current?.clientHeight ?? 500) - 330)) }}
           onPointerDown={(event) => event.stopPropagation()}
           onKeyDown={(event) => {
-            const items = [...event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+            const active = document.activeElement as HTMLElement | null;
+            const level = active?.dataset.menuLevel ?? "root";
+            const items = [...event.currentTarget.querySelectorAll<HTMLElement>(`[role="menuitem"][data-menu-level="${level}"]`)];
             const current = items.indexOf(document.activeElement as HTMLElement);
             if (event.key === "ArrowDown" || event.key === "ArrowUp") {
               event.preventDefault();
@@ -814,28 +856,22 @@ export function CanvasStage({
             } else if (event.key === "End") {
               event.preventDefault();
               items.at(-1)?.focus();
+            } else if (event.key === "ArrowRight" && active?.dataset.submenu) {
+              event.preventDefault();
+              const submenu = active.dataset.submenu as "paste" | "arrange";
+              setContextSubmenu(submenu);
+              requestAnimationFrame(() => contextMenuRef.current?.querySelector<HTMLElement>(`[role="menuitem"][data-menu-level="${submenu}"]`)?.focus());
+            } else if (event.key === "ArrowLeft" && level !== "root") {
+              event.preventDefault();
+              setContextSubmenu(null);
+              requestAnimationFrame(() => contextMenuRef.current?.querySelector<HTMLElement>(`[data-submenu="${level}"]`)?.focus());
             }
           }}
         >
           {([
-            { label: "Edit text", icon: PencilSimple, run: () => {
-              const screen = graph.screens.find((item) => item.id === contextMenu.screenId);
-              const node = screen ? findSemanticNode(screen.nodes, contextMenu.nodeId) : undefined;
-              if (node && screen) startRename(node, screen.id);
-            } },
+            { label: "Edit text", icon: PencilSimple, run: () => { if (contextNode) startRename(contextNode, contextMenu.screenId); } },
             { label: "Cut", icon: Scissors, shortcut: "⌘X", run: onCutSelection },
             { label: "Copy", icon: Copy, shortcut: "⌘C", run: onCopySelection },
-            { label: "Paste", icon: Copy, shortcut: "⌘V", run: () => onPaste("after") },
-            { label: "Paste in place", icon: Copy, shortcut: "⇧⌘V", run: () => onPaste("in-place") },
-            { label: "Paste to replace", icon: Copy, shortcut: "⇧⌘R", run: () => onPaste("replace") },
-            { label: selectedNodeIds.length > 1 ? "Duplicate selection" : "Duplicate", icon: Copy, shortcut: "⌘D", run: () => selectedNodeIds.length > 1 && selectedNodeIds.includes(contextMenu.nodeId) ? onDuplicateSelection() : onNodeCommand("duplicate", contextMenu.nodeId, contextMenu.screenId) },
-            { label: "Copy styles", icon: PaintBrush, shortcut: "⌥⌘C", run: onCopyStyles },
-            { label: "Paste styles", icon: PaintBrush, shortcut: "⌥⌘V", run: onPasteStyles },
-            { label: "Move up", icon: ArrowUp, shortcut: "⌥↑", run: () => selectedNodeIds.length > 1 && selectedNodeIds.includes(contextMenu.nodeId) ? onMoveSelection(-1) : onNodeCommand("move-up", contextMenu.nodeId, contextMenu.screenId) },
-            { label: "Move down", icon: ArrowDown, shortcut: "⌥↓", run: () => selectedNodeIds.length > 1 && selectedNodeIds.includes(contextMenu.nodeId) ? onMoveSelection(1) : onNodeCommand("move-down", contextMenu.nodeId, contextMenu.screenId) },
-            { label: findSemanticNode(graph.screens.find((item) => item.id === contextMenu.screenId)?.nodes ?? [], contextMenu.nodeId)?.editor?.hidden ? "Show" : "Hide", icon: Eye, shortcut: "⇧⌘H", run: () => onNodeCommand("toggle-hidden", contextMenu.nodeId, contextMenu.screenId) },
-            { label: findSemanticNode(graph.screens.find((item) => item.id === contextMenu.screenId)?.nodes ?? [], contextMenu.nodeId)?.editor?.locked ? "Unlock" : "Lock", icon: Lock, shortcut: "⇧⌘L", run: () => onNodeCommand("toggle-lock", contextMenu.nodeId, contextMenu.screenId) },
-            { label: selectedNodeIds.length > 1 ? "Delete selection" : "Delete", icon: Trash, shortcut: "⌫", run: () => selectedNodeIds.length > 1 && selectedNodeIds.includes(contextMenu.nodeId) ? onDeleteSelection() : onNodeCommand("delete", contextMenu.nodeId, contextMenu.screenId), danger: true },
           ] as const).map((item) => {
             const Icon = item.icon;
             return (
@@ -843,8 +879,9 @@ export function CanvasStage({
                 key={item.label}
                 type="button"
                 role="menuitem"
-                onClick={() => { item.run(); setContextMenu(null); }}
-                className={`flex h-7 w-full items-center gap-2 rounded-[4px] px-2 text-left text-[11.5px] font-normal leading-4 ${"danger" in item && item.danger ? "text-[var(--danger)] hover:bg-[var(--danger-soft)]" : "text-[var(--t-strong)] hover:bg-[var(--hover)]"}`}
+                data-menu-level="root"
+                onClick={() => finishContextAction(item.run)}
+                className="flex h-7 w-full items-center gap-2 rounded-[4px] px-2 text-left text-[11.5px] font-normal leading-4 text-[var(--t-strong)] hover:bg-[var(--hover)]"
               >
                 <Icon size={12} className="text-[var(--muted)]" />
                 <span className="flex-1">{item.label}</span>
@@ -852,6 +889,34 @@ export function CanvasStage({
               </button>
             );
           })}
+          <div className="relative">
+            <button type="button" role="menuitem" data-menu-level="root" data-submenu="paste" aria-haspopup="menu" aria-expanded={contextSubmenu === "paste"} onPointerEnter={() => setContextSubmenu("paste")} onClick={() => setContextSubmenu((current) => current === "paste" ? null : "paste")} className="flex h-7 w-full items-center gap-2 rounded-[4px] px-2 text-left text-[11.5px] text-[var(--t-strong)] hover:bg-[var(--hover)]"><Copy size={12} className="text-[var(--muted)]" /><span className="flex-1">Paste</span><CaretRight size={11} className="text-[var(--faint)]" /></button>
+            {contextSubmenu === "paste" ? <div role="menu" aria-label="Paste options" className={`menu-pop absolute top-[-4px] z-[1] w-[196px] p-1 ${contextMenu.x > (viewportRef.current?.clientWidth ?? 600) / 2 ? "right-full mr-1" : "left-full ml-1"}`}>
+              {([
+                ["Paste", "⌘V", "after"],
+                ["Paste in place", "⇧⌘V", "in-place"],
+                ["Paste to replace", "⇧⌘R", "replace"],
+              ] as const).map(([label, shortcut, mode]) => <button key={mode} type="button" role="menuitem" data-menu-level="paste" onClick={() => finishContextAction(() => onPaste(mode))} className="flex h-7 w-full items-center rounded-[4px] px-2 text-left text-[11.5px] text-[var(--t-strong)] hover:bg-[var(--hover)]"><span className="flex-1">{label}</span><kbd className="font-mono text-[9px] text-[var(--faint)]">{shortcut}</kbd></button>)}
+            </div> : null}
+          </div>
+          <button type="button" role="menuitem" data-menu-level="root" onClick={() => finishContextAction(() => contextTargetsSelection ? onDuplicateSelection() : onNodeCommand("duplicate", contextMenu.nodeId, contextMenu.screenId))} className="flex h-7 w-full items-center gap-2 rounded-[4px] px-2 text-left text-[11.5px] text-[var(--t-strong)] hover:bg-[var(--hover)]"><Copy size={12} className="text-[var(--muted)]" /><span className="flex-1">{contextTargetsSelection ? "Duplicate selection" : "Duplicate"}</span><kbd className="font-mono text-[9px] text-[var(--faint)]">⌘D</kbd></button>
+          <div role="separator" className="my-1 h-px bg-[var(--line)]" />
+          <button type="button" role="menuitem" data-menu-level="root" onClick={() => finishContextAction(onCopyStyles)} className="flex h-7 w-full items-center gap-2 rounded-[4px] px-2 text-left text-[11.5px] text-[var(--t-strong)] hover:bg-[var(--hover)]"><PaintBrush size={12} className="text-[var(--muted)]" /><span className="flex-1">Copy styles</span><kbd className="font-mono text-[9px] text-[var(--faint)]">⌥⌘C</kbd></button>
+          <button type="button" role="menuitem" data-menu-level="root" onClick={() => finishContextAction(onPasteStyles)} className="flex h-7 w-full items-center gap-2 rounded-[4px] px-2 text-left text-[11.5px] text-[var(--t-strong)] hover:bg-[var(--hover)]"><PaintBrush size={12} className="text-[var(--muted)]" /><span className="flex-1">Paste styles</span><kbd className="font-mono text-[9px] text-[var(--faint)]">⌥⌘V</kbd></button>
+          <div className="relative">
+            <button type="button" role="menuitem" data-menu-level="root" data-submenu="arrange" aria-haspopup="menu" aria-expanded={contextSubmenu === "arrange"} onPointerEnter={() => setContextSubmenu("arrange")} onClick={() => setContextSubmenu((current) => current === "arrange" ? null : "arrange")} className="flex h-7 w-full items-center gap-2 rounded-[4px] px-2 text-left text-[11.5px] text-[var(--t-strong)] hover:bg-[var(--hover)]"><ArrowUp size={12} className="text-[var(--muted)]" /><span className="flex-1">Arrange</span><CaretRight size={11} className="text-[var(--faint)]" /></button>
+            {contextSubmenu === "arrange" ? <div role="menu" aria-label="Arrange options" className={`menu-pop absolute top-[-4px] z-[1] w-[196px] p-1 ${contextMenu.x > (viewportRef.current?.clientWidth ?? 600) / 2 ? "right-full mr-1" : "left-full ml-1"}`}>
+              {([
+                ["Move up", "⌥↑", -1],
+                ["Move down", "⌥↓", 1],
+              ] as const).map(([label, shortcut, direction]) => <button key={direction} type="button" role="menuitem" data-menu-level="arrange" onClick={() => finishContextAction(() => contextTargetsSelection ? onMoveSelection(direction) : onNodeCommand(direction < 0 ? "move-up" : "move-down", contextMenu.nodeId, contextMenu.screenId))} className="flex h-7 w-full items-center rounded-[4px] px-2 text-left text-[11.5px] text-[var(--t-strong)] hover:bg-[var(--hover)]"><span className="flex-1">{label}</span><kbd className="font-mono text-[9px] text-[var(--faint)]">{shortcut}</kbd></button>)}
+            </div> : null}
+          </div>
+          <div role="separator" className="my-1 h-px bg-[var(--line)]" />
+          <button type="button" role="menuitem" data-menu-level="root" onClick={() => finishContextAction(() => onNodeCommand("toggle-hidden", contextMenu.nodeId, contextMenu.screenId))} className="flex h-7 w-full items-center gap-2 rounded-[4px] px-2 text-left text-[11.5px] text-[var(--t-strong)] hover:bg-[var(--hover)]"><Eye size={12} className="text-[var(--muted)]" /><span className="flex-1">{contextNode?.editor?.hidden ? "Show" : "Hide"}</span><kbd className="font-mono text-[9px] text-[var(--faint)]">⇧⌘H</kbd></button>
+          <button type="button" role="menuitem" data-menu-level="root" onClick={() => finishContextAction(() => onNodeCommand("toggle-lock", contextMenu.nodeId, contextMenu.screenId))} className="flex h-7 w-full items-center gap-2 rounded-[4px] px-2 text-left text-[11.5px] text-[var(--t-strong)] hover:bg-[var(--hover)]"><Lock size={12} className="text-[var(--muted)]" /><span className="flex-1">{contextNode?.editor?.locked ? "Unlock" : "Lock"}</span><kbd className="font-mono text-[9px] text-[var(--faint)]">⇧⌘L</kbd></button>
+          <div role="separator" className="my-1 h-px bg-[var(--line)]" />
+          <button type="button" role="menuitem" data-menu-level="root" onClick={() => finishContextAction(() => contextTargetsSelection ? onDeleteSelection() : onNodeCommand("delete", contextMenu.nodeId, contextMenu.screenId))} className="flex h-7 w-full items-center gap-2 rounded-[4px] px-2 text-left text-[11.5px] text-[var(--danger)] hover:bg-[var(--danger-soft)]"><Trash size={12} /><span className="flex-1">{contextTargetsSelection ? "Delete selection" : "Delete"}</span><kbd className="font-mono text-[9px] text-[var(--faint)]">⌫</kbd></button>
         </div>
       ) : null}
     </div>

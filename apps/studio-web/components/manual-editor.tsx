@@ -549,6 +549,10 @@ export function ManualEditor({
     () => screen ? normalizeNodeSelection(graph, screen.id, selectedNodeIds) : [],
     [graph, screen, selectedNodeIds],
   );
+  const selectionCanAlign = normalizedSelection.length > 1 && normalizedSelection.every((id) => {
+    const location = graphIndex.locationById.get(id);
+    return location?.screenId === screen?.id && Boolean(location?.node.layout.position);
+  });
 
   const statusByScreen = useMemo(() => {
     const map = new Map<string, FrameStatus>();
@@ -1878,6 +1882,12 @@ export function ManualEditor({
         onReorder={moveSelection}
         onDelete={deleteSelection}
         onGroup={groupSelection}
+        selectionCanAlign={selectionCanAlign}
+        onAlignSelection={(action) => {
+          if (!canvasApi.current?.alignSelection(action)) {
+            onNotice("Alignment needs visible freeform layers in the active frame. No changes were saved.");
+          }
+        }}
         canDelete={Boolean(selectedLocation && (selectedLocation.parent || selectedLocation.screen.nodes.length > 1))}
         onScreenTitle={(title) => updateScreenField("title", title)}
         onScreenPurpose={(purpose) => updateScreenField("purpose", purpose)}
