@@ -280,6 +280,15 @@ export function normalizeCatalogProjectRecord(value: unknown): BrowserCatalogPro
     : catalogProjectSchema.parse({ ...project, searchIndex: projectSearchIndex(project.graph, project.tags, project.folder), thumbnail: projectThumbnail(project.graph) });
 }
 
+export async function withCatalogProjectLock<T>(
+  projectId: string,
+  operation: () => Promise<T>,
+  manager: Pick<LockManager, "request"> | null = typeof navigator !== "undefined" && navigator.locks ? navigator.locks : null,
+): Promise<T> {
+  if (!manager) return operation();
+  return manager.request(`intentform-catalog:${projectId}`, { mode: "exclusive" }, operation);
+}
+
 export function browserProjectCatalog(): BrowserProjectCatalogDatabase {
   return {
     async list(includeArchived = false) {
@@ -324,30 +333,32 @@ export function browserProjectCatalog(): BrowserProjectCatalogDatabase {
       }
     },
     async save(id, graph, workspace, expectedRevision, metadata, now) {
-      try {
-        const database = await openDatabase();
+      return withCatalogProjectLock(id, async () => {
         try {
-          const transaction = database.transaction("projects", "readwrite");
-          const store = transaction.objectStore("projects");
-          const current = await readProject(store, id);
-          if (!current) {
-            transaction.abort();
-            return { ok: false, code: "missing", message: "This project no longer exists in the browser catalog." };
+          const database = await openDatabase();
+          try {
+            const transaction = database.transaction("projects", "readwrite");
+            const store = transaction.objectStore("projects");
+            const current = await readProject(store, id);
+            if (!current) {
+              transaction.abort();
+              return { ok: false, code: "missing", message: "This project no longer exists in the browser catalog." };
+            }
+            if (current.revision !== expectedRevision) {
+              transaction.abort();
+              return { ok: false, code: "conflict", message: "This project changed in another window. Reopen it before saving." };
+            }
+            const project = nextCatalogProject(current, graph, workspace, now, metadata);
+            store.put(project);
+            await transactionDone(transaction);
+            return { ok: true, project };
+          } finally {
+            database.close();
           }
-          if (current.revision !== expectedRevision) {
-            transaction.abort();
-            return { ok: false, code: "conflict", message: "This project changed in another window. Reopen it before saving." };
-          }
-          const project = nextCatalogProject(current, graph, workspace, now, metadata);
-          store.put(project);
-          await transactionDone(transaction);
-          return { ok: true, project };
-        } finally {
-          database.close();
+        } catch (error) {
+          return catalogWriteFailure(error);
         }
-      } catch (error) {
-        return catalogWriteFailure(error);
-      }
+      });
     },
     async touch(id, now = new Date().toISOString()) {
       try {

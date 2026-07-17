@@ -7,6 +7,7 @@ import {
   nextCatalogProject,
   normalizeCatalogProjectRecord,
   normalizeWorkspaceState,
+  withCatalogProjectLock,
 } from "./browser-project-catalog";
 
 describe("browser project catalog records", () => {
@@ -117,5 +118,18 @@ describe("browser project catalog records", () => {
       code: "quota",
       message: "Browser storage is full. Archive or delete a project, then try again.",
     });
+  });
+
+  it("serializes project writes through the browser lock manager when available", async () => {
+    const requests: string[] = [];
+    const manager = {
+      request: (async (name: string, options: LockOptions, callback: () => Promise<string>) => {
+        requests.push(`${name}:${options.mode}`);
+        return callback();
+      }) as LockManager["request"],
+    };
+    await expect(withCatalogProjectLock("project-a", async () => "saved", manager)).resolves.toBe("saved");
+    await expect(withCatalogProjectLock("project-b", async () => "fallback", null)).resolves.toBe("fallback");
+    expect(requests).toEqual(["intentform-catalog:project-a:exclusive"]);
   });
 });

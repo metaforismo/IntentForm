@@ -44,6 +44,7 @@ import { IconButton } from "../ui/controls";
 import { importLocalAsset } from "./asset-import";
 import { isNodeVisible, nodeNames, type NodeCommand, type RailTab, type VisualState } from "./support";
 import type { SelectionIntent } from "./direct-manipulation";
+import { virtualWindow } from "../reliability-model";
 
 interface LayersPanelProps {
   graph: SemanticInterfaceGraph;
@@ -314,6 +315,7 @@ export function LayersPanel({
   const [pageOrder, setPageOrder] = useState<string[]>(() => graph.screens.map((item) => item.id));
   const pagesListRef = useRef<HTMLDivElement>(null);
   const layersListRef = useRef<HTMLDivElement>(null);
+  const layersScrollRef = useRef<HTMLDivElement>(null);
   const tokenFileRef = useRef<HTMLInputElement>(null);
   const assetFileRef = useRef<HTMLInputElement>(null);
   const replacingAssetId = useRef<string | null>(null);
@@ -327,6 +329,7 @@ export function LayersPanel({
   const [tokenQuery, setTokenQuery] = useState("");
   const [newTokenKey, setNewTokenKey] = useState("");
   const [newTokenValue, setNewTokenValue] = useState("");
+  const [layerScroll, setLayerScroll] = useState({ top: 0, height: 480 });
 
   useEffect(() => {
     setOrder(screen.nodes.map((node) => node.id));
@@ -335,6 +338,22 @@ export function LayersPanel({
   useEffect(() => {
     setPageOrder(graph.screens.map((item) => item.id));
   }, [graph.screens]);
+
+  useEffect(() => {
+    const element = layersScrollRef.current;
+    if (!element) return;
+    const measure = () => setLayerScroll((current) => ({ ...current, height: element.clientHeight }));
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    measure();
+    return () => observer.disconnect();
+  }, [railTab]);
+
+  useEffect(() => {
+    if (!layerQuery) return;
+    layersScrollRef.current?.scrollTo({ top: 0 });
+    setLayerScroll((current) => ({ ...current, top: 0 }));
+  }, [layerQuery]);
 
   const allNodes = useMemo(() => flattenSemanticNodes(screen.nodes), [screen.nodes]);
   const containerIds = useMemo(() => allNodes.filter(isContainerNode).map((node) => node.id), [allNodes]);
@@ -345,9 +364,10 @@ export function LayersPanel({
   const resolvedTokens = useMemo(() => resolveTokenMode(graph.tokens), [graph.tokens]);
   const tokenEntries = useMemo(() => Object.entries(resolvedTokens).flatMap(([group, values]) =>
     (Object.entries(values) as Array<[string, string | number]>).map(([key, value]) => ({ group: group as keyof typeof resolvedTokens, key, value }))), [resolvedTokens]);
-  const filteredNodes = query
+  const filteredNodes = useMemo(() => query
     ? allNodes.filter((node) => `${node.intent.label ?? ""} ${nodeNames[node.kind]} ${node.id}`.toLowerCase().includes(query))
-    : null;
+    : null, [allNodes, query]);
+  const filteredWindow = virtualWindow(filteredNodes?.length ?? 0, layerScroll.top, layerScroll.height, 28);
 
   const commitOrder = () => {
     const current = screen.nodes.map((node) => node.id);
@@ -726,10 +746,12 @@ export function LayersPanel({
             </label>
           </div>
 
-          <div className="min-h-0 overflow-y-auto overflow-x-hidden px-2 pb-2 pt-1">
+          <div ref={layersScrollRef} onScroll={(event) => setLayerScroll((current) => ({ ...current, top: event.currentTarget.scrollTop }))} className="min-h-0 overflow-y-auto overflow-x-hidden px-2 pb-2 pt-1">
             {filteredNodes ? (
               <div ref={layersListRef} role="tree" aria-label="Filtered layers" className="grid grid-cols-1 gap-px">
-                {filteredNodes.map((node) => layerRow(node, false, (nodeIndex.get(node.id)?.depth ?? 1) - 1))}
+                <div role="none" aria-hidden="true" style={{ height: filteredWindow.before }} />
+                {filteredNodes.slice(filteredWindow.start, filteredWindow.end).map((node) => layerRow(node, false, (nodeIndex.get(node.id)?.depth ?? 1) - 1))}
+                <div role="none" aria-hidden="true" style={{ height: filteredWindow.after }} />
                 {filteredNodes.length === 0 ? <div className="mx-1 mt-3 rounded-lg border border-dashed border-[var(--line-strong)] px-3 py-5 text-center text-[11px] leading-relaxed text-[var(--muted)]">No layers match “{layerQuery}”.</div> : null}
               </div>
             ) : (

@@ -69,6 +69,7 @@ import { ToolRail } from "./editor/tool-rail";
 import { ReviewPanel } from "./editor/review-panel";
 import { CommandMenu, ShortcutsSheet, type EditorCommand } from "./editor/overlays";
 import { MultiDeviceComparison } from "./stages/multi-device-comparison";
+import { compareModeStorageKey, readBooleanPreference, writeBooleanPreference } from "./reliability-model";
 import {
   defaultComparisonProfileIds,
   reconcileComparisonProfileIds,
@@ -132,6 +133,7 @@ import {
 export type WorkflowStage = "brief" | "graph" | "outputs" | "verify" | "report";
 
 interface ManualEditorProps {
+  projectId: string;
   graph: SemanticInterfaceGraph;
   selectedScreen: string;
   selectedNodeId: string | null;
@@ -265,6 +267,7 @@ function componentContextForNode(
 }
 
 export function ManualEditor({
+  projectId,
   graph,
   selectedScreen,
   selectedNodeId,
@@ -308,7 +311,10 @@ export function ManualEditor({
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewDraftAnchor, setReviewDraftAnchor] = useState<SemanticInterfaceGraph["reviewThreads"][number]["anchor"] | null>(null);
   const [activeReviewThreadId, setActiveReviewThreadId] = useState<string | null>(null);
-  const [comparisonMode, setComparisonMode] = useState(false);
+  const [comparisonMode, setComparisonMode] = useState(() => readBooleanPreference(
+    typeof window === "undefined" ? null : window.localStorage,
+    compareModeStorageKey(projectId),
+  ));
   const [comparisonProfileIds, setComparisonProfileIds] = useState<string[]>(() => defaultComparisonProfileIds(editorProfiles(graph)));
   const [showDeviceChrome, setShowDeviceChrome] = useState(true);
   const [localLicenseAcknowledged, setLocalLicenseAcknowledged] = useState(() => graph.devices.bezel?.acknowledgedLocalLicense === true);
@@ -333,6 +339,17 @@ export function ManualEditor({
   const canvasApi = useRef<CanvasApi>(null);
   const previewHistory = useRef<string[]>([]);
   const previewWasOpen = useRef(false);
+
+  useEffect(() => {
+    writeBooleanPreference(window.localStorage, compareModeStorageKey(projectId), comparisonMode);
+  }, [comparisonMode, projectId]);
+  const toggleComparisonMode = useCallback(() => {
+    setComparisonMode((current) => {
+      const next = !current;
+      writeBooleanPreference(window.localStorage, compareModeStorageKey(projectId), next);
+      return next;
+    });
+  }, [projectId]);
   const previewOriginScreen = useRef(selectedScreen);
   const nodeClipboard = useRef<NodeClipboardPayload | null>(null);
   const styleClipboard = useRef<StyleClipboardPayload | null>(null);
@@ -1615,7 +1632,7 @@ export function ManualEditor({
       { label: "Zoom to 100%", shortcut: "1", section: "Board", icon: MagnifyingGlass, action: () => canvasApi.current?.zoomTo(1) },
       { label: previewMode ? "Exit preview mode" : "Enter preview mode", shortcut: "P", section: "Board", icon: MonitorPlay, action: () => setPreviewMode((current) => !current) },
     ] : []),
-    { label: comparisonMode ? "Exit responsive comparison" : "Compare responsive devices", section: "Board", icon: ArrowsOutSimple, action: () => setComparisonMode((current) => !current) },
+    { label: comparisonMode ? "Exit responsive comparison" : "Compare responsive devices", section: "Board", icon: ArrowsOutSimple, action: toggleComparisonMode },
     { label: "Toggle pages and layers", shortcut: "⌥L", section: "Panels", icon: Stack, action: () => toggleEditorPanel("structure") },
     { label: "Toggle design inspector", shortcut: "⌥I", section: "Panels", icon: Selection, action: () => toggleEditorPanel("inspector") },
     { label: minimalUi ? "Exit minimal UI" : "Enter minimal UI", shortcut: "⌘\\", section: "Panels", icon: FrameCorners, action: () => setMinimalUi((current) => !current) },
@@ -1948,7 +1965,7 @@ export function ManualEditor({
             {!comparisonMode ? <button type="button" title="Preview · P" aria-label="Toggle preview mode" aria-pressed={previewMode} onClick={() => setPreviewMode((current) => !current)} className={`inline-flex size-7 items-center justify-center rounded-[5px] ${previewMode ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
               <MonitorPlay size={13} weight={previewMode ? "fill" : "regular"} />
             </button> : null}
-            <button type="button" title="Compare responsive devices" aria-label="Toggle responsive comparison" aria-pressed={comparisonMode} onClick={() => setComparisonMode((current) => !current)} className={`inline-flex size-7 items-center justify-center rounded-[5px] ${comparisonMode ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
+            <button type="button" title="Compare responsive devices" aria-label="Toggle responsive comparison" aria-pressed={comparisonMode} onClick={toggleComparisonMode} className={`inline-flex size-7 items-center justify-center rounded-[5px] ${comparisonMode ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
               <ArrowsOutSimple size={13} />
             </button>
             <button
