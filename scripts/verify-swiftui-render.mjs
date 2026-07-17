@@ -17,6 +17,7 @@ function run(command, args, options = {}) {
     encoding: "utf8",
     env: options.env ?? process.env,
     stdio: options.capture ? "pipe" : "inherit",
+    timeout: options.timeout,
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
@@ -26,8 +27,8 @@ function run(command, args, options = {}) {
   return result.stdout?.trim() ?? "";
 }
 
-function tryRun(command, args) {
-  spawnSync(command, args, { cwd: root, encoding: "utf8", stdio: "ignore" });
+function tryRun(command, args, options = {}) {
+  spawnSync(command, args, { cwd: root, encoding: "utf8", stdio: "ignore", timeout: options.timeout });
 }
 
 function selectSimulator() {
@@ -49,50 +50,72 @@ function selectSimulator() {
   return selected;
 }
 
-async function waitForAccessibility(axUrl, simulator) {
+function startAccessibilityHelper(simulator, timeout = 45_000) {
+  tryRun(serveSim, ["--kill", simulator], { timeout: Math.min(timeout, 15_000) });
+  const helper = JSON.parse(run(serveSim, ["--detach", "-q", simulator], { capture: true, timeout }));
+  const streamUrl = new URL(helper.streamUrl);
+  const axUrl = new URL(streamUrl.pathname.replace(/stream\.mjpeg$/, "ax"), streamUrl.origin).href;
+  console.log(`Native accessibility endpoint: ${axUrl}`);
+  return axUrl;
+}
+
+async function waitForAccessibility(initialAxUrl, simulator) {
+  let axUrl = initialAxUrl;
   let lastTree = [];
   let dismissedVoiceOverIntro = false;
-  let emptyResponses = 0;
-  for (let attempt = 0; attempt < 60; attempt += 1) {
+  let lastTransportError = null;
+  let recoveryWindowStartedAt = Date.now();
+  let warnedAboutStartup = false;
+  const deadline = Date.now() + 150_000;
+  while (Date.now() < deadline) {
     try {
-      const response = await fetch(axUrl, { signal: AbortSignal.timeout(15_000) });
-      if (response.ok) {
-        const tree = await response.json();
-        lastTree = tree;
-        const serialized = JSON.stringify(tree);
-        if (serialized.includes("intentform.payment-request.confirm")) return;
-        if (Array.isArray(tree) && tree.length === 0) {
-          emptyResponses += 1;
-          if ([5, 20, 40].includes(emptyResponses)) {
-            console.warn(`Native accessibility tree remained empty for ${emptyResponses} responses; relaunching the preview application.`);
-            tryRun("xcrun", ["simctl", "launch", "--terminate-running-process", simulator, bundleId]);
+      const response = await fetch(axUrl, { signal: AbortSignal.timeout(5_000) });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      lastTransportError = null;
+      const tree = await response.json();
+      lastTree = tree;
+      const serialized = JSON.stringify(tree);
+      if (serialized.includes("intentform.payment-request.confirm")) return axUrl;
+      if (!dismissedVoiceOverIntro && serialized.includes("VoiceOver")) {
+        const nodes = [];
+        const collect = (items) => {
+          for (const item of items) {
+            nodes.push(item);
+            collect(item.children ?? []);
           }
-        } else {
-          emptyResponses = 0;
-        }
-        if (!dismissedVoiceOverIntro && serialized.includes("VoiceOver")) {
-          const nodes = [];
-          const collect = (items) => {
-            for (const item of items) {
-              nodes.push(item);
-              collect(item.children ?? []);
-            }
-          };
-          collect(tree);
-          const app = nodes.find((node) => node.type === "Application");
-          const ok = nodes.find((node) => node.type === "Button" && node.AXLabel === "OK");
-          if (app?.frame && ok?.frame) {
-            const x = (ok.frame.x + ok.frame.width / 2) / app.frame.width;
-            const y = (ok.frame.y + ok.frame.height / 2) / app.frame.height;
-            run(serveSim, ["tap", String(x), String(y), "-d", simulator]);
-            run(serveSim, ["tap", String(x), String(y), "-d", simulator]);
-            run(serveSim, ["tap", String(x), String(y), "-d", simulator]);
-            dismissedVoiceOverIntro = true;
-          }
+        };
+        collect(tree);
+        const app = nodes.find((node) => node.type === "Application");
+        const ok = nodes.find((node) => node.type === "Button" && node.AXLabel === "OK");
+        if (app?.frame && ok?.frame) {
+          const x = (ok.frame.x + ok.frame.width / 2) / app.frame.width;
+          const y = (ok.frame.y + ok.frame.height / 2) / app.frame.height;
+          run(serveSim, ["tap", String(x), String(y), "-d", simulator]);
+          run(serveSim, ["tap", String(x), String(y), "-d", simulator]);
+          run(serveSim, ["tap", String(x), String(y), "-d", simulator]);
+          dismissedVoiceOverIntro = true;
         }
       }
-    } catch {
-      // The helper or application is still becoming ready.
+    } catch (error) {
+      lastTransportError = error instanceof Error ? error.message : String(error);
+    }
+    const recoveryElapsed = Date.now() - recoveryWindowStartedAt;
+    if (!warnedAboutStartup && recoveryElapsed >= 15_000) {
+      const detail = lastTransportError ? ` Last helper error: ${lastTransportError}.` : "";
+      console.warn(`Native accessibility has not exposed the semantic target yet; continuing the bounded startup wait.${detail}`);
+      warnedAboutStartup = true;
+    }
+    if (recoveryElapsed >= 30_000) {
+      console.warn("Native accessibility remained unhealthy for 30 seconds; reattaching the helper and relaunching the preview application.");
+      try {
+        axUrl = startAccessibilityHelper(simulator);
+        tryRun("xcrun", ["simctl", "launch", "--terminate-running-process", simulator, bundleId], { timeout: 10_000 });
+      } catch (recoveryError) {
+        console.warn(`Native accessibility recovery could not restart the helper yet: ${recoveryError instanceof Error ? recoveryError.message : String(recoveryError)}`);
+      }
+      recoveryWindowStartedAt = Date.now();
+      warnedAboutStartup = false;
+      lastTransportError = null;
     }
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
@@ -146,17 +169,15 @@ try {
 
   run("xcrun", ["simctl", "install", simulator.udid, appPath]);
 
-  tryRun(serveSim, ["--kill", simulator.udid]);
-  const helper = JSON.parse(run(serveSim, ["--detach", "-q", simulator.udid], { capture: true }));
+  // The first attach can initialize Simulator accessibility services on a
+  // cold hosted runner. Recovery attaches use the shorter default above.
+  let axUrl = startAccessibilityHelper(simulator.udid, 120_000);
   helperStarted = true;
-  const streamUrl = new URL(helper.streamUrl);
-  const axUrl = new URL(streamUrl.pathname.replace(/stream\.mjpeg$/, "ax"), streamUrl.origin).href;
-  console.log(`Native accessibility endpoint: ${axUrl}`);
   // Starting the accessibility helper can briefly steal foreground ownership.
   // Launch only after the helper is ready, then recover from any empty-tree
   // simulator state inside waitForAccessibility.
   run("xcrun", ["simctl", "launch", "--terminate-running-process", simulator.udid, bundleId]);
-  await waitForAccessibility(axUrl, simulator.udid);
+  axUrl = await waitForAccessibility(axUrl, simulator.udid);
 
   run(process.execPath, ["--experimental-strip-types", join(root, "scripts/capture-swiftui-evidence.ts")], {
     env: {

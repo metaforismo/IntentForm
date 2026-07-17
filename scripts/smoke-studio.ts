@@ -259,6 +259,7 @@ try {
       const rootResponse = await gotoStudio(page, origin, "/");
       assertSecurityHeaders(rootResponse, "Project launcher");
       await page.getByRole("heading", { name: "Home", level: 1 }).waitFor();
+      await page.locator('aside img[src="/brand/intentform-mark.png"]').waitFor();
       await page.getByRole("button", { name: "Connect agent" }).click();
       await page.getByRole("heading", { name: "Agents", level: 1 }).waitFor();
       await page.getByText("Connected agents", { exact: true }).waitFor();
@@ -288,7 +289,10 @@ try {
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await page.getByLabel("Theme").selectOption("dark");
       await page.locator("html[data-theme='dark']").waitFor();
+      await page.getByRole("button", { name: "Home", exact: true }).click();
+      await page.getByRole("heading", { name: "Home", level: 1 }).waitFor();
       await page.screenshot({ path: join(root, "output/playwright/project-launcher-dark.png"), fullPage: true });
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
       await page.getByLabel("Theme").selectOption("light");
       await page.reload({ waitUntil: "networkidle" });
       await page.getByRole("heading", { name: "Home", level: 1 }).waitFor();
