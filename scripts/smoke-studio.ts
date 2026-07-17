@@ -248,7 +248,11 @@ try {
       });
       const rootResponse = await gotoStudio(page, origin, "/");
       assertSecurityHeaders(rootResponse, "Project launcher");
-      await page.getByRole("heading", { name: "Recents", level: 1 }).waitFor();
+      await page.getByRole("heading", { name: "Home", level: 1 }).waitFor();
+      await page.getByRole("button", { name: "Connect agent" }).click();
+      await page.getByRole("heading", { name: "Agents", level: 1 }).waitFor();
+      await page.getByText("Connected agents", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Home", exact: true }).click();
       await page.getByText("No recent projects", { exact: true }).waitFor();
       await page.keyboard.press("Control+k");
       const projectSearch = page.getByLabel("Search projects");
@@ -260,7 +264,7 @@ try {
       await page.getByText("Working examples", { exact: true }).waitFor({ state: "detached" });
       await page.getByRole("button", { name: "Examples", exact: true }).click();
       await page.getByText(/durable projects? on this device/).waitFor({ state: "detached" });
-      await page.getByRole("button", { name: "Projects", exact: true }).click();
+      await page.getByRole("button", { name: "Examples", exact: true }).click();
       await projectSearch.fill("");
       await page.getByRole("button", { name: /^Verdant Pay/ }).waitFor();
       await page.locator("header").getByRole("button", { name: "Open project" }).click();
@@ -271,12 +275,13 @@ try {
       await page.getByRole("button", { name: "Not now" }).click();
       await page.getByText(/Schema 0\.0\.1 needs an atomic update/).waitFor({ state: "detached" });
       await page.screenshot({ path: join(root, "output/playwright/project-launcher-wide.png"), fullPage: true });
-      await page.evaluate(() => localStorage.setItem("intentform-theme", "dark"));
-      await page.reload({ waitUntil: "networkidle" });
-      await page.getByRole("heading", { name: "Recents", level: 1 }).waitFor();
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await page.getByLabel("Theme").selectOption("dark");
+      await page.locator("html[data-theme='dark']").waitFor();
       await page.screenshot({ path: join(root, "output/playwright/project-launcher-dark.png"), fullPage: true });
-      await page.evaluate(() => localStorage.setItem("intentform-theme", "light"));
+      await page.getByLabel("Theme").selectOption("light");
       await page.reload({ waitUntil: "networkidle" });
+      await page.getByRole("heading", { name: "Home", level: 1 }).waitFor();
 
       await page.evaluate(() => localStorage.setItem("intentform-browser-project-v1", "{broken"));
       await page.reload({ waitUntil: "networkidle" });
@@ -301,16 +306,33 @@ try {
       legacyImport.tokens = structuredClone(demoGraph.tokens.modes[demoGraph.tokens.defaultMode]!.values);
       delete legacyImport.assets;
       await importInput.setInputFiles({
-        name: "legacy.intentform.json",
+        name: "legacy.intentform",
         mimeType: "application/json",
-        buffer: Buffer.from(JSON.stringify(legacyImport)),
+        buffer: Buffer.from(JSON.stringify({ format: "intentform-project", projectType: "prototype", graph: legacyImport })),
       });
       await page.waitForURL(`${origin}/studio`);
       await page.getByText("Verdant Pay", { exact: true }).first().waitFor();
+      const importedProjectType = await page.evaluate(async () => {
+        const id = localStorage.getItem("intentform-active-project-id");
+        if (!id) return null;
+        const database = await new Promise<IDBDatabase>((resolve, reject) => {
+          const request = indexedDB.open("intentform-project-catalog", 1);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        const project = await new Promise<{ projectType?: string } | undefined>((resolve, reject) => {
+          const request = database.transaction("projects", "readonly").objectStore("projects").get(id);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        database.close();
+        return project?.projectType ?? null;
+      });
+      if (importedProjectType !== "prototype") throw new Error(`Portable project import lost its declared type (${importedProjectType ?? "missing"})`);
       await page.getByRole("button", { name: "IntentForm project menu" }).click();
       await page.getByRole("menuitem", { name: "Back to project launcher" }).click();
       await page.waitForURL(`${origin}/`);
-      await page.getByRole("button", { name: /^Verdant Pay/ }).waitFor();
+      await page.locator("article").getByRole("button", { name: /^Verdant Pay/ }).waitFor();
 
       await page.locator("header").getByRole("button", { name: "New project" }).click();
       await page.getByRole("heading", { name: "New project" }).waitFor();
@@ -353,7 +375,7 @@ try {
       if (overflow > 1) throw new Error(`Compact project launcher has ${overflow}px horizontal overflow`);
       await page.waitForTimeout(500);
       await page.screenshot({ path: join(root, "output/playwright/project-launcher-compact.png"), fullPage: true });
-      await page.getByRole("button", { name: "Examples", exact: true }).click();
+      await page.getByLabel("Launcher section").selectOption("examples");
       await page.getByRole("button", { name: /^Verdant Pay/ }).click();
       await page.waitForURL(`${origin}/studio`);
       await page.getByTestId("canvas-node-home.balance").waitFor();
@@ -407,6 +429,22 @@ try {
       await page.getByLabel("Rename Catalog Beta").fill("Catalog Beta Renamed");
       await page.getByRole("button", { name: "Save", exact: true }).click();
       await page.getByRole("button", { name: /^Catalog Beta Renamed/ }).waitFor();
+
+      await page.getByRole("button", { name: "Project actions for Catalog Beta Renamed" }).click();
+      await page.getByRole("menuitem", { name: "Organize" }).click();
+      await page.getByLabel("Folder for Catalog Beta Renamed").fill("Client work");
+      await page.getByLabel("Tags for Catalog Beta Renamed").fill("Priority, Mobile");
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await page.getByText("#Priority", { exact: true }).waitFor();
+
+      await page.getByRole("button", { name: "Project actions for Catalog Beta Renamed" }).click();
+      const projectDownload = page.waitForEvent("download");
+      await page.getByRole("menuitem", { name: "Export" }).click();
+      if (!(await projectDownload).suggestedFilename().endsWith(".intentform")) throw new Error("Project export did not use the portable IntentForm bundle extension");
+
+      await page.getByRole("button", { name: "Project actions for Catalog Beta Renamed" }).click();
+      await page.getByRole("menuitem", { name: "Duplicate" }).click();
+      await page.getByRole("button", { name: /^Catalog Beta Renamed Copy/ }).waitFor();
 
       await page.getByRole("button", { name: "Project actions for Catalog Gamma" }).click();
       await page.getByRole("menuitem", { name: "Archive" }).click();
@@ -1879,9 +1917,9 @@ try {
 
       const rootResponse = await gotoStudio(routePage, origin, "/");
       assertSecurityHeaders(rootResponse, "Project launcher");
-      await routePage.getByRole("heading", { name: "Recents", level: 1 }).waitFor();
+      await routePage.getByRole("heading", { name: "Home", level: 1 }).waitFor();
       await routePage.reload({ waitUntil: "networkidle" });
-      await routePage.getByRole("heading", { name: "Recents", level: 1 }).waitFor();
+      await routePage.getByRole("heading", { name: "Home", level: 1 }).waitFor();
 
       const studioResponse = await gotoStudio(routePage, origin, "/studio");
       assertSecurityHeaders(studioResponse, "Studio workspace");
@@ -1894,7 +1932,7 @@ try {
       const emptyStudioResponse = await navigateToStudio(emptyPage, origin, "/studio");
       assertSecurityHeaders(emptyStudioResponse, "Empty Studio redirect");
       await emptyPage.waitForURL(`${origin}/`);
-      await emptyPage.getByRole("heading", { name: "Recents", level: 1 }).waitFor();
+      await emptyPage.getByRole("heading", { name: "Home", level: 1 }).waitFor();
       await emptyPage.close();
     },
   });

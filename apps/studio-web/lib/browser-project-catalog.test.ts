@@ -31,7 +31,9 @@ describe("browser project catalog records", () => {
           screenId: demoGraph.screens[0]!.id,
         }],
       },
-      thumbnail: { screenCount: demoGraph.screens.length },
+      tags: [],
+      searchIndex: expect.arrayContaining([demoGraph.product.name, "react"]),
+      thumbnail: { screenCount: demoGraph.screens.length, graphFingerprint: expect.stringMatching(/^[a-f0-9]{8}$/) },
     });
   });
 

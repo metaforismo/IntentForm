@@ -8,12 +8,12 @@ import {
   Browser,
   BookOpen,
   Check,
+  CirclesThreePlus,
   Cube,
   DotsThree,
   FileArrowUp,
   FolderOpen,
   Gear,
-  HardDrives,
   List,
   Plus,
   SquaresFour,
@@ -22,15 +22,17 @@ import {
   House,
   MagnifyingGlass,
   PencilSimple,
+  Robot,
+  Tag,
   Trash,
   Warning,
   X,
 } from "@phosphor-icons/react";
-import { parseGraph, type SemanticInterfaceGraph } from "@intentform/semantic-schema";
+import { GRAPH_LIMITS, parseGraph, type SemanticInterfaceGraph } from "@intentform/semantic-schema";
 import { previewGraphMigration } from "@intentform/semantic-schema/migrations";
 import { motion } from "motion/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   clearBrowserProject,
   type BrowserProjectMetadata,
@@ -44,14 +46,29 @@ import {
   type BrowserCatalogProject,
 } from "../lib/browser-project-catalog";
 import { createStarterGraph, projectExamples } from "../lib/project-starters";
-import { filterProjectExamples, projectMatchesQuery, type LauncherSection } from "../lib/launcher-model";
+import {
+  filterAndSortProjects,
+  filterProjectExamples,
+  inferProjectType,
+  type CatalogFilters,
+  type CatalogSort,
+  type LauncherSection,
+} from "../lib/launcher-model";
+import {
+  applyLauncherPreferences,
+  defaultLauncherPreferences,
+  LAUNCHER_PREFERENCES_KEY,
+  parseLauncherPreferences,
+  type LauncherPreferences,
+} from "../lib/launcher-preferences";
+import { LauncherAgents, LauncherBuilds, LauncherHome, LauncherLearn, LauncherSettings, ProjectOrganizationControls } from "./launcher-sections";
 
-const MAX_IMPORT_BYTES = 512_000;
+const MAX_IMPORT_BYTES = GRAPH_LIMITS.maxSerializedBytes;
 
 type LauncherView = "projects" | "new";
 type CatalogView = "grid" | "list";
 type BridgeStatus = "checking" | "available" | "unavailable";
-type ProjectAction = { id: string; mode: "menu" | "rename" | "delete"; value?: string };
+type ProjectAction = { id: string; mode: "menu" | "rename" | "organize" | "delete"; value?: string; folder?: string; tags?: string };
 
 interface LocalMigrationState {
   sourceFingerprint: string;
@@ -67,6 +84,19 @@ const projectTypeOptions: Array<{ id: ProjectType; label: string; detail: string
   { id: "responsive-web", label: "Responsive web", detail: "A semantic site or web app with intrinsic layout and declared breakpoints.", icon: Browser },
 ];
 
+const launcherSectionLabels: Record<LauncherSection, string> = {
+  home: "Home",
+  recents: "Recents",
+  projects: "Projects",
+  files: "Files",
+  agents: "Agents",
+  builds: "Builds",
+  archive: "Archive",
+  examples: "Examples",
+  learn: "Learn",
+  settings: "Settings",
+};
+
 function validationMessage(error: unknown): string {
   if (error && typeof error === "object" && "issues" in error && Array.isArray((error as { issues?: unknown }).issues)) {
     const issues = (error as { issues: Array<{ path?: PropertyKey[]; message?: string }> }).issues.slice(0, 4);
@@ -81,8 +111,6 @@ function projectTypeLabel(projectType: ProjectType): string {
   return projectType[0]!.toUpperCase() + projectType.slice(1);
 }
 
-const inferredProjectType = (graph: SemanticInterfaceGraph): ProjectType => graph.web ? "responsive-web" : "application";
-
 function ProjectThumbnail({ graph }: { graph: SemanticInterfaceGraph }) {
   const mode = graph.tokens.modes[graph.tokens.activeMode] ?? graph.tokens.modes[graph.tokens.defaultMode];
   const colors = mode?.values.colors ?? {};
@@ -90,18 +118,15 @@ function ProjectThumbnail({ graph }: { graph: SemanticInterfaceGraph }) {
   const ink = colors["color.ink"] ?? "#202020";
   const canvas = colors["color.canvas"] ?? "#eeeeec";
   const surface = colors["color.surface"] ?? "#ffffff";
+  const screen = graph.screens[0];
+  const collect = (nodes: SemanticInterfaceGraph["screens"][number]["nodes"]): SemanticInterfaceGraph["screens"][number]["nodes"] => nodes.flatMap((node) => [node, ...collect(node.children)]);
+  const nodes = screen ? collect(screen.nodes).filter((node) => node.intent.label?.trim()).slice(0, 5) : [];
   return (
-    <span className="relative block aspect-[16/10] overflow-hidden rounded-t-[8px] border-b border-[var(--if-border-subtle)]" style={{ color: ink, background: canvas }} aria-hidden="true">
-      <span className="absolute inset-x-[8%] top-[10%] flex h-[8%] items-center justify-between">
-        <span className="h-1.5 w-[22%] rounded-sm" style={{ background: ink, opacity: 0.72 }} />
-        <span className="h-1.5 w-[12%] rounded-sm" style={{ background: accent, opacity: 0.78 }} />
-      </span>
-      <span className="absolute inset-x-[8%] top-[26%] grid h-[61%] grid-cols-[1.2fr_.8fr] gap-[5%]">
-        <span className="grid content-between rounded-[5px] p-[9%]" style={{ background: surface }}>
-          <span className="grid gap-1.5"><span className="h-2 w-[68%] rounded-sm" style={{ background: ink, opacity: 0.84 }} /><span className="h-1.5 w-[88%] rounded-sm" style={{ background: ink, opacity: 0.2 }} /><span className="h-1.5 w-[56%] rounded-sm" style={{ background: ink, opacity: 0.16 }} /></span>
-          <span className="h-4 w-[46%] rounded-[4px]" style={{ background: accent }} />
-        </span>
-        <span className="grid grid-rows-[1fr_.65fr] gap-[8%]"><span className="rounded-[5px]" style={{ background: accent, opacity: 0.72 }} /><span className="rounded-[5px]" style={{ background: surface }} /></span>
+    <span className="relative block aspect-[16/10] overflow-hidden rounded-t-[8px] border-b border-[var(--if-border-subtle)] p-[8%]" style={{ color: ink, background: canvas }} aria-hidden="true">
+      <span className="flex h-full flex-col overflow-hidden rounded-[6px] p-[8%] shadow-sm" style={{ background: surface }}>
+        <span className="h-1 w-8 rounded-full opacity-55" style={{ background: accent }} />
+        <span className="mt-1 truncate text-[12px] font-semibold leading-none">{screen?.title ?? "Project"}</span>
+        <span className="mt-3 grid min-h-0 flex-1 content-start gap-1.5 overflow-hidden">{nodes.map((node) => node.kind === "primary-action" || node.kind === "secondary-action" ? <span key={node.id} className="mt-1 w-fit max-w-full truncate rounded-[3px] px-2 py-1 text-[7px] font-semibold text-white" style={{ background: accent }}>{node.intent.label}</span> : <span key={node.id} className="truncate text-[7px] leading-tight" style={{ opacity: node.style.emphasis === "strong" ? .92 : .58 }}>{node.intent.label}</span>)}</span>
       </span>
     </span>
   );
@@ -115,6 +140,9 @@ function CatalogProjectCard({
   onAction,
   onOpen,
   onRename,
+  onDuplicate,
+  onOrganize,
+  onExport,
   onArchive,
   onDelete,
 }: {
@@ -125,6 +153,9 @@ function CatalogProjectCard({
   onAction(action: ProjectAction | null): void;
   onOpen(): void;
   onRename(name: string): void;
+  onDuplicate(): void;
+  onOrganize(folder: string, tags: string): void;
+  onExport(): void;
   onArchive(): void;
   onDelete(): void;
 }) {
@@ -142,6 +173,8 @@ function CatalogProjectCard({
             <span className="mt-2 flex flex-wrap items-center gap-2 font-mono text-[10px] text-[var(--if-text-tertiary)]">
               <span>{project.thumbnail.screenCount} {project.thumbnail.screenCount === 1 ? "screen" : "screens"}</span>
               <span>r{project.revision}</span>
+              {project.folder ? <span>{project.folder}</span> : null}
+              {project.tags.slice(0, 2).map((tagName) => <span key={tagName}>#{tagName}</span>)}
               {project.source === "local" ? <span className={project.missingLocalPath ? "text-[var(--if-red)]" : ""}>{project.missingLocalPath ? "Missing path" : "Desktop linked"}</span> : null}
               {project.archivedAt ? <span>Archived</span> : null}
             </span>
@@ -158,8 +191,12 @@ function CatalogProjectCard({
         <DotsThree size={16} weight="bold" />
       </button>
       {activeAction?.mode === "menu" ? (
-        <div role="menu" aria-label={`Actions for ${project.name}`} className="absolute right-2 top-10 z-[2] w-36 rounded-lg border border-[var(--if-border)] bg-[var(--if-raised)] p-1 shadow-[var(--if-shadow-menu)]">
+        <div role="menu" aria-label={`Actions for ${project.name}`} className="absolute right-2 top-10 z-[2] w-40 rounded-lg border border-[var(--if-border)] bg-[var(--if-raised)] p-1 shadow-[var(--if-shadow-menu)]">
+          <button type="button" role="menuitem" onClick={onOpen} className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] hover:bg-[var(--if-hover)]"><FolderOpen size={12} /> Open</button>
           <button type="button" role="menuitem" onClick={() => onAction({ id: project.id, mode: "rename", value: project.name })} className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] hover:bg-[var(--if-hover)]"><PencilSimple size={12} /> Rename</button>
+          <button type="button" role="menuitem" onClick={onDuplicate} className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] hover:bg-[var(--if-hover)]"><CirclesThreePlus size={12} /> Duplicate</button>
+          <button type="button" role="menuitem" onClick={() => onAction({ id: project.id, mode: "organize", folder: project.folder ?? "", tags: project.tags.join(", ") })} className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] hover:bg-[var(--if-hover)]"><Tag size={12} /> Organize</button>
+          <button type="button" role="menuitem" onClick={onExport} className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] hover:bg-[var(--if-hover)]"><FileArrowUp size={12} /> Export</button>
           <button type="button" role="menuitem" onClick={onArchive} className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] hover:bg-[var(--if-hover)]"><Archive size={12} /> {project.archivedAt ? "Restore" : "Archive"}</button>
           <button type="button" role="menuitem" onClick={() => onAction({ id: project.id, mode: "delete" })} className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] text-[var(--if-red)] hover:bg-[var(--if-red-soft)]"><Trash size={12} /> Delete</button>
         </div>
@@ -171,9 +208,16 @@ function CatalogProjectCard({
           <button type="button" onClick={() => onAction(null)} className="h-7 rounded px-2 text-[10.5px] hover:bg-[var(--if-hover)]">Cancel</button>
         </form>
       ) : null}
+      {activeAction?.mode === "organize" ? (
+        <form className="absolute inset-x-2 bottom-2 z-[2] grid gap-1.5 rounded-lg border border-[var(--if-border)] bg-[var(--if-raised)] p-2 shadow-[var(--if-shadow-menu)]" onSubmit={(event) => { event.preventDefault(); onOrganize(activeAction.folder ?? "", activeAction.tags ?? ""); }}>
+          <input autoFocus aria-label={`Folder for ${project.name}`} value={activeAction.folder ?? ""} onChange={(event) => onAction({ ...activeAction, folder: event.target.value })} placeholder="Folder (optional)" className="h-7 rounded border border-[var(--if-border)] bg-[var(--if-input)] px-2 text-[11px] outline-none focus:border-[var(--if-blue)]" />
+          <input aria-label={`Tags for ${project.name}`} value={activeAction.tags ?? ""} onChange={(event) => onAction({ ...activeAction, tags: event.target.value })} placeholder="Tags, comma separated" className="h-7 rounded border border-[var(--if-border)] bg-[var(--if-input)] px-2 text-[11px] outline-none focus:border-[var(--if-blue)]" />
+          <div className="flex justify-end gap-1"><button type="button" onClick={() => onAction(null)} className="h-7 rounded px-2 text-[10.5px] hover:bg-[var(--if-hover)]">Cancel</button><button type="submit" className="h-7 rounded bg-[var(--if-blue)] px-2 text-[10.5px] font-medium text-white">Save</button></div>
+        </form>
+      ) : null}
       {activeAction?.mode === "delete" ? (
         <div role="alertdialog" aria-label={`Delete ${project.name}`} className="absolute inset-x-2 bottom-2 z-[2] rounded-lg border border-[var(--if-red)] bg-[var(--if-raised)] p-2 shadow-[var(--if-shadow-menu)]">
-          <p className="text-[11px]">Delete this project and its recovery history from this browser?</p>
+          <p className="text-[11px]">Delete this catalog copy and its browser recovery history? {project.source === "local" ? "The linked local file will not be deleted." : "This cannot be undone."}</p>
           <div className="mt-2 flex justify-end gap-1"><button type="button" onClick={() => onAction(null)} className="h-7 rounded px-2 text-[10.5px] hover:bg-[var(--if-hover)]">Cancel</button><button type="button" onClick={onDelete} className="h-7 rounded bg-[var(--if-red)] px-2 text-[10.5px] font-medium text-white">Delete</button></div>
         </div>
       ) : null}
@@ -186,9 +230,12 @@ export function Launcher() {
   const importInput = useRef<HTMLInputElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
   const [view, setView] = useState<LauncherView>("projects");
-  const [catalogView, setCatalogView] = useState<CatalogView>("grid");
-  const [section, setSection] = useState<LauncherSection>("recents");
+  const [preferences, setPreferences] = useState<LauncherPreferences>(defaultLauncherPreferences);
+  const [preferencesReady, setPreferencesReady] = useState(false);
+  const catalogView = preferences.catalogView;
+  const [section, setSection] = useState<LauncherSection>("home");
   const [projectQuery, setProjectQuery] = useState("");
+  const [filters, setFilters] = useState<CatalogFilters>({ type: "all", platform: "all", missingOnly: false });
   const [projects, setProjects] = useState<BrowserCatalogProject[] | null>(null);
   const [legacyWarning, setLegacyWarning] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -207,6 +254,28 @@ export function Launcher() {
   const [webTarget, setWebTarget] = useState(true);
   const [startFrom, setStartFrom] = useState<"empty" | "patterns" | "example">("empty");
   const [projectTheme, setProjectTheme] = useState<"light" | "dark" | "both">("both");
+  const [storageEstimate, setStorageEstimate] = useState<{ usage: number; quota: number } | null>(null);
+
+  useEffect(() => {
+    setPreferences(parseLauncherPreferences(window.localStorage.getItem(LAUNCHER_PREFERENCES_KEY)));
+    setPreferencesReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!preferencesReady) return;
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => applyLauncherPreferences(preferences, media.matches);
+    apply();
+    window.localStorage.setItem(LAUNCHER_PREFERENCES_KEY, JSON.stringify(preferences));
+    if (preferences.appearance !== "system") return;
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, [preferences, preferencesReady]);
+
+  useEffect(() => {
+    if (!navigator.storage?.estimate) return;
+    void navigator.storage.estimate().then((estimate) => setStorageEstimate({ usage: estimate.usage ?? 0, quota: estimate.quota ?? 0 })).catch(() => setStorageEstimate(null));
+  }, [projects]);
 
   const refreshCatalog = async () => {
     try {
@@ -330,6 +399,49 @@ export function Launcher() {
     })();
   };
 
+  const duplicateCatalogProject = (project: BrowserCatalogProject) => {
+    setOpening(project.id);
+    setError(null);
+    void (async () => {
+      const graph = structuredClone(project.graph);
+      graph.product.name = `${project.name} Copy`;
+      const created = await browserProjectCatalog().create(graph, { projectType: project.projectType, source: "created" });
+      setOpening(null);
+      setProjectAction(null);
+      if (!created.ok) {
+        setError(created.message);
+        return;
+      }
+      await refreshCatalog();
+    })();
+  };
+
+  const organizeCatalogProject = (project: BrowserCatalogProject, folder: string, tags: string) => {
+    setOpening(project.id);
+    setError(null);
+    void (async () => {
+      const organized = await browserProjectCatalog().organize(project.id, folder, tags.split(","));
+      setOpening(null);
+      if (!organized.ok) {
+        setError(organized.message);
+        return;
+      }
+      setProjectAction(null);
+      await refreshCatalog();
+    })();
+  };
+
+  const exportCatalogProject = (project: BrowserCatalogProject) => {
+    const payload = JSON.stringify({ format: "intentform-project", projectType: project.projectType, graph: project.graph }, null, 2);
+    const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "project"}.intentform`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setProjectAction(null);
+  };
+
   const archiveCatalogProject = (project: BrowserCatalogProject) => {
     setOpening(project.id);
     void (async () => {
@@ -383,7 +495,7 @@ export function Launcher() {
         const graph = parseGraph(result.graph);
         setLocalMigration(null);
         persistAndOpen(graph, {
-          projectType: inferredProjectType(graph),
+          projectType: inferProjectType(graph),
           source: "local",
           localFingerprint: result.fingerprint,
         }, "local");
@@ -413,7 +525,7 @@ export function Launcher() {
         const graph = parseGraph(result.graph);
         setLocalMigration(null);
         persistAndOpen(graph, {
-          projectType: inferredProjectType(graph),
+          projectType: inferProjectType(graph),
           source: "local",
           localFingerprint: result.fingerprint,
         }, "migration");
@@ -443,9 +555,13 @@ export function Launcher() {
     setError(null);
     void (async () => {
       try {
-        if (file.size > MAX_IMPORT_BYTES) throw new Error("The project file is larger than the 512 KB import limit.");
-        const graph = previewGraphMigration(JSON.parse(await file.text())).graph;
-        persistAndOpen(graph, { projectType: inferredProjectType(graph), source: "imported" }, "import");
+        if (file.size > MAX_IMPORT_BYTES) throw new Error(`The project file is larger than the ${(MAX_IMPORT_BYTES / 1_000_000).toFixed(0)} MB graph limit.`);
+        const decoded = JSON.parse(await file.text()) as unknown;
+        const bundle = decoded && typeof decoded === "object" && "graph" in decoded
+          ? decoded as { graph: unknown; projectType?: unknown }
+          : { graph: decoded, projectType: undefined };
+        const graph = previewGraphMigration(bundle.graph).graph;
+        persistAndOpen(graph, { projectType: inferProjectType(graph, bundle.projectType), source: "imported" }, "import");
       } catch (cause) {
         setOpening(null);
         setError(`Import failed: ${validationMessage(cause)}`);
@@ -456,17 +572,15 @@ export function Launcher() {
   };
 
   const visibleExamples = filterProjectExamples(projectExamples, projectQuery);
-  const visibleProjects = (projects ?? []).filter((project) => {
-    if (!showArchived && project.archivedAt) return false;
-    return projectMatchesQuery(projectQuery, [project.name, project.projectType, project.source]);
-  });
+  const sortedProjects = useMemo(() => filterAndSortProjects(projects ?? [], projectQuery, filters, preferences.sort), [filters, preferences.sort, projectQuery, projects]);
+  const visibleProjects = sortedProjects.filter((project) => section === "archive" ? Boolean(project.archivedAt) : showArchived || !project.archivedAt);
   const activeProjects = (projects ?? []).filter((project) => !project.archivedAt);
-  const recentProjects = section === "recents"
-    ? visibleProjects.filter((project) => !project.archivedAt).slice(0, 12)
+  const recentProjects = section === "recents" || section === "home"
+    ? visibleProjects.filter((project) => !project.archivedAt).slice(0, section === "home" ? 6 : 12)
     : visibleProjects;
-  const showRecents = section !== "examples";
-  const showExamples = section !== "recents" || activeProjects.length === 0;
-  const displayedExamples = section === "recents" ? visibleExamples.slice(0, 3) : visibleExamples;
+  const showRecents = ["home", "recents", "projects", "files", "archive"].includes(section);
+  const showExamples = section === "examples" || section === "home" || (section === "projects" && Boolean(projectQuery.trim()));
+  const displayedExamples = section === "home" ? visibleExamples.slice(0, 3) : visibleExamples;
 
   const selectSection = (next: LauncherSection) => {
     setView("projects");
@@ -479,20 +593,30 @@ export function Launcher() {
       <input ref={importInput} type="file" accept="application/json,.json,.intentform" onChange={(event) => importProject(event.target.files?.[0])} className="sr-only" aria-label="Import IntentForm project" />
       <aside className="hidden w-[232px] shrink-0 flex-col border-r border-[var(--if-border-subtle)] bg-[var(--if-panel)] p-3 lg:flex" aria-label="Project launcher navigation">
         <div className="flex h-10 items-center gap-2 px-2"><span className="grid size-6 place-items-center rounded-md bg-[var(--if-blue)] text-white"><BracketsCurly size={13} weight="bold" /></span><strong className="text-[13px] font-medium">IntentForm</strong></div>
-        <nav className="mt-5 grid gap-0.5 text-[11.5px]">
+        <nav className="mt-5 grid gap-0.5 text-[11.5px]" aria-label="Projects">
           {([
+            { id: "home", label: "Home", icon: House },
             { id: "recents", label: "Recents", icon: ClockCounterClockwise },
-            { id: "projects", label: "Projects", icon: House },
+            { id: "projects", label: "Projects", icon: SquaresFour },
             { id: "examples", label: "Examples", icon: Sparkle },
           ] satisfies Array<{ id: LauncherSection; label: string; icon: typeof House }>).map(({ id, label, icon: Icon }) => (
             <button key={id} type="button" aria-current={section === id ? "page" : undefined} onClick={() => selectSection(id)} className={`flex h-8 items-center gap-2 rounded-md px-2 text-left ${section === id ? "bg-[var(--if-pressed)] text-[var(--if-text)]" : "text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)] hover:text-[var(--if-text)]"}`}><Icon size={15} /><span>{label}</span></button>
           ))}
         </nav>
         <div className="my-4 border-t border-[var(--if-border-subtle)]" />
-        <nav className="grid gap-0.5 text-[11.5px]">
-          <button type="button" onClick={() => importInput.current?.click()} className="flex h-8 items-center gap-2 rounded-md px-2 text-left text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)] hover:text-[var(--if-text)]"><FolderOpen size={15} /> Files</button>
-          <button type="button" onClick={() => selectSection("examples")} className="flex h-8 items-center gap-2 rounded-md px-2 text-left text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)] hover:text-[var(--if-text)]"><BookOpen size={15} /> Learn</button>
-          <button type="button" disabled className="flex h-8 items-center gap-2 rounded-md px-2 text-left text-[var(--if-text-disabled)]"><Gear size={15} /> Settings</button>
+        <p className="px-2 pb-1 text-[9px] font-semibold uppercase tracking-[.08em] text-[var(--if-text-tertiary)]">Workspace</p>
+        <nav className="grid gap-0.5 text-[11.5px]" aria-label="Workspace">
+          {([
+            { id: "files", label: "Files", icon: FolderOpen },
+            { id: "agents", label: "Agents", icon: Robot },
+            { id: "builds", label: "Builds", icon: Check },
+            { id: "archive", label: "Archive", icon: Archive },
+          ] satisfies Array<{ id: LauncherSection; label: string; icon: typeof House }>).map(({ id, label, icon: Icon }) => <button key={id} type="button" aria-current={section === id ? "page" : undefined} onClick={() => selectSection(id)} className={`flex h-8 items-center gap-2 rounded-md px-2 text-left ${section === id ? "bg-[var(--if-pressed)] text-[var(--if-text)]" : "text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)] hover:text-[var(--if-text)]"}`}><Icon size={15} /><span>{label}</span></button>)}
+        </nav>
+        <div className="my-4 border-t border-[var(--if-border-subtle)]" />
+        <nav className="grid gap-0.5 text-[11.5px]" aria-label="Help and preferences">
+          <button type="button" aria-current={section === "learn" ? "page" : undefined} onClick={() => selectSection("learn")} className={`flex h-8 items-center gap-2 rounded-md px-2 text-left ${section === "learn" ? "bg-[var(--if-pressed)] text-[var(--if-text)]" : "text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)] hover:text-[var(--if-text)]"}`}><BookOpen size={15} /> Learn</button>
+          <button type="button" aria-current={section === "settings" ? "page" : undefined} onClick={() => selectSection("settings")} className={`flex h-8 items-center gap-2 rounded-md px-2 text-left ${section === "settings" ? "bg-[var(--if-pressed)] text-[var(--if-text)]" : "text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)] hover:text-[var(--if-text)]"}`}><Gear size={15} /> Settings</button>
         </nav>
         <div className="mt-auto border-t border-[var(--if-border-subtle)] px-2 pt-3">
           <div className="flex items-center gap-2 text-[11px] font-normal"><span className={`size-1.5 rounded-full ${bridge === "available" ? "bg-[var(--if-green)]" : "bg-[var(--if-text-tertiary)]"}`} />{bridge === "available" ? "Agent bridge ready" : "Browser workspace"}</div>
@@ -502,14 +626,12 @@ export function Launcher() {
 
       <section className="min-w-0 flex-1 bg-[var(--if-app)]">
         <header className="flex min-h-12 flex-wrap items-center justify-between gap-3 border-b border-[var(--if-border-subtle)] bg-[var(--if-panel)] px-4 py-1.5 sm:px-6 lg:px-8">
-          <h1 className="text-[20px] font-[550] leading-[26px] tracking-[-.02em]">{section === "examples" ? "Examples" : section === "projects" ? "Projects" : "Recents"}</h1>
-          <nav aria-label="Project sections" className="order-3 flex w-full items-center gap-1 border-t border-[var(--if-border-subtle)] pt-2 lg:hidden">
-            {(["recents", "projects", "examples"] as const).map((id) => <button key={id} type="button" aria-current={section === id ? "page" : undefined} onClick={() => selectSection(id)} className={`h-7 rounded-md px-2.5 text-[11px] font-medium ${section === id ? "bg-[var(--if-pressed)] text-[var(--if-text)]" : "text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)]"}`}>{id[0]!.toUpperCase() + id.slice(1)}</button>)}
-          </nav>
+          <h1 className="text-[20px] font-[550] leading-[26px] tracking-[-.02em]">{launcherSectionLabels[section]}</h1>
+          <label className="order-3 flex w-full items-center gap-2 border-t border-[var(--if-border-subtle)] pt-2 text-[10px] text-[var(--if-text-secondary)] lg:hidden">Section<select aria-label="Launcher section" value={section} onChange={(event) => selectSection(event.target.value as LauncherSection)} className="select-control h-8 flex-1">{Object.entries(launcherSectionLabels).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
           <div className="flex min-w-0 items-center gap-2">
             <div className="hidden rounded-md border border-[var(--if-border)] bg-[var(--if-input)] p-0.5 sm:flex" aria-label="Project view">
-              <button type="button" aria-label="Grid view" aria-pressed={catalogView === "grid"} onClick={() => setCatalogView("grid")} className={`grid size-7 place-items-center rounded-[4px] ${catalogView === "grid" ? "bg-[var(--if-pressed)] text-[var(--if-text)]" : "text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)]"}`}><SquaresFour size={14} /></button>
-              <button type="button" aria-label="List view" aria-pressed={catalogView === "list"} onClick={() => setCatalogView("list")} className={`grid size-7 place-items-center rounded-[4px] ${catalogView === "list" ? "bg-[var(--if-pressed)] text-[var(--if-text)]" : "text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)]"}`}><List size={14} /></button>
+              <button type="button" aria-label="Grid view" aria-pressed={catalogView === "grid"} onClick={() => setPreferences((current) => ({ ...current, catalogView: "grid" }))} className={`grid size-7 place-items-center rounded-[4px] ${catalogView === "grid" ? "bg-[var(--if-pressed)] text-[var(--if-text)]" : "text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)]"}`}><SquaresFour size={14} /></button>
+              <button type="button" aria-label="List view" aria-pressed={catalogView === "list"} onClick={() => setPreferences((current) => ({ ...current, catalogView: "list" }))} className={`grid size-7 place-items-center rounded-[4px] ${catalogView === "list" ? "bg-[var(--if-pressed)] text-[var(--if-text)]" : "text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)]"}`}><List size={14} /></button>
             </div>
             <label className="relative"><MagnifyingGlass size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--if-text-tertiary)]" /><input ref={searchInput} value={projectQuery} onChange={(event) => { setProjectQuery(event.target.value); if (event.target.value.trim()) setSection("projects"); }} aria-label="Search projects" placeholder="Search" className="h-8 w-32 rounded-md border border-[var(--if-border)] bg-[var(--if-input)] pl-8 pr-2 text-[11px] outline-none focus:border-[var(--if-blue)] sm:w-56" /></label>
             <button type="button" onClick={openLocalProject} disabled={bridge !== "available" || opening !== null} className="hidden h-8 items-center gap-1.5 rounded-md border border-[var(--if-border)] bg-[var(--if-raised)] px-3 text-[11px] font-medium hover:bg-[var(--if-hover)] disabled:opacity-45 sm:inline-flex"><FolderOpen size={13} /> Open project</button>
@@ -522,9 +644,21 @@ export function Launcher() {
           {legacyWarning ? <div role="alert" className="mb-5 rounded-lg border border-[var(--if-amber)] bg-[var(--if-amber-soft)] p-4 text-[12px]"><strong>Recovery needs attention</strong><p className="mt-1 text-[var(--if-text-secondary)]">{legacyWarning}</p><button type="button" onClick={() => { clearBrowserProject(window.localStorage); setLegacyWarning(null); }} className="mt-3 rounded-md border border-[var(--if-border)] px-3 py-1.5 font-medium">Discard</button></div> : null}
           {localMigration ? <div role="status" className="mb-5 flex flex-wrap items-center gap-3 rounded-lg border border-[var(--if-amber)] bg-[var(--if-amber-soft)] px-3 py-2.5 text-[11px]"><Warning size={15} weight="fill" className="text-[var(--if-amber)]" /><span className="min-w-0 flex-1">Schema {localMigration.fromVersion} needs an atomic update to {localMigration.toVersion}.</span><button type="button" onClick={applyLocalMigration} disabled={opening !== null} className="rounded-md bg-[var(--if-amber)] px-3 py-1.5 font-semibold text-white">Checkpoint and update</button><button type="button" onClick={() => setLocalMigration(null)} className="rounded-md px-2 py-1.5 hover:bg-[var(--if-hover)]">Not now</button></div> : null}
 
+          {section === "home" ? <LauncherHome projects={activeProjects} bridge={bridge} storageEstimate={storageEstimate} onOpen={openCatalogProject} onOpenLocal={openLocalProject} onImport={() => importInput.current?.click()} onAgents={() => selectSection("agents")} onSettings={() => selectSection("settings")} /> : null}
+
+          {section === "agents" ? <LauncherAgents bridge={bridge} /> : null}
+
+          {section === "builds" ? <LauncherBuilds projects={activeProjects} onOpen={openCatalogProject} /> : null}
+
+          {section === "learn" ? <LauncherLearn /> : null}
+
+          {section === "settings" ? <LauncherSettings preferences={preferences} projects={projects ?? []} storageEstimate={storageEstimate} onChange={setPreferences} /> : null}
+
+          {["projects", "files", "archive"].includes(section) ? <ProjectOrganizationControls sort={preferences.sort} filters={filters} projectTypes={projectTypeOptions} onSort={(sort) => setPreferences((current) => ({ ...current, sort }))} onFilters={setFilters} /> : null}
+
           {showRecents ? <section aria-labelledby="recent-projects-title">
             <div className="mb-4 flex items-center justify-between gap-3">
-              <div><h2 id="recent-projects-title" className="text-[13px] font-medium">{section === "projects" ? "Project catalog" : "Recents"}</h2><p className="mt-0.5 text-[11px] text-[var(--if-text-secondary)]">{projects?.length ?? 0} durable {projects?.length === 1 ? "project" : "projects"} on this device</p></div>
+              <div><h2 id="recent-projects-title" className="text-[13px] font-medium">{section === "home" ? "Continue working" : section === "projects" ? "Project catalog" : section === "files" ? "Local files and catalog copies" : section === "archive" ? "Archived projects" : "Recents"}</h2><p className="mt-0.5 text-[11px] text-[var(--if-text-secondary)]">{projects?.length ?? 0} durable {projects?.length === 1 ? "project" : "projects"} on this device</p></div>
               {section === "projects" && (projects ?? []).some((project) => project.archivedAt) ? <button type="button" aria-pressed={showArchived} onClick={() => setShowArchived((shown) => !shown)} className="h-7 rounded-md px-2 text-[10.5px] text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)]">{showArchived ? "Hide archived" : "Show archived"}</button> : null}
             </div>
             {projects === null ? <div className="aspect-[16/10] max-w-80 animate-pulse rounded-lg bg-[var(--if-panel-alt)]" /> : recentProjects.length > 0 ? (
@@ -538,6 +672,9 @@ export function Launcher() {
                   onAction={setProjectAction}
                   onOpen={() => openCatalogProject(project)}
                   onRename={(nextName) => renameCatalogProject(project, nextName)}
+                  onDuplicate={() => duplicateCatalogProject(project)}
+                  onOrganize={(folder, tags) => organizeCatalogProject(project, folder, tags)}
+                  onExport={() => exportCatalogProject(project)}
                   onArchive={() => archiveCatalogProject(project)}
                   onDelete={() => deleteCatalogProject(project)}
                 />)}
@@ -546,7 +683,7 @@ export function Launcher() {
           </section> : null}
 
           {showExamples ? <section aria-labelledby="example-projects-title" className={showRecents ? "mt-10 border-t border-[var(--if-border-subtle)] pt-7" : ""}>
-            <div className="mb-4"><h2 id="example-projects-title" className="text-[13px] font-medium">{section === "recents" ? "Featured examples" : "Working examples"}</h2><p className="mt-0.5 text-[11px] text-[var(--if-text-secondary)]">Open as a copy; source examples never change.</p></div>
+            <div className="mb-4"><h2 id="example-projects-title" className="text-[13px] font-medium">{section === "home" ? "Featured examples" : "Working examples"}</h2><p className="mt-0.5 text-[11px] text-[var(--if-text-secondary)]">Open as a copy; source examples never change.</p></div>
             {displayedExamples.length > 0 ? <div className={catalogView === "grid" ? "grid grid-cols-[repeat(auto-fill,minmax(260px,320px))] gap-5" : "grid gap-2"}>
               {displayedExamples.map((example) => <button key={example.id} type="button" disabled={opening !== null} onClick={() => persistAndOpen(structuredClone(example.graph), { projectType: example.projectType, source: "example" }, example.id)} className={`group overflow-hidden rounded-lg border border-[var(--if-border)] bg-[var(--if-panel)] text-left hover:border-[var(--if-blue)] disabled:opacity-60 ${catalogView === "list" ? "grid grid-cols-[112px_minmax(0,1fr)]" : ""}`}><ProjectThumbnail graph={example.graph} /><span className="flex items-start gap-3 p-3"><span className="min-w-0 flex-1"><strong className="block truncate text-[13px] font-medium">{example.graph.product.name}</strong><span className="mt-1 block line-clamp-2 text-[11px] leading-4 text-[var(--if-text-secondary)]">{example.summary}</span><span className="mt-2 block font-mono text-[10px] text-[var(--if-text-tertiary)]">Example · {projectTypeLabel(example.projectType)}</span></span><ArrowRight size={14} className="mt-0.5 shrink-0 text-[var(--if-text-tertiary)] transition-transform group-hover:translate-x-0.5" /></span></button>)}
             </div> : <div role="status" className="rounded-lg border border-dashed border-[var(--if-border)] px-5 py-8 text-[12px]">No examples match “{projectQuery.trim()}”.</div>}

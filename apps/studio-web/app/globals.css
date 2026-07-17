@@ -80,6 +80,12 @@ body {
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 
+html[data-if-density="comfortable"] { --if-control-compact: 30px; --if-control-standard: 34px; --if-panel-header: 38px; }
+html[data-if-high-contrast] { --if-border-subtle: var(--if-border); --if-border: var(--if-border-strong); }
+html[data-if-reduced-motion] *,
+html[data-if-reduced-motion] *::before,
+html[data-if-reduced-motion] *::after { scroll-behavior: auto !important; animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
@@ -124,12 +130,14 @@ textarea:focus-visible,
 .editor-viewport {
   background-color: var(--board);
   background-image: radial-gradient(circle, var(--board-dot) 1px, transparent 1.1px);
-  background-size: 24px 24px;
+  background-size: var(--if-user-grid-size, 24px) var(--if-user-grid-size, 24px);
   overscroll-behavior: contain;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
 }
+
+html:not([data-if-canvas-grid]) .editor-viewport { background-image: none; }
 
 .editor-world {
   transform-origin: 0 0;
