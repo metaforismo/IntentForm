@@ -251,15 +251,15 @@ export function NodePreview({
 
   switch (node.kind) {
     case "text":
-      return <p className="whitespace-pre-wrap text-[14px] leading-relaxed">{node.intent.label}</p>;
+      return <p data-editable-text className="whitespace-pre-wrap text-[14px] leading-relaxed">{node.intent.label}</p>;
     case "image":
-      return <div className="grid min-h-28 place-items-center rounded-xl border border-dashed text-[12px] text-zinc-500" style={{ borderColor: hairline }}>Image · {node.intent.label}</div>;
+      return <div className="grid min-h-28 place-items-center rounded-xl border border-dashed text-[12px] text-zinc-500" style={{ borderColor: hairline }}>Image · <span data-editable-text>{node.intent.label}</span></div>;
     case "shape":
       return <div aria-hidden="true" className="min-h-16 rounded-xl" style={{ background: soft }} />;
     case "action":
-      return <div className="rounded-lg border px-4 py-3 text-center text-[14px] font-semibold" style={{ borderColor: accent, color: deep }}>{node.intent.label}</div>;
+      return <div data-editable-text className="rounded-lg border px-4 py-3 text-center text-[14px] font-semibold" style={{ borderColor: accent, color: deep }}>{node.intent.label}</div>;
     case "input":
-      return <label className="grid gap-2 text-[13px] font-medium">{node.intent.label}<span className="min-h-10 rounded-lg border bg-white" style={{ borderColor: hairline }} /></label>;
+      return <label className="grid gap-2 text-[13px] font-medium"><span data-editable-text>{node.intent.label}</span><span className="min-h-10 rounded-lg border bg-white" style={{ borderColor: hairline }} /></label>;
     case "divider":
       return <hr aria-hidden="true" style={{ borderColor: hairline }} />;
     case "spacer":
@@ -267,7 +267,7 @@ export function NodePreview({
     case "balance-summary":
       return (
         <div data-loading-skeleton={loading || undefined} className="grid gap-1.5 p-6 text-white" style={{ background: deep, borderRadius: surfaceRadius, boxShadow: "0 24px 44px -30px rgba(20, 40, 33, .8)" }}>
-          <span className="text-[13px] text-white/65">{node.intent.label ?? "Available balance"}</span>
+          <span data-editable-text className="text-[13px] text-white/65">{node.intent.label ?? "Available balance"}</span>
           {loading
             ? <Skeleton className="h-[34px] w-40 rounded-lg opacity-40" />
             : <strong className="font-mono text-[34px] leading-none tracking-[-0.05em]">{formatMoney(fixture.balance, "€8,420.16")}</strong>}
@@ -278,7 +278,7 @@ export function NodePreview({
       if (state === "empty") {
         return (
           <div className="grid gap-1">
-            <span className="text-[15px] font-semibold tracking-[-.02em]">{node.intent.label}</span>
+            <span data-editable-text className="text-[15px] font-semibold tracking-[-.02em]">{node.intent.label}</span>
             <div className="rounded-2xl border border-dashed px-4 py-6 text-center text-[13px] text-zinc-500" style={{ borderColor: hairline }}>
               No activity yet. Your first payment will appear here.
             </div>
@@ -287,7 +287,7 @@ export function NodePreview({
       }
       return (
         <div data-loading-skeleton={loading || undefined} className="grid gap-1">
-          <span className="text-[15px] font-semibold tracking-[-.02em]">{node.intent.label}</span>
+          <span data-editable-text className="text-[15px] font-semibold tracking-[-.02em]">{node.intent.label}</span>
           {[["Riva Studio", "−€84.20"], ["Northline Market", "−€32.70"]].map(([name, amount]) => (
             <div key={name} className="flex items-center justify-between py-3 text-[13.5px]" style={{ borderTop: `1px solid ${hairline}` }}>
               {loading ? <Skeleton className="h-3.5 w-28 rounded" /> : <span>{name}</span>}
@@ -299,7 +299,7 @@ export function NodePreview({
     case "money-input":
       return (
         <div data-loading-skeleton={loading || undefined} className="grid gap-2 text-[13px] font-medium">
-          {node.intent.label}
+          <span data-editable-text>{node.intent.label}</span>
           <div className="border bg-white px-5 py-4 font-mono text-[27px] font-semibold tracking-[-.04em]" style={{ borderColor: hairline, borderRadius: controlRadius }}>
             {loading ? <Skeleton className="h-[27px] w-32 rounded-lg" /> : formatMoney(fixture.amount, "€120.00")}
           </div>
@@ -319,7 +319,7 @@ export function NodePreview({
     }
     case "status-message":
       return (
-        <div className="border-l-[3px] border-[#a4432c] bg-[#f6e7e1] p-4 text-[13px] leading-relaxed text-[#6f3423]" style={{ borderRadius: 6 }}>
+        <div data-editable-text className="border-l-[3px] border-[#a4432c] bg-[#f6e7e1] p-4 text-[13px] leading-relaxed text-[#6f3423]" style={{ borderRadius: 6 }}>
           {node.intent.label}
         </div>
       );
@@ -327,7 +327,7 @@ export function NodePreview({
       return (
         <div data-loading-skeleton={loading || undefined} className="grid justify-items-center gap-1.5 p-7 text-center" style={{ background: soft, borderRadius: surfaceRadius }}>
           <span className="grid size-11 place-items-center rounded-full text-white" style={{ background: accent }}><Check size={22} weight="bold" /></span>
-          <span className="mt-1 text-[13px]">{node.intent.label}</span>
+          <span data-editable-text className="mt-1 text-[13px]">{node.intent.label}</span>
           {loading
             ? <Skeleton className="h-[30px] w-28 rounded-lg" />
             : <strong className="font-mono text-[30px] leading-none tracking-[-.04em]">{formatMoney(fixture.amount, "€120.00")}</strong>}
@@ -336,13 +336,14 @@ export function NodePreview({
       );
     case "secondary-action":
       return (
-        <div className="px-5 py-4 text-center text-[15px] font-semibold" style={{ background: soft, color: deep, borderRadius: controlRadius }}>
+        <div data-editable-text className="px-5 py-4 text-center text-[15px] font-semibold" style={{ background: soft, color: deep, borderRadius: controlRadius }}>
           {node.intent.label}
         </div>
       );
     case "primary-action":
       return (
         <div
+          data-editable-text
           className="px-5 py-4 text-center text-[15px] font-bold text-white"
           style={{ background: accent, borderRadius: controlRadius, boxShadow: `0 18px 30px -20px color-mix(in oklab, ${accent} 85%, black)`, opacity: loading ? 0.75 : 1 }}
         >

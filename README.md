@@ -37,7 +37,7 @@ Generated files are integration artifacts, not the source of truth. Every accept
 | Area | Available now |
 | --- | --- |
 | Projects | Durable IndexedDB catalog, create/import/open, visual previews, search, grid/list views, folders, tags, rename, archive, recovery, migrations, multi-document tabs, dirty-close flows, and cross-window revision protection |
-| Canvas | Infinite board, recursive layers, mixed selection, eight resize handles, rotation, snapping, keyboard movement, grouping, duplication, nested reparenting, context menus, clipboard and style clipboard, comments, flow preview, device chrome, and synchronized multi-device comparison |
+| Canvas | Infinite board, recursive layers, mixed selection, eight resize handles, rotation, snapping, keyboard movement, grouping, duplication, nested reparenting, conflict-safe inline text editing with IME/RTL support, context menus, clipboard and style clipboard, comments, flow preview, device chrome, and synchronized multi-device comparison |
 | Layout | Stack, frame, list, grid tracks and span, wrap, overlay, split, scroll, safe area, adaptive, and freeform relations with deterministic layout indexes |
 | Design systems | Components, instances, variants, states, slots, overrides, detach/reset, DTCG token modes, searchable token binding, licensed assets, image placement, and SVG paint editing |
 | Web workflows | Responsive frames and breakpoints, generated DOM/CSS runtime, sandboxed HTML/CSS import through computed styles, explicit unsupported-property diagnostics, and source-to-canvas navigation |
@@ -200,7 +200,7 @@ IntentForm is not a Figma clone, a screenshot-to-code service, or a promise of p
 Current high-value work still includes:
 
 - directory-backed catalog sync and richer filesystem workflows;
-- professional inline rich-text editing, IME/RTL depth, variable fonts, and OpenType controls;
+- multi-range rich-text authoring, deeper bidirectional layout controls, and variable-font axis editing;
 - complete crop, vector-pen, and SVG geometry workflows;
 - broader CSS compatibility and editable HTML/CSS round-trip coverage;
 - code-component registration and library update review;

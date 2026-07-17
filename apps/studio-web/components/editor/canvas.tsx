@@ -22,10 +22,19 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type RefObject,
 } from "react";
 import { NodePreview, semanticNodeBoxStyle } from "./node-preview";
 import { SelectionOverlay } from "./selection-overlay";
+import {
+  beginInlineTextEdit,
+  inlineTextCommitValue,
+  loadLatestInlineText,
+  reconcileInlineTextEdit,
+  updateInlineTextDraft,
+  type InlineTextEditState,
+} from "./inline-text-edit";
 import {
   resolveSelectionAlignment,
   type Point,
@@ -112,6 +121,35 @@ const EASE = "cubic-bezier(.22, 1, .36, 1)";
 
 const clampScale = (value: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, value));
 
+interface InlineTextSession {
+  nodeId: string;
+  screenId: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  multiline: boolean;
+  textStyle: CSSProperties;
+  edit: InlineTextEditState;
+}
+
+function scaledPixels(value: string, scale: number, minimum?: number): number | undefined {
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) return undefined;
+  const scaled = parsed * scale;
+  return minimum === undefined ? scaled : Math.max(minimum, scaled);
+}
+
+function editingSurfaceColor(element: HTMLElement, boundary: HTMLElement): string | undefined {
+  let current: HTMLElement | null = element;
+  while (current && current !== boundary) {
+    const color = window.getComputedStyle(current).backgroundColor;
+    if (color !== "transparent" && color !== "rgba(0, 0, 0, 0)") return color;
+    current = current.parentElement;
+  }
+  return undefined;
+}
+
 export function CanvasStage({
   graph,
   selectedScreen,
@@ -165,7 +203,7 @@ export function CanvasStage({
   const visibilityFrame = useRef<number | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string; screenId: string } | null>(null);
   const [contextSubmenu, setContextSubmenu] = useState<"paste" | "arrange" | null>(null);
-  const [rename, setRename] = useState<{ nodeId: string; screenId: string; x: number; y: number; width: number; height: number; value: string; multiline: boolean } | null>(null);
+  const [rename, setRename] = useState<InlineTextSession | null>(null);
 
   const frameSpatialIndex = useMemo(
     () => createHorizontalFrameIndex(graph.screens.map((screen) => screen.id), profile.width, FRAME_GAP),
@@ -430,11 +468,14 @@ export function CanvasStage({
 
   const startRename = useCallback((node: SemanticNode, screenId: string) => {
     const viewport = viewportRef.current;
-    const element = viewport?.querySelector(`[data-testid="canvas-node-${window.CSS ? CSS.escape(node.id) : node.id}"]`);
+    const element = viewport?.querySelector<HTMLElement>(`[data-testid="canvas-node-${window.CSS ? CSS.escape(node.id) : node.id}"]`);
     if (!viewport || !element) return;
-    const nodeRect = element.getBoundingClientRect();
+    const textElement = element.querySelector<HTMLElement>("[data-editable-text]") ?? element;
+    const nodeRect = textElement.getBoundingClientRect();
     const viewportRect = viewport.getBoundingClientRect();
-    renameReturnFocus.current = element as HTMLElement;
+    const computed = window.getComputedStyle(textElement);
+    const scale = viewRef.current.scale;
+    renameReturnFocus.current = element;
     setRename({
       nodeId: node.id,
       screenId,
@@ -442,8 +483,20 @@ export function CanvasStage({
       y: nodeRect.top - viewportRect.top,
       width: Math.max(80, nodeRect.width),
       height: Math.max(36, nodeRect.height),
-      value: node.intent.label ?? "",
       multiline: node.kind === "text" || node.intent.label?.includes("\n") === true,
+      textStyle: {
+        backgroundColor: editingSurfaceColor(textElement, viewport),
+        color: computed.color,
+        fontFamily: computed.fontFamily,
+        fontSize: scaledPixels(computed.fontSize, scale, 11),
+        fontStyle: computed.fontStyle,
+        fontWeight: computed.fontWeight,
+        letterSpacing: computed.letterSpacing === "normal" ? undefined : scaledPixels(computed.letterSpacing, scale),
+        lineHeight: computed.lineHeight === "normal" ? "normal" : scaledPixels(computed.lineHeight, scale, 13),
+        textAlign: computed.textAlign as CSSProperties["textAlign"],
+        textTransform: computed.textTransform as CSSProperties["textTransform"],
+      },
+      edit: beginInlineTextEdit(node.intent.label ?? ""),
     });
     renameComposing.current = false;
     renameBlurredDuringComposition.current = false;
@@ -469,6 +522,19 @@ export function CanvasStage({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [graph.screens, previewMode, rename, selectedNodeIds, selectedScreen, startRename]);
 
+  useEffect(() => {
+    setRename((current) => {
+      if (!current) return current;
+      const liveNode = findSemanticNode(
+        graph.screens.find((screen) => screen.id === current.screenId)?.nodes ?? [],
+        current.nodeId,
+      );
+      const latestValue = liveNode?.intent.label ?? null;
+      const edit = reconcileInlineTextEdit(current.edit, latestValue, { preserveDraft: renameComposing.current });
+      return edit === current.edit ? current : { ...current, edit };
+    });
+  }, [graph.screens]);
+
   const openContextMenu = (
     element: HTMLElement,
     nodeId: string,
@@ -489,11 +555,13 @@ export function CanvasStage({
     });
   };
 
-  const commitRename = (source = rename?.value ?? "") => {
+  const commitRename = (source?: string) => {
     if (!rename) return;
-    const value = source.trim();
+    const edit = source === undefined ? rename.edit : updateInlineTextDraft(rename.edit, source);
+    if (edit.conflict) return;
+    const value = inlineTextCommitValue(edit);
     setRename(null);
-    if (value) onRenameNode(rename.nodeId, rename.screenId, value);
+    if (value !== null) onRenameNode(rename.nodeId, rename.screenId, value);
   };
 
   const accent = tokenColor(graph, "color.accent", "#397461");
@@ -861,18 +929,22 @@ export function CanvasStage({
           <textarea
             autoFocus
             aria-label="Edit layer text"
+            aria-describedby={rename.edit.conflict ? "inline-text-conflict" : undefined}
+            aria-invalid={Boolean(rename.edit.conflict)}
             dir="auto"
-            value={rename.value}
-            onChange={(event) => setRename((current) => current ? { ...current, value: event.target.value } : current)}
+            value={rename.edit.draftValue}
+            onChange={(event) => setRename((current) => current ? { ...current, edit: updateInlineTextDraft(current.edit, event.target.value) } : current)}
             onFocus={(event) => event.currentTarget.setSelectionRange(event.currentTarget.value.length, event.currentTarget.value.length)}
             onCompositionStart={() => { renameComposing.current = true; }}
             onCompositionEnd={(event) => {
               renameComposing.current = false;
-              if (renameBlurredDuringComposition.current) commitRename(event.currentTarget.value);
+              const commitAfterComposition = renameBlurredDuringComposition.current;
+              renameBlurredDuringComposition.current = false;
+              if (commitAfterComposition) commitRename(event.currentTarget.value);
             }}
             onBlur={() => {
               if (renameComposing.current) renameBlurredDuringComposition.current = true;
-              else commitRename();
+              else if (!rename.edit.conflict) commitRename();
             }}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
@@ -884,8 +956,51 @@ export function CanvasStage({
                 commitRename();
               }
             }}
-            className="floating-chrome min-h-full w-full resize-none rounded-[4px] border border-[var(--select)] px-2 py-1.5 text-[13px] leading-relaxed text-[var(--ink)] outline-none ring-2 ring-[var(--select)]/20"
+            className="floating-chrome min-h-full w-full resize-none rounded-[4px] border border-[var(--select)] px-2 py-1.5 outline-none ring-2 ring-[var(--select)]/20"
+            style={rename.textStyle}
           />
+          {rename.edit.conflict ? (
+            <div
+              id="inline-text-conflict"
+              role="alert"
+              className="menu-pop mt-2 w-[min(320px,calc(100vw-32px))] p-3 text-[11px] leading-relaxed text-[var(--if-text)]"
+              onPointerDown={(event) => event.preventDefault()}
+            >
+              {rename.edit.conflict === "removed" ? (
+                <>
+                  <p>The layer was removed while you were editing. Your draft was preserved but cannot be applied.</p>
+                  <button type="button" onClick={() => setRename(null)} className="mt-2 h-7 rounded-[4px] bg-[var(--if-raised)] px-2.5 font-medium hover:bg-[var(--if-hover)]">Close editor</button>
+                </>
+              ) : (
+                <>
+                  <p>The graph changed this text while you were editing. Choose which value should remain.</p>
+                  <p className="mt-1 truncate font-mono text-[10px] text-[var(--if-text-secondary)]" title={rename.edit.latestValue ?? undefined}>Latest: {rename.edit.latestValue}</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setRename((current) => current ? { ...current, edit: loadLatestInlineText(current.edit) } : current)}
+                      className="h-7 rounded-[4px] bg-[var(--if-raised)] px-2.5 font-medium hover:bg-[var(--if-hover)]"
+                    >
+                      Load latest
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!rename.edit.draftValue.trim()}
+                      onClick={() => {
+                        const value = rename.edit.draftValue.trim();
+                        if (!value) return;
+                        setRename(null);
+                        onRenameNode(rename.nodeId, rename.screenId, value);
+                      }}
+                      className="h-7 rounded-[4px] bg-[var(--if-blue-action)] px-2.5 font-medium text-white hover:bg-[var(--if-blue-action-hover)] disabled:opacity-45"
+                    >
+                      Overwrite with mine
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
