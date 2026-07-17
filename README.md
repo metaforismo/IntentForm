@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="apps/studio-web/public/brand/intentform-mark.png" width="112" alt="IntentForm mark" />
+  <img src="apps/studio-web/public/brand/intentform-mark.png" width="104" alt="IntentForm mark: freeform intent resolving into structured interface rows" />
 </p>
 
 <h1 align="center">IntentForm</h1>
 
-<p align="center"><strong>Design interfaces with humans and agents. Compile them into real software.</strong></p>
+<p align="center"><strong>Intent becomes structured interface.</strong></p>
 
 <p align="center">
   <a href="https://github.com/metaforismo/IntentForm/actions/workflows/ci.yml"><img src="https://github.com/metaforismo/IntentForm/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
@@ -12,9 +12,9 @@
   <img src="https://img.shields.io/badge/local--first-no%20account-58bd88" alt="Local-first, no account required" />
 </p>
 
-IntentForm is an open-source, local-first visual design environment and deterministic interface compiler. People and coding agents edit the same validated Semantic Interface Graph; compilers lower that graph into readable React, responsive Web, Expo, and SwiftUI; verification stays separate from generation so output is never called proven without current evidence.
+IntentForm is an open-source, local-first design environment where people and coding agents edit the same validated Semantic Interface Graph. It compiles that graph into readable React, responsive Web, Expo, and SwiftUI, then verifies each target against current evidence instead of treating generation as proof.
 
-![IntentForm project launcher in dark mode](docs/assets/readme/launcher-dark.png)
+![IntentForm project launcher with local projects, agent status, and working examples](docs/assets/readme/launcher.png)
 
 ## Why IntentForm exists
 
@@ -45,11 +45,17 @@ Generated files are integration artifacts, not the source of truth. Every accept
 | Agents | Local MCP resources and bounded tools, read-only default, exact file/page/selection scope, preview/commit/reject/revert transactions, semantic diffs, comments, history, checkpoints, and rollback |
 | Evidence | Unit and integration tests, accessibility profiles, Playwright production smoke, responsive runtime checks, Expo iOS/Android exports, SwiftUI builds and Simulator accessibility/screenshots, desktop packaging, and a 10,000-node benchmark |
 
-![IntentForm design workspace in dark mode](docs/assets/readme/workspace-dark.png)
+## Design, Code, Verify
+
+The product has three primary workspaces instead of a generation wizard:
+
+- **Design** keeps the semantic canvas, recursive layers, direct manipulation, properties, responsive projections, comments, and prototype flows in one editor.
+- **Code** shows deterministic target files beside the running projection, with exact node links and fresh build evidence.
+- **Verify** keeps semantic, responsive, accessibility, browser, Expo, SwiftUI, and desktop evidence separate by target and fingerprint.
+
+![IntentForm Design workspace with semantic layers, direct selection, prototype flow, and inspector](docs/assets/readme/design-workspace.png)
 
 The editor chrome is deliberately neutral. Blue is reserved for selection and editing, green for connected or verified state, and the authored project keeps its own visual identity.
-
-![Three synchronized responsive projections of one semantic screen](docs/assets/readme/responsive-comparison.png)
 
 ## Quick start
 
@@ -115,7 +121,7 @@ Use `--project /absolute/path/to/project` when necessary. Add `--apply` only aft
 
 New connections are read-only. Semantic writes require the explicit `INTENTFORM_MCP_PERMISSION=write` environment setting. Tools cover project inspection, graph search, typed patches, components, tokens, assets, branches, history, compile, verify, preview, accessibility, packages, review, checkpoint, diff, revert, and transactions. Successful operations report project, file, tab, page, device, visual state, selection, affected node paths, and fingerprints.
 
-![Generated source, evidence, and agent review inside Studio](docs/assets/readme/code-agent-evidence.png)
+![IntentForm Code workspace with a running projection, generated source, and exact build evidence](docs/assets/readme/code-and-evidence.png)
 
 ## Compilation and verification
 
@@ -128,8 +134,6 @@ IntentForm separates these states:
 5. Evidence verdict produced for the active target and profile.
 
 The Studio Code workspace provides a virtualized, syntax-aware source viewer with search, exact node links, copy context, and source-to-canvas navigation. Verify groups semantic, responsive, accessibility, browser, Expo, SwiftUI, and desktop evidence without pretending that one target proves another.
-
-![Responsive Web output beside generated source](docs/assets/readme/responsive-web.png)
 
 CI runs typecheck, the complete test suite, the 10,000-node benchmark, production builds, Web runtime smoke, Expo exports for iOS and Android, the full Studio browser matrix, checked-in preview drift checks, SwiftUI native build/render evidence, and the hardened macOS desktop package. GitHub Actions are pinned to immutable commits.
 

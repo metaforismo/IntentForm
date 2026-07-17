@@ -14,13 +14,13 @@ export const metadata: Metadata = {
   openGraph: {
     title: "IntentForm — Agent-native interface design",
     description: "A local-first visual design environment and deterministic interface compiler for humans and coding agents.",
-    images: [{ url: "/brand/intentform-mark.png", width: 1254, height: 1254, alt: "IntentForm mark" }],
+    images: [{ url: "/brand/intentform-social.png", width: 1200, height: 630, alt: "IntentForm — intent becomes structured interface" }],
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "IntentForm — Agent-native interface design",
     description: "Design validated interfaces with humans and agents, then compile them into real software.",
-    images: ["/brand/intentform-mark.png"],
+    images: ["/brand/intentform-social.png"],
   },
 };
 
