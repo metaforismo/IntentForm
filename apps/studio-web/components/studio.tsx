@@ -996,8 +996,8 @@ export function Studio() {
   return (
     <main className="studio-grain h-[100dvh] overflow-hidden text-[var(--ink)]">
       <a className="skip-link" href="#studio-workspace">Skip to workspace</a>
-      <div className="grid h-full min-h-0 grid-rows-[34px_38px_minmax(0,1fr)] bg-[var(--if-panel)]">
-        <div className="relative z-[6] flex min-w-0 items-end border-b border-[var(--line)] bg-[var(--app-bg,var(--canvas))] px-2 pt-1">
+      <div className="studio-root-grid grid h-full min-h-0 grid-rows-[34px_38px_minmax(0,1fr)] bg-[var(--if-panel)]">
+        <div className="studio-document-tabs relative z-[6] flex min-w-0 items-end overflow-hidden border-b border-[var(--line)] bg-[var(--app-bg,var(--canvas))] px-2 pt-1">
           <div role="tablist" aria-label="Open project documents" className="flex min-w-0 items-end gap-px overflow-x-auto [scrollbar-width:none]">
           {workspace.openTabs.map((tab, tabIndex) => {
             const active = tab.id === workspace.activeTabId;
@@ -1091,7 +1091,7 @@ export function Studio() {
             </div>
           </div>
 
-          <nav aria-label="Workspace" className="mx-auto flex h-[26px] w-[204px] min-w-0 items-center overflow-x-auto rounded-[5px] bg-[var(--if-panel-alt)] p-px [scrollbar-width:none]">
+          <nav aria-label="Workspace" className="mx-auto flex h-[26px] min-w-0 items-center gap-0.5 overflow-x-auto [scrollbar-width:none]">
             {primaryStages.map((item) => {
               const Icon = item.icon;
               const active = stage === item.id;
@@ -1103,7 +1103,7 @@ export function Studio() {
                   aria-label={item.label}
                   aria-current={active ? "page" : undefined}
                   onClick={() => setStage(item.id)}
-                  className={`group relative flex h-6 min-w-[66px] flex-1 items-center justify-center gap-1 rounded-[4px] px-1.5 text-[10.5px] font-medium leading-[15px] ${active ? "bg-[var(--if-raised)] text-[var(--if-text)] shadow-[0_1px_2px_rgb(0_0_0/10%)]" : "text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)] hover:text-[var(--if-text)]"}`}
+                  className={`group relative flex h-6 min-w-[62px] items-center justify-center gap-1 rounded-[4px] px-2 text-[10.5px] font-medium leading-[15px] ${active ? "bg-[var(--if-hover)] text-[var(--if-text)]" : "text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)] hover:text-[var(--if-text)]"}`}
                 >
                   <Icon size={12} weight={active ? "fill" : "regular"} />
                   <span>{item.shortLabel}</span>

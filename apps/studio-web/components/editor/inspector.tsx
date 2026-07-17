@@ -188,12 +188,12 @@ export function Inspector({
       role={visible ? "dialog" : undefined}
       aria-modal={visible ? "true" : undefined}
       aria-label="Design inspector"
-      className={`${visible ? "block" : "hidden"} ${desktopVisible ? "xl:block" : "xl:hidden"} absolute inset-y-0 right-0 z-[3] w-[304px] min-h-0 overflow-y-auto overflow-x-hidden border-l border-[var(--line)] bg-[var(--chrome)] text-[var(--t-strong)] shadow-[-24px_0_52px_-32px_var(--shadow-strong)] xl:relative xl:z-[1] xl:w-auto xl:shadow-none`}
+      className={`${visible ? "block" : "hidden"} ${desktopVisible ? "xl:block" : "xl:hidden"} absolute inset-y-0 right-0 z-[3] w-[304px] min-h-0 overflow-y-auto overflow-x-hidden border-l border-[var(--line)] bg-[var(--chrome)] text-[var(--t-strong)] shadow-[-24px_0_52px_-32px_var(--shadow-strong)] xl:relative xl:z-[3] xl:w-auto xl:shadow-none`}
     >
       <div className="sticky top-0 z-[1] flex h-9 items-center justify-between border-b border-[var(--line)] bg-[var(--chrome)] pl-3 pr-1.5">
-        <div className="flex items-baseline gap-2">
-          <span className="text-[11px] font-medium text-[var(--ink)]">Design</span>
-          <span className="rounded bg-[var(--accent-soft)] px-1.5 py-px font-mono text-[9px] text-[var(--accent-text)]">semantic</span>
+        <div className="min-w-0">
+          <span className="block text-[11px] font-medium text-[var(--ink)]">Design</span>
+          <span className="block truncate text-[9.5px] text-[var(--faint)]">{selectedNode?.intent.label ?? screen.title}</span>
         </div>
         <IconButton ariaLabel="Close design inspector" onClick={onClose}><X size={13} /></IconButton>
       </div>

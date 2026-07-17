@@ -152,6 +152,16 @@ textarea:focus-visible,
   background: var(--if-panel);
 }
 
+html[data-intentform-minimal-ui] .studio-root-grid {
+  grid-template-rows: 0 0 minmax(0, 1fr);
+}
+
+html[data-intentform-minimal-ui] .studio-document-tabs,
+html[data-intentform-minimal-ui] .studio-topbar {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .floating-chrome {
   border: 1px solid var(--if-border);
   background: var(--if-raised);

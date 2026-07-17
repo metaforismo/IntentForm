@@ -104,6 +104,7 @@ const shortcutRows: Array<[string, string]> = [
   ["Temporary hand tool", "Space"],
   ["Preview mode", "P"],
   ["Command menu", "⌘K"],
+  ["Minimal UI", "⌘\\"],
   ["Duplicate layer", "⌘D"],
   ["Delete layer", "⌫"],
   ["Reorder layer", "⌥↑ / ⌥↓"],

@@ -479,6 +479,9 @@ try {
       if (!(await activeDocumentTab.evaluate((element) => element === document.activeElement))) {
         throw new Error("Dirty-close cancellation did not restore focus to the active document");
       }
+      await page.getByTestId(`layer-${firstNode.id}`).click();
+      await label.fill("Dirty close discard regression");
+      await label.press("Enter");
       await page.getByRole("button", { name: "Close active document" }).click();
       await page.getByRole("button", { name: "Discard changes" }).click();
       if (await documentTabs.count() !== 1) throw new Error("Discard did not close the dirty document");
@@ -850,6 +853,11 @@ try {
       await page.getByRole("dialog", { name: "Command menu" }).waitFor({ state: "detached" });
 
       const previewMode = page.getByRole("button", { name: "Toggle preview mode" });
+      const previewBounds = await previewMode.boundingBox();
+      const layersPanelBounds = await page.locator("#editor-structure-panel").boundingBox();
+      if (!previewBounds || !layersPanelBounds || previewBounds.x <= layersPanelBounds.x + layersPanelBounds.width) {
+        throw new Error("Desktop Preview controls overlap the pages and layers panel");
+      }
       await previewMode.click();
       if (await page.locator("[data-preview-mode='true']").count() !== 1 || await previewMode.getAttribute("aria-pressed") !== "true") {
         throw new Error("Preview mode did not hide editor selection behavior");
@@ -1192,6 +1200,21 @@ try {
       await page.keyboard.press("Escape");
       await page.getByRole("dialog", { name: "Keyboard shortcuts" }).waitFor({ state: "detached" });
       await page.getByLabel("Preview device").selectOption("device:neutral.phone.compact");
+
+      const canvasBeforeMinimalUi = await page.getByTestId("canvas-viewport").boundingBox();
+      await page.getByRole("button", { name: "Toggle minimal UI" }).click();
+      if (await page.locator("html[data-intentform-minimal-ui]").count() !== 1) {
+        throw new Error("Minimal UI did not mark the workspace as canvas-only");
+      }
+      const canvasInMinimalUi = await page.getByTestId("canvas-viewport").boundingBox();
+      if (!canvasBeforeMinimalUi || !canvasInMinimalUi || canvasInMinimalUi.width <= canvasBeforeMinimalUi.width + 400) {
+        throw new Error(`Minimal UI did not materially expand the canvas (${canvasBeforeMinimalUi?.width ?? 0} -> ${canvasInMinimalUi?.width ?? 0})`);
+      }
+      if (await page.locator(".studio-topbar").evaluate((element) => getComputedStyle(element).visibility) !== "hidden") {
+        throw new Error("Minimal UI left the Studio command bar visible");
+      }
+      await page.getByRole("button", { name: "Toggle minimal UI" }).click();
+      await page.locator("html[data-intentform-minimal-ui]").waitFor({ state: "detached" });
 
       await mkdir(join(root, "output/playwright"), { recursive: true });
       await page.screenshot({ path: join(root, "output/playwright/studio-redesign-wide.png"), fullPage: true });

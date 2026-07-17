@@ -64,6 +64,7 @@ import { CanvasStage, type CanvasApi } from "./editor/canvas";
 import { importLocalAsset } from "./editor/asset-import";
 import { Inspector } from "./editor/inspector";
 import { LayersPanel } from "./editor/layers-panel";
+import { ToolRail } from "./editor/tool-rail";
 import { CommandMenu, ShortcutsSheet, type EditorCommand } from "./editor/overlays";
 import { MultiDeviceComparison } from "./stages/multi-device-comparison";
 import {
@@ -285,6 +286,7 @@ export function ManualEditor({
   const [insertOpen, setInsertOpen] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const [desktopPanels, setDesktopPanels] = useState({ structure: true, inspector: true });
+  const [minimalUi, setMinimalUi] = useState(false);
   const [railTab, setRailTab] = useState<RailTab>("layers");
   const [visualStateByScreen, setVisualStateByScreen] = useState<Record<string, VisualState>>({});
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -303,16 +305,16 @@ export function ManualEditor({
   const [panelWidths, setPanelWidths] = useState(() => {
     if (typeof window !== "undefined") {
       try {
-        const saved = JSON.parse(window.localStorage.getItem("intentform-panel-widths") ?? "") as { rail?: number; inspector?: number };
+        const saved = JSON.parse(window.localStorage.getItem("intentform-panel-widths-v2") ?? "") as { rail?: number; inspector?: number };
         return {
-          rail: Math.min(380, Math.max(220, saved.rail ?? 268)),
-          inspector: Math.min(420, Math.max(260, saved.inspector ?? 304)),
+          rail: Math.min(340, Math.max(216, saved.rail ?? 224)),
+          inspector: Math.min(360, Math.max(248, saved.inspector ?? 264)),
         };
       } catch {
         // Fall through to defaults when nothing valid is stored.
       }
     }
-    return { rail: 268, inspector: 304 };
+    return { rail: 224, inspector: 264 };
   });
   const canvasApi = useRef<CanvasApi>(null);
   const nodeClipboard = useRef<NodeClipboardPayload | null>(null);
@@ -326,17 +328,22 @@ export function ManualEditor({
   const previousInsertOpen = useRef(false);
   const previousZoomOpen = useRef(false);
   const panelLimits = {
-    rail: { min: 220, max: 380 },
-    inspector: { min: 260, max: 420 },
+    rail: { min: 216, max: 340 },
+    inspector: { min: 248, max: 360 },
   } as const;
 
   useEffect(() => {
     try {
-      window.localStorage.setItem("intentform-panel-widths", JSON.stringify(panelWidths));
+      window.localStorage.setItem("intentform-panel-widths-v2", JSON.stringify(panelWidths));
     } catch {
       // Persisting panel sizes is best-effort.
     }
   }, [panelWidths]);
+
+  useEffect(() => {
+    document.documentElement.toggleAttribute("data-intentform-minimal-ui", minimalUi);
+    return () => document.documentElement.removeAttribute("data-intentform-minimal-ui");
+  }, [minimalUi]);
 
   useEffect(() => {
     const previous = previousMobilePanel.current;
@@ -1211,11 +1218,12 @@ export function ManualEditor({
 
   const toggleEditorPanel = useCallback((panel: Exclude<MobilePanel, null>) => {
     if (window.matchMedia("(min-width: 1280px)").matches) {
-      setDesktopPanels((current) => ({ ...current, [panel]: !current[panel] }));
+      setDesktopPanels((current) => ({ ...current, [panel]: minimalUi ? true : !current[panel] }));
+      if (minimalUi) setMinimalUi(false);
     } else {
       setMobilePanel((current) => current === panel ? null : panel);
     }
-  }, []);
+  }, [minimalUi]);
 
   const closeEditorPanel = useCallback((panel: Exclude<MobilePanel, null>) => {
     if (window.matchMedia("(min-width: 1280px)").matches) {
@@ -1245,6 +1253,7 @@ export function ManualEditor({
     undo: () => {},
     redo: () => {},
     togglePanel: (_panel: "structure" | "inspector") => {},
+    toggleMinimalUi: () => {},
     copy: (_data?: DataTransfer): boolean => false,
     cut: (_data?: DataTransfer) => {},
     paste: (_data: DataTransfer, _mode: PasteMode) => {},
@@ -1289,6 +1298,10 @@ export function ManualEditor({
     undo: () => { if (canUndo) onUndo(); },
     redo: () => { if (canRedo) onRedo(); },
     togglePanel: toggleEditorPanel,
+    toggleMinimalUi: () => {
+      setMinimalUi((current) => !current);
+      setMobilePanel(null);
+    },
     copy: copySelection,
     cut: (data) => { if (copySelection(data)) deleteSelection(); },
     paste: pasteFromData,
@@ -1311,6 +1324,11 @@ export function ManualEditor({
         event.preventDefault();
         setCommandOpen((open) => !open);
         setCommandQuery("");
+        return;
+      }
+      if (modifier && event.key === "\\") {
+        event.preventDefault();
+        keyActions.current.toggleMinimalUi();
         return;
       }
       if (isFormControl(event.target)) return;
@@ -1435,13 +1453,14 @@ export function ManualEditor({
     };
   }, [commandOpen, insertOpen, mobilePanel, shortcutsOpen, zoomMenuOpen]);
 
-  const desktopGrid = desktopPanels.structure && desktopPanels.inspector
-    ? "xl:grid-cols-[var(--rail-w)_minmax(420px,1fr)_var(--insp-w)]"
-    : desktopPanels.structure
-      ? "xl:grid-cols-[var(--rail-w)_minmax(420px,1fr)]"
-      : desktopPanels.inspector
-        ? "xl:grid-cols-[minmax(420px,1fr)_var(--insp-w)]"
-        : "xl:grid-cols-1";
+  const visibleDesktopPanels = minimalUi ? { structure: false, inspector: false } : desktopPanels;
+  const desktopGrid = visibleDesktopPanels.structure && visibleDesktopPanels.inspector
+    ? "xl:grid-cols-[42px_var(--rail-w)_minmax(420px,1fr)_var(--insp-w)]"
+    : visibleDesktopPanels.structure
+      ? "xl:grid-cols-[42px_var(--rail-w)_minmax(420px,1fr)]"
+      : visibleDesktopPanels.inspector
+        ? "xl:grid-cols-[42px_minmax(420px,1fr)_var(--insp-w)]"
+        : "xl:grid-cols-[42px_minmax(0,1fr)]";
 
   useEffect(() => {
     if (!insertOpen && !zoomMenuOpen) return;
@@ -1459,6 +1478,7 @@ export function ManualEditor({
     { label: comparisonMode ? "Exit responsive comparison" : "Compare responsive devices", section: "Board", icon: ArrowsOutSimple, action: () => setComparisonMode((current) => !current) },
     { label: "Toggle pages and layers", shortcut: "⌥L", section: "Panels", icon: Stack, action: () => toggleEditorPanel("structure") },
     { label: "Toggle design inspector", shortcut: "⌥I", section: "Panels", icon: Selection, action: () => toggleEditorPanel("inspector") },
+    { label: minimalUi ? "Exit minimal UI" : "Enter minimal UI", shortcut: "⌘\\", section: "Panels", icon: FrameCorners, action: () => setMinimalUi((current) => !current) },
     { label: "Show design tokens", section: "Panels", icon: PaintBrush, action: () => { setRailTab("tokens"); setDesktopPanels((current) => ({ ...current, structure: true })); setMobilePanel("structure"); } },
     { label: "Show component library", section: "Panels", icon: Stack, action: () => { setRailTab("components"); setDesktopPanels((current) => ({ ...current, structure: true })); setMobilePanel("structure"); } },
     { label: "Show project assets", section: "Panels", icon: Stack, action: () => { setRailTab("assets"); setDesktopPanels((current) => ({ ...current, structure: true })); setMobilePanel("structure"); } },
@@ -1504,6 +1524,7 @@ export function ManualEditor({
     <div
       className={`editor-shell relative grid h-full min-h-0 grid-cols-1 overflow-hidden bg-[var(--workspace)] text-[var(--t-strong)] ${desktopGrid}`}
       data-preview-mode={previewMode}
+      data-minimal-ui={minimalUi}
       style={{ "--rail-w": `${panelWidths.rail}px`, "--insp-w": `${panelWidths.inspector}px` } as React.CSSProperties}
       onDragOver={(event) => { if (event.dataTransfer.types.includes("application/x-intentform-asset")) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }}
       onDrop={(event) => { const assetId = event.dataTransfer.getData("application/x-intentform-asset"); if (assetId) { event.preventDefault(); placeAsset(assetId); } }}
@@ -1538,6 +1559,37 @@ export function ManualEditor({
         />
       ) : null}
 
+      <ToolRail
+        tool={tool}
+        spaceHeld={spaceHeld}
+        insertOpen={insertOpen}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        structureOpen={visibleDesktopPanels.structure}
+        inspectorOpen={visibleDesktopPanels.inspector}
+        commandOpen={commandOpen}
+        minimalUi={minimalUi}
+        insertMenu={insertOpen ? (
+          <div role="menu" aria-label="Insert semantic component" className="menu-pop absolute left-10 top-0 z-[5] max-h-[min(620px,calc(100vh-120px))] w-[300px] overflow-y-auto p-1.5">
+            <span className="block px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-[.12em] text-[var(--faint)]">Semantic components</span>
+            {nodeCatalog.map((preset) => {
+              const PresetIcon = catalogIcons[preset.kind];
+              return <button key={preset.kind} type="button" role="menuitem" onClick={() => insertNode(preset.kind)} className="flex w-full items-center gap-2.5 rounded-[6px] px-2.5 py-2 text-left hover:bg-[var(--hover)]"><span className="grid size-8 shrink-0 place-items-center rounded-[5px] border border-[var(--line)] bg-[var(--chip)] text-[var(--t-strong)]"><PresetIcon size={14} /></span><span className="min-w-0"><strong className="block text-[11px] font-semibold">{nodeNames[preset.kind]}</strong><small className="block truncate text-[11px] text-[var(--muted)]">{preset.description}</small></span></button>;
+            })}
+            {graph.components.length > 0 ? <span className="mt-1 block border-t border-[var(--line)] px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[.12em] text-[var(--faint)]">Local library</span> : null}
+            {graph.components.map((definition) => <button key={definition.id} type="button" role="menuitem" disabled={Boolean(definition.deprecated)} onClick={() => insertLibraryComponent(definition.id)} className="flex w-full items-center gap-2.5 rounded-[6px] px-2.5 py-2 text-left hover:bg-[var(--hover)] disabled:cursor-not-allowed disabled:opacity-45"><span className="grid size-8 shrink-0 place-items-center rounded-[5px] border border-[var(--line)] bg-[var(--chip)] text-[var(--t-strong)]"><Stack size={14} /></span><span className="min-w-0"><strong className="block text-[11px] font-semibold">{definition.name}</strong><small className="block truncate text-[11px] text-[var(--muted)]">v{definition.version} · {definition.variants.length} variants</small></span></button>)}
+          </div>
+        ) : null}
+        onTool={setTool}
+        onInsert={() => setInsertOpen((open) => !open)}
+        onUndo={onUndo}
+        onRedo={onRedo}
+        onStructure={() => toggleEditorPanel("structure")}
+        onInspector={() => toggleEditorPanel("inspector")}
+        onCommands={() => { setCommandOpen((open) => !open); setCommandQuery(""); }}
+        onMinimalUi={() => { setMinimalUi((current) => !current); setMobilePanel(null); }}
+      />
+
       <LayersPanel
         graph={graph}
         screen={screen}
@@ -1545,7 +1597,7 @@ export function ManualEditor({
         activeVisualState={activeVisualState}
         railTab={railTab}
         visible={mobilePanel === "structure"}
-        desktopVisible={desktopPanels.structure}
+        desktopVisible={visibleDesktopPanels.structure}
         layerQuery={layerQuery}
         onRailTab={setRailTab}
         onLayerQuery={setLayerQuery}
@@ -1573,7 +1625,7 @@ export function ManualEditor({
       />
 
       <section className="relative h-full min-h-0 min-w-0">
-        {desktopPanels.structure ? (
+        {visibleDesktopPanels.structure ? (
           <div
             role="separator"
             aria-label="Resize pages and layers panel"
@@ -1584,10 +1636,10 @@ export function ManualEditor({
             tabIndex={0}
             onPointerDown={beginPanelResize("rail")}
             onKeyDown={resizePanelWithKeyboard("rail")}
-            className="absolute inset-y-0 left-0 z-[4] hidden w-1.5 cursor-col-resize hover:bg-[var(--accent)]/25 active:bg-[var(--accent)]/40 xl:block"
+            className="absolute inset-y-0 left-0 z-[2] hidden w-1.5 cursor-col-resize hover:bg-[var(--accent)]/25 active:bg-[var(--accent)]/40 xl:block"
           />
         ) : null}
-        {desktopPanels.inspector ? (
+        {visibleDesktopPanels.inspector ? (
           <div
             role="separator"
             aria-label="Resize design inspector"
@@ -1598,7 +1650,7 @@ export function ManualEditor({
             tabIndex={0}
             onPointerDown={beginPanelResize("inspector")}
             onKeyDown={resizePanelWithKeyboard("inspector")}
-            className="absolute inset-y-0 right-0 z-[4] hidden w-1.5 cursor-col-resize hover:bg-[var(--accent)]/25 active:bg-[var(--accent)]/40 xl:block"
+            className="absolute inset-y-0 right-0 z-[2] hidden w-1.5 cursor-col-resize hover:bg-[var(--accent)]/25 active:bg-[var(--accent)]/40 xl:block"
           />
         ) : null}
         {comparisonMode ? (
@@ -1657,8 +1709,8 @@ export function ManualEditor({
           />
         )}
 
-        <div className="pointer-events-auto absolute inset-x-2 top-2 z-[2] flex flex-wrap items-start justify-between gap-2 sm:inset-x-3 sm:top-3 sm:flex-nowrap">
-          <div className="floating-chrome order-1 flex h-9 shrink-0 items-center gap-0.5 rounded-[8px] p-1 sm:order-none">
+        <div className="pointer-events-auto absolute inset-x-2 top-2 z-[2] flex flex-wrap items-start justify-between gap-2 sm:inset-x-3 sm:top-3 sm:flex-nowrap xl:justify-end">
+          <div className="floating-chrome order-1 flex h-9 shrink-0 items-center gap-0.5 rounded-[8px] p-1 sm:order-none xl:hidden">
             <button
               ref={structureTriggerRef}
               type="button"
@@ -1666,7 +1718,7 @@ export function ManualEditor({
               aria-controls="editor-structure-panel"
               aria-expanded={mobilePanel === "structure"}
               onClick={() => toggleEditorPanel("structure")}
-              className={`${floatingButton} ${desktopPanels.structure ? "xl:hidden" : ""}`}
+              className={floatingButton}
             >
               <Stack size={13} /> Layers
             </button>
@@ -1675,7 +1727,7 @@ export function ManualEditor({
             </button>
           </div>
 
-          <div className="floating-chrome order-3 mx-auto flex h-9 shrink-0 items-center gap-0.5 rounded-[8px] p-1 sm:order-none sm:mx-0">
+          <div className="floating-chrome order-3 mx-auto flex h-9 shrink-0 items-center gap-0.5 rounded-[8px] p-1 sm:order-none sm:mx-0 xl:hidden">
             {comparisonMode ? (
               <span className="flex h-7 items-center gap-1.5 px-2 text-[10.5px] font-medium text-[var(--accent-text)]"><ArrowsOutSimple size={13} /> {comparisonProfileIds.length} synchronized frames</span>
             ) : <>
@@ -1724,12 +1776,12 @@ export function ManualEditor({
             </>}
           </div>
 
-          <div className="floating-chrome order-2 flex h-9 shrink-0 items-center gap-0.5 rounded-[8px] p-1 sm:order-none">
-            {!comparisonMode ? <button type="button" aria-label="Toggle preview mode" aria-pressed={previewMode} onClick={() => setPreviewMode((current) => !current)} className={`inline-flex h-7 items-center gap-1 rounded-[5px] px-2 text-[10.5px] font-medium ${previewMode ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
-              <MonitorPlay size={13} weight={previewMode ? "fill" : "regular"} /> Preview
+          <div className={`floating-chrome order-2 ml-auto flex h-9 shrink-0 items-center gap-0.5 rounded-[8px] p-1 sm:order-none ${minimalUi ? "xl:hidden" : ""}`}>
+            {!comparisonMode ? <button type="button" title="Preview · P" aria-label="Toggle preview mode" aria-pressed={previewMode} onClick={() => setPreviewMode((current) => !current)} className={`inline-flex size-7 items-center justify-center rounded-[5px] ${previewMode ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
+              <MonitorPlay size={13} weight={previewMode ? "fill" : "regular"} />
             </button> : null}
-            <button type="button" aria-label="Toggle responsive comparison" aria-pressed={comparisonMode} onClick={() => setComparisonMode((current) => !current)} className={`inline-flex h-7 items-center gap-1 rounded-[5px] px-2 text-[10.5px] font-medium ${comparisonMode ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
-              <ArrowsOutSimple size={13} /> Compare
+            <button type="button" title="Compare responsive devices" aria-label="Toggle responsive comparison" aria-pressed={comparisonMode} onClick={() => setComparisonMode((current) => !current)} className={`inline-flex size-7 items-center justify-center rounded-[5px] ${comparisonMode ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
+              <ArrowsOutSimple size={13} />
             </button>
             <button
               ref={inspectorTriggerRef}
@@ -1738,9 +1790,9 @@ export function ManualEditor({
               aria-controls="editor-inspector-panel"
               aria-expanded={mobilePanel === "inspector"}
               onClick={() => toggleEditorPanel("inspector")}
-              className={`${floatingButton} ${desktopPanels.inspector ? "xl:hidden" : ""}`}
+              className={`${floatingButton} ${visibleDesktopPanels.inspector ? "xl:hidden" : ""}`}
             >
-              Design <Selection size={13} />
+              <span className="xl:hidden">Design</span> <Selection size={13} />
             </button>
           </div>
         </div>
@@ -1855,7 +1907,7 @@ export function ManualEditor({
         profile={activeProfile}
         visualState={activeVisualState}
         visible={mobilePanel === "inspector"}
-        desktopVisible={desktopPanels.inspector}
+        desktopVisible={visibleDesktopPanels.inspector}
         updateNode={updateNode}
         onSetComponentProperty={(name, value) => mutateComponent(
           (source, instanceId) => setComponentProperty(source, instanceId, name, value),
