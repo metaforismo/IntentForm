@@ -69,6 +69,7 @@ export interface DomImportProjection {
   changes: SemanticChange[];
   diagnostics: DomImportDiagnostic[];
   importedNodes: number;
+  replacedNodes: number;
 }
 
 const finite = (value: number, fallback = 0) => Number.isFinite(value) ? value : fallback;
@@ -282,5 +283,11 @@ export function projectComputedDom(
   }
   candidate.screens[screenIndex]!.nodes = imported;
   const next = parseGraph(candidate);
-  return { graph: next, changes: semanticDiff(graph, next), diagnostics, importedNodes: sequence };
+  return {
+    graph: next,
+    changes: semanticDiff(graph, next),
+    diagnostics,
+    importedNodes: sequence,
+    replacedNodes: previousFlat.length,
+  };
 }

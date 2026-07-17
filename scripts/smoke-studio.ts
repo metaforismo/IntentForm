@@ -1118,11 +1118,31 @@ try {
       await importDialog.getByRole("button", { name: "Analyze" }).click();
       await importDialog.getByText("Review ready", { exact: true }).waitFor();
       await importDialog.getByText(/executable, embedded, or URL-bearing items were removed/i).waitFor();
+      await importDialog.getByRole("heading", { name: "Semantic diff" }).waitFor();
+      await importDialog.getByTestId("web-import-impact").getByText(/replaces .* existing .* with .* imported/i).waitFor();
+      if (await importDialog.getByTestId("web-import-diff").getByRole("listitem").count() === 0) {
+        throw new Error("HTML/CSS import review did not expose its exact semantic changes");
+      }
+      const reviewSurface = await importDialog.getByTestId("web-import-review").evaluate((element) => {
+        const surface = element.closest("[aria-live]");
+        const styles = surface ? getComputedStyle(surface) : null;
+        return {
+          background: styles?.backgroundColor ?? "missing",
+          color: styles?.color ?? "missing",
+          className: surface?.getAttribute("class") ?? "missing",
+          inlineStyle: surface?.getAttribute("style") ?? "missing",
+        };
+      });
+      if (reviewSurface.background === "rgba(0, 0, 0, 0)" || reviewSurface.background === "transparent") {
+        throw new Error(`HTML/CSS import review surface is transparent: ${JSON.stringify(reviewSurface)}`);
+      }
+      await mkdir(join(root, "output/playwright"), { recursive: true });
+      await page.screenshot({ path: join(root, "output/playwright/web-import-review.png"), fullPage: true });
       const isolatedFrame = importDialog.getByTitle("Isolated HTML and CSS import preview").contentFrame();
       if (await isolatedFrame.locator("script").count() !== 0 || await isolatedFrame.locator("img[src]").count() !== 0) {
         throw new Error("HTML/CSS import sandbox retained executable content or a network-bearing image source");
       }
-      await importDialog.getByRole("button", { name: "Apply reviewed import" }).click();
+      await importDialog.getByRole("button", { name: "Replace screen with reviewed import" }).click();
       await importDialog.waitFor({ state: "detached" });
       await page.getByTestId("responsive-web-preview").locator("iframe").contentFrame().getByText("Browser oracle", { exact: true }).waitFor();
       await page.getByRole("treeitem", { name: "src/styles.css", exact: true }).click();

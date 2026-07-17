@@ -40,7 +40,7 @@
   --if-status-bar: 24px;
 
   /* Transitional aliases. New chrome uses --if-* directly. */
-  --app-bg: var(--if-app); --canvas-bg: var(--if-canvas); --panel-bg: var(--if-panel); --panel-raised: var(--if-raised);
+  --app-bg: var(--if-app); --canvas-bg: var(--if-canvas); --panel: var(--if-panel); --panel-bg: var(--if-panel); --panel-raised: var(--if-raised);
   --control-bg: var(--if-panel-alt); --control-hover: var(--if-hover); --control-active: var(--if-pressed);
   --border: var(--if-border); --border-strong: var(--if-border-strong); --text: var(--if-text); --text-secondary: var(--if-text-secondary); --text-muted: var(--if-text-secondary);
   --selection: var(--if-blue); --selection-soft: var(--if-blue-soft); --focus: var(--if-blue); --success: var(--if-green); --warning: var(--if-amber);
