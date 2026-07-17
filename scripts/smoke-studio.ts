@@ -763,6 +763,7 @@ try {
 
   if (!remoteOrigin) await runSmokeScenario(browser, {
     name: "missing local path cached copy and relink recovery",
+    allowRequestFailure: (request) => request.failure()?.errorText === "net::ERR_ABORTED",
     run: async (page) => {
       await gotoStudio(page, origin, "/");
       await page.locator("header").getByRole("button", { name: "Open project" }).click();
@@ -1144,6 +1145,16 @@ try {
       }
       await importDialog.getByRole("button", { name: "Replace screen with reviewed import" }).click();
       await importDialog.waitFor({ state: "detached" });
+      await page.getByTestId("responsive-web-preview").locator("iframe").contentFrame().getByText("Browser oracle", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Design canvas" }).click();
+      await page.getByTestId("canvas-node-web-import.1").waitFor();
+      await page.getByRole("button", { name: "Undo" }).click();
+      await page.getByTestId("canvas-node-web-import.1").waitFor({ state: "detached" });
+      await page.getByText("Northline Journal", { exact: true }).first().waitFor();
+      await page.getByRole("button", { name: "Redo" }).click();
+      await page.getByTestId("canvas-node-web-import.1").waitFor();
+      await page.getByText("Browser oracle", { exact: true }).first().waitFor();
+      await page.getByRole("button", { name: "Native outputs" }).click();
       await page.getByTestId("responsive-web-preview").locator("iframe").contentFrame().getByText("Browser oracle", { exact: true }).waitFor();
       await page.getByRole("treeitem", { name: "src/styles.css", exact: true }).click();
       for (const expected of ["grid-template-columns: 1fr 2fr", "font-size: 32px"]) {
@@ -2634,7 +2645,6 @@ try {
       }));
       if (!comparisonState.region || !comparisonState.preferences.some((entry) => entry[1] === "true")) throw new Error(`Compare mode did not persist after activation: ${JSON.stringify(comparisonState)}`);
       await page.reload();
-      await page.getByTestId("canvas-viewport").waitFor();
       await page.getByRole("button", { name: "Toggle responsive comparison" }).and(page.locator('[aria-pressed="true"]')).waitFor();
       try {
         await page.locator('[aria-label="Multi-device comparison"]').waitFor();

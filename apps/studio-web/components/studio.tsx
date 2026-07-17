@@ -365,13 +365,6 @@ export function Studio() {
     ].slice(0, 24));
   };
 
-  const applyWebImport = (projection: DomImportProjection) => {
-    const importedScreen = projection.graph.screens.find((screen) => screen.id === selectedScreen);
-    setGraph(projection.graph);
-    setSelectedNodeId(importedScreen?.nodes[0]?.id ?? null);
-    setNotice(`Applied reviewed HTML/CSS import: ${projection.importedNodes} nodes, ${projection.changes.length} semantic changes, ${projection.diagnostics.length} explicit diagnostics.`);
-  };
-
   const flushCatalogSave = (): Promise<boolean> => {
     const next = catalogSaveChain.current.then(async () => {
       const current = catalogProjectRef.current;
@@ -777,6 +770,15 @@ export function Studio() {
     }
     lastCommit.current = { at: now, notice: nextNotice };
     setGraph(validated);
+  };
+
+  const applyWebImport = (projection: DomImportProjection) => {
+    const importedScreen = projection.graph.screens.find((screen) => screen.id === selectedScreen);
+    commitGraph(
+      projection.graph,
+      `Applied reviewed HTML/CSS import: ${projection.importedNodes} nodes, ${projection.changes.length} semantic changes, ${projection.diagnostics.length} explicit diagnostics.`,
+    );
+    setSelectedNodeId(importedScreen?.nodes[0]?.id ?? null);
   };
 
   const reconcileSelection = (nextGraph: SemanticInterfaceGraph) => {
