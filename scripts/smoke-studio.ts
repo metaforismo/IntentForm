@@ -187,12 +187,12 @@ try {
             status: 409,
             contentType: "application/json",
             body: JSON.stringify({
-              error: "Project schema 0.0.1 must be migrated to 0.9.0 before it can be opened.",
+              error: "Project schema 0.0.1 must be migrated to 0.10.0 before it can be opened.",
               migration: {
                 status: "migration-required",
                 sourceFingerprint: "a".repeat(64),
                 fromVersion: "0.0.1",
-                toVersion: "0.9.0",
+                toVersion: "0.10.0",
                 diagnostics: [{
                   severity: "info",
                   code: "schema.migrated.0.0.1.to.0.1.0",
@@ -238,6 +238,11 @@ try {
                   code: "schema.migrated.0.8.0.to.0.9.0",
                   path: "schemaVersion",
                   message: "Converted schema 0.8.0 to 0.9.0.",
+                }, {
+                  severity: "info",
+                  code: "schema.migrated.0.9.0.to.0.10.0",
+                  path: "schemaVersion",
+                  message: "Converted schema 0.9.0 to 0.10.0.",
                 }],
               },
             }),
@@ -1179,6 +1184,8 @@ try {
       if (await page.getByTestId("layer-payment-request.failure").getAttribute("data-state-visible") !== "false") {
         throw new Error("Layers panel did not expose state-bound visibility");
       }
+      await page.keyboard.press("Escape");
+      await page.getByTestId("inspector-no-selection").waitFor();
       await page.getByLabel("Visual state").selectOption("failed");
       await page.getByTestId("canvas-node-payment-request.failure").waitFor();
       await page.getByTestId("fixture-editor").waitFor();
@@ -1399,6 +1406,40 @@ try {
       await page.locator(".editor-world svg text", { hasText: "onDone" }).waitFor();
       await page.getByRole("button", { name: "Undo" }).click();
       await page.locator(".editor-world svg text", { hasText: "onDone" }).waitFor({ state: "detached" });
+    },
+  });
+
+  await runSmokeScenario(browser, {
+    name: "professional inspector appearance authoring",
+    run: async (page) => {
+      await gotoStudio(page, origin);
+      const node = page.getByTestId("canvas-node-payment-request.confirm");
+      await node.click();
+      const inspector = page.locator("#editor-inspector-panel");
+      await inspector.getByTestId("inspector-mode-design").waitFor();
+      await inspector.getByRole("button", { name: "Solid", exact: true }).click();
+      const color = inspector.getByLabel("Color", { exact: true });
+      await color.fill("#7c3aed");
+      await color.press("Enter");
+      await inspector.getByRole("button", { name: "Stroke and corners", exact: true }).click();
+      const radius = inspector.getByLabel("Radius", { exact: true });
+      await radius.fill("13");
+      await radius.press("Enter");
+      await inspector.getByRole("button", { name: "Effects and opacity", exact: true }).click();
+      await inspector.getByRole("button", { name: "Shadow", exact: true }).click();
+      await page.waitForFunction(() => {
+        const selected = document.querySelector<HTMLElement>('[data-testid="canvas-node-payment-request.confirm"]');
+        if (!selected) return false;
+        const style = getComputedStyle(selected);
+        return style.backgroundColor === "rgb(124, 58, 237)" && style.borderTopLeftRadius === "13px" && style.boxShadow !== "none";
+      });
+      await inspector.getByTestId("inspector-mode-inspect").click();
+      await inspector.getByTestId("source-inspector").getByText("payment-request.confirm", { exact: true }).waitFor();
+      await inspector.getByText(/^[a-f0-9]{8}$/).waitFor();
+      await inspector.getByTestId("inspector-mode-prototype").click();
+      await inspector.getByTestId("prototype-inspector").getByText("Interaction", { exact: true }).waitFor();
+      await inspector.getByLabel("Event").selectOption("onConfirm");
+      await inspector.getByLabel("Navigate to").selectOption("receipt");
     },
   });
 

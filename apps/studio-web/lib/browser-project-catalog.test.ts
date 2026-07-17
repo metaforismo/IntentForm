@@ -5,6 +5,7 @@ import {
   createCatalogProject,
   defaultWorkspaceState,
   nextCatalogProject,
+  normalizeCatalogProjectRecord,
   normalizeWorkspaceState,
 } from "./browser-project-catalog";
 
@@ -35,6 +36,16 @@ describe("browser project catalog records", () => {
       searchIndex: expect.arrayContaining([demoGraph.product.name, "react"]),
       thumbnail: { screenCount: demoGraph.screens.length, graphFingerprint: expect.stringMatching(/^[a-f0-9]{8}$/) },
     });
+  });
+
+  it("migrates stored catalog graphs and recovery snapshots before current-schema validation", () => {
+    const current = createCatalogProject(demoGraph, { projectType: "application", source: "created" }, "2026-07-16T10:00:00.000Z", "legacy");
+    const legacy = structuredClone(current) as unknown as { graph: { schemaVersion: string }; lastKnownGood?: { graph: { schemaVersion: string } } };
+    legacy.graph.schemaVersion = "0.9.0";
+    legacy.lastKnownGood = { graph: structuredClone(legacy.graph), savedAt: current.updatedAt, revision: current.revision } as never;
+    const migrated = normalizeCatalogProjectRecord(legacy);
+    expect(migrated.graph.schemaVersion).toBe("0.10.0");
+    expect(migrated.lastKnownGood?.graph.schemaVersion).toBe("0.10.0");
   });
 
   it("keeps the previous committed graph as last-known-good on every atomic revision", () => {

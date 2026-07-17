@@ -400,7 +400,7 @@ export const toolDefinitions: ToolDefinition[] = [
   },
   {
     name: "intentform_replace_graph",
-    description: "Replace the entire Semantic Interface Graph (current schemaVersion 0.9.0). Use for structural edits a typed operation cannot express. Recursive hierarchy, components, token modes, licensed assets, locked ecosystem dependencies, logical device profiles, responsive-web and Expo profiles, node-count and layout constraints are fully validated; invalid graphs are rejected without side effects. Returns the semantic diff and fresh verification findings.",
+    description: "Replace the entire Semantic Interface Graph (current schemaVersion 0.10.0). Use for structural edits a typed operation cannot express. Recursive hierarchy, components, token modes, licensed assets, locked ecosystem dependencies, logical device profiles, responsive-web and Expo profiles, node-count and layout constraints are fully validated; invalid graphs are rejected without side effects. Returns the semantic diff and fresh verification findings.",
     inputSchema: {
       type: "object",
       properties: {

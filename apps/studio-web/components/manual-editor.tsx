@@ -628,6 +628,22 @@ export function ManualEditor({
     updateNodeById(selectedNode.id, mutate, notice);
   };
 
+  const updateSelection = (mutate: (node: SemanticNode) => void, notice: string) => {
+    if (normalizedSelection.length === 0) return;
+    const draft = structuredClone(graph);
+    for (const nodeId of normalizedSelection) {
+      const found = locateEditorNode(draft, nodeId);
+      if (!found) continue;
+      if (componentContextForNode(draft, found.screen, nodeId)) {
+        onNotice("Detach attached component instances before changing shared appearance fields.");
+        return;
+      }
+      mutate(found.node);
+      found.node.provenance = { author: "human", revision: found.node.provenance.revision + 1 };
+    }
+    commitDraft(draft, notice);
+  };
+
   const updateFixture = useCallback((fieldName: string, value: string | number | boolean) => {
     if (!screen) return;
     try {
@@ -1902,6 +1918,10 @@ export function ManualEditor({
         graph={graph}
         screen={screen}
         selectedNode={normalizedSelection.length === 1 ? selectedNode : null}
+        selectedNodes={normalizedSelection.flatMap((nodeId) => {
+          const node = locateEditorNode(graph, nodeId)?.node;
+          return node ? [node] : [];
+        })}
         componentContext={normalizedSelection.length === 1 ? componentContext : null}
         selectionCount={normalizedSelection.length}
         profile={activeProfile}
@@ -1909,6 +1929,7 @@ export function ManualEditor({
         visible={mobilePanel === "inspector"}
         desktopVisible={visibleDesktopPanels.inspector}
         updateNode={updateNode}
+        updateSelection={updateSelection}
         onSetComponentProperty={(name, value) => mutateComponent(
           (source, instanceId) => setComponentProperty(source, instanceId, name, value),
           `Updated the ${name} component property.`,
@@ -1943,6 +1964,7 @@ export function ManualEditor({
         canDelete={Boolean(selectedLocation && (selectedLocation.parent || selectedLocation.screen.nodes.length > 1))}
         onScreenTitle={(title) => updateScreenField("title", title)}
         onScreenPurpose={(purpose) => updateScreenField("purpose", purpose)}
+        onLocate={() => canvasApi.current?.fitScreen(screen.id, true)}
         onClose={() => closeEditorPanel("inspector")}
       />
     </div>

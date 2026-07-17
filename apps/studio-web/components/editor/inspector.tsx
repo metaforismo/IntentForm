@@ -12,6 +12,7 @@ import {
   Columns,
   Copy,
   Cursor,
+  Crosshair,
   Rows,
   Stack,
   Trash,
@@ -27,6 +28,7 @@ import {
   type SemanticNode,
 } from "@intentform/semantic-schema";
 import { IconButton } from "../ui/controls";
+import { useState } from "react";
 import {
   CompositionSafeField as TextField,
   NumericScrubField as NumberField,
@@ -34,6 +36,10 @@ import {
 } from "../ui/editor-controls";
 import { nodeNames, type DeviceProfile, type VisualState } from "./support";
 import type { SelectionAlignment } from "./direct-manipulation";
+import { AppearanceInspector } from "./appearance-inspector";
+import { graphFingerprint } from "../../lib/project-save-state";
+
+type InspectorMode = "design" | "prototype" | "inspect";
 
 export function SegmentedControl<T extends string>({
   label,
@@ -86,6 +92,7 @@ interface InspectorProps {
   graph: SemanticInterfaceGraph;
   screen: SemanticInterfaceGraph["screens"][number];
   selectedNode: SemanticNode | null;
+  selectedNodes: SemanticNode[];
   componentContext: { rootId: string; targetId: string; definitionId: string } | null;
   selectionCount: number;
   profile: DeviceProfile;
@@ -93,6 +100,7 @@ interface InspectorProps {
   visible: boolean;
   desktopVisible: boolean;
   updateNode(mutate: (node: SemanticNode) => void, notice: string): void;
+  updateSelection(mutate: (node: SemanticNode) => void, notice: string): void;
   onSetComponentProperty(name: string, value: string | number | boolean): void;
   onSetComponentVariant(variant: string | null): void;
   onSetComponentState(state: string | null): void;
@@ -111,6 +119,7 @@ interface InspectorProps {
   canDelete: boolean;
   onScreenTitle(title: string): void;
   onScreenPurpose(purpose: string): void;
+  onLocate(): void;
   onClose(): void;
 }
 
@@ -118,6 +127,7 @@ export function Inspector({
   graph,
   screen,
   selectedNode,
+  selectedNodes,
   componentContext,
   selectionCount,
   profile,
@@ -125,6 +135,7 @@ export function Inspector({
   visible,
   desktopVisible,
   updateNode,
+  updateSelection,
   onSetComponentProperty,
   onSetComponentVariant,
   onSetComponentState,
@@ -143,8 +154,10 @@ export function Inspector({
   canDelete,
   onScreenTitle,
   onScreenPurpose,
+  onLocate,
   onClose,
 }: InspectorProps) {
+  const [inspectorMode, setInspectorMode] = useState<InspectorMode>("design");
   const contract = graph.contracts.find((item) => item.screenId === screen.id);
   const contractStates = (contract?.visualStates ?? []) as VisualState[];
   const boundStates = new Set(selectedNode?.states.map((state) => state.name) ?? []);
@@ -190,23 +203,44 @@ export function Inspector({
       aria-label="Design inspector"
       className={`${visible ? "block" : "hidden"} ${desktopVisible ? "xl:block" : "xl:hidden"} absolute inset-y-0 right-0 z-[3] w-[304px] min-h-0 overflow-y-auto overflow-x-hidden border-l border-[var(--line)] bg-[var(--chrome)] text-[var(--t-strong)] shadow-[-24px_0_52px_-32px_var(--shadow-strong)] xl:relative xl:z-[3] xl:w-auto xl:shadow-none`}
     >
-      <div className="sticky top-0 z-[1] flex h-9 items-center justify-between border-b border-[var(--line)] bg-[var(--chrome)] pl-3 pr-1.5">
+      <div className="sticky top-0 z-[2] flex h-11 items-center justify-between border-b border-[var(--line)] bg-[var(--chrome)] pl-3 pr-1.5">
         <div className="min-w-0">
-          <span className="block text-[11px] font-medium text-[var(--ink)]">Design</span>
-          <span className="block truncate text-[9.5px] text-[var(--faint)]">{selectedNode?.intent.label ?? screen.title}</span>
+          <span className="block truncate text-[11.5px] font-medium text-[var(--ink)]">{selectionCount > 1 ? `${selectionCount} layers` : selectedNode?.intent.label ?? screen.title}</span>
+          <span className="block truncate text-[9.5px] text-[var(--faint)]">{selectedNode ? `${nodeNames[selectedNode.kind]}${componentContext ? " · Component instance" : ""}` : selectionCount > 1 ? "Mixed selection" : "Screen"}</span>
         </div>
-        <IconButton ariaLabel="Close design inspector" onClick={onClose}><X size={13} /></IconButton>
+        <div className="flex items-center gap-0.5"><IconButton ariaLabel="Locate selection on canvas" onClick={onLocate}><Crosshair size={13} /></IconButton>{selectionCount > 0 ? <IconButton ariaLabel="Duplicate selection" onClick={onDuplicate}><Copy size={13} /></IconButton> : null}<IconButton ariaLabel="Close design inspector" onClick={onClose}><X size={13} /></IconButton></div>
       </div>
 
-      <div className="border-b border-[var(--line)]">
+      <div role="tablist" aria-label="Inspector mode" className="sticky top-11 z-[1] grid grid-cols-3 border-b border-[var(--line)] bg-[var(--chrome)] px-2 pt-1">
+        {(["design", "prototype", "inspect"] as const).map((mode) => <button key={mode} type="button" role="tab" data-testid={`inspector-mode-${mode}`} aria-selected={inspectorMode === mode} onClick={() => setInspectorMode(mode)} className={`h-8 border-b text-[10.5px] font-medium capitalize ${inspectorMode === mode ? "border-[var(--if-blue)] text-[var(--if-text)]" : "border-transparent text-[var(--if-text-secondary)] hover:text-[var(--if-text)]"}`}>{mode}</button>)}
+      </div>
+
+      {inspectorMode === "prototype" ? <div data-testid="prototype-inspector" className="divide-y divide-[var(--line)]">
+        <Section title="Interaction">
+          {selectedNode && isAction && contract?.events.length ? <>
+            <label className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-2 text-[10.5px] text-[var(--muted)]"><span>Event</span><select value={selectedNode.interactions[0]?.event ?? ""} onChange={(event) => onSetActionEvent(selectedNode.id, event.target.value || null)} className="select-control h-7 font-mono text-[10.5px] font-normal"><option value="">No event</option>{contract.events.map((event) => <option key={event.name} value={event.name}>{event.name}</option>)}</select></label>
+            <label className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-2 text-[10.5px] text-[var(--muted)]"><span>Navigate to</span><select value={selectedNode.interactions[0] ? graph.flows.flatMap((flow) => flow.steps).find((step) => step.from === screen.id && step.event === selectedNode.interactions[0]?.event)?.to ?? "" : ""} disabled={!selectedNode.interactions[0]} onChange={(event) => { if (selectedNode.interactions[0]) onSetFlowTarget(screen.id, selectedNode.interactions[0].event, event.target.value || null); }} className="select-control h-7 text-[10.5px] font-normal"><option value="">No navigation</option>{graph.screens.filter((item) => item.id !== screen.id).map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
+          </> : <p className="text-[10.5px] leading-4 text-[var(--faint)]">{selectionCount > 1 ? "Select one action layer to author an interaction." : "Select a primary or secondary action with a typed screen event."}</p>}
+        </Section>
+        <Section title="Flow context"><div className="grid grid-cols-[88px_minmax(0,1fr)] gap-2 text-[10px]"><span className="text-[var(--faint)]">Start screen</span><span className="truncate font-mono">{graph.flows.some((flow) => flow.steps[0]?.from === screen.id) ? "Yes" : "No"}</span><span className="text-[var(--faint)]">Screen</span><span className="truncate font-mono">{screen.id}</span><span className="text-[var(--faint)]">State</span><span className="capitalize">{visualState}</span></div></Section>
+      </div> : null}
+
+      {inspectorMode === "inspect" ? <div data-testid="source-inspector" className="divide-y divide-[var(--line)]">
+        <Section title="Identity"><div className="grid grid-cols-[88px_minmax(0,1fr)] gap-x-2 gap-y-1.5 text-[10px]"><span className="text-[var(--faint)]">Node ID</span><span className="break-all font-mono">{selectedNode?.id ?? "No single selection"}</span><span className="text-[var(--faint)]">Purpose</span><span>{selectedNode?.intent.purpose ?? screen.purpose}</span><span className="text-[var(--faint)]">Graph</span><span className="font-mono">{graphFingerprint(graph)}</span><span className="text-[var(--faint)]">Provenance</span><span className="font-mono">{selectedNode ? `${selectedNode.provenance.author} · r${selectedNode.provenance.revision}` : "screen"}</span></div></Section>
+        <Section title="Generated mapping"><div className="grid gap-1.5">{graph.platforms.filter((platform) => platform.enabled).map((platform) => <div key={platform.target} className="grid grid-cols-[64px_minmax(0,1fr)] gap-2 rounded-[5px] border border-[var(--line)] px-2 py-1.5 text-[9.5px]"><span className="font-medium capitalize">{platform.target}</span><span className="truncate font-mono text-[var(--faint)]">{selectedNode ? `${screen.route}#${selectedNode.id}` : screen.route}</span></div>)}</div></Section>
+        <Section title="Capabilities"><div className="flex flex-wrap gap-1">{graph.platforms.filter((platform) => platform.enabled).flatMap((platform) => platform.capabilities.map((capability) => <span key={`${platform.target}:${capability}`} className="rounded-[4px] bg-[var(--hover)] px-1.5 py-1 font-mono text-[8.5px] text-[var(--muted)]">{platform.target}:{capability}</span>))}</div>{selectedNode?.style.appearance?.effects.some((effect) => effect.visible && ["inner-shadow", "backdrop-blur"].includes(effect.type)) ? <p className="rounded-[5px] bg-[var(--warn-soft)] p-2 text-[9.5px] leading-4 text-[var(--warn)]">Native targets will emit adapter diagnostics for effects without exact portable fidelity.</p> : null}</Section>
+        <Section title="Accessibility"><div className="grid grid-cols-[88px_minmax(0,1fr)] gap-2 text-[10px]"><span className="text-[var(--faint)]">Label</span><span>{selectedNode?.accessibility.label ?? screen.title}</span><span className="text-[var(--faint)]">Live region</span><span>{selectedNode?.accessibility.live ?? "off"}</span></div></Section>
+      </div> : null}
+
+      {inspectorMode === "design" && selectionCount === 0 ? <div className="border-b border-[var(--line)]">
         <Section>
           <TextField label="Screen name" value={screen.title} onCommit={(next) => { if (next && next !== screen.title) onScreenTitle(next); }} />
           <TextField label="Screen purpose" value={screen.purpose} multiline onCommit={(next) => { if (next.length >= 3 && next !== screen.purpose) onScreenPurpose(next); }} />
           <span className="font-mono text-[10px] text-[var(--faint)]">{screen.route}</span>
         </Section>
-      </div>
+      </div> : null}
 
-      {contract && contract.data.length > 0 ? (
+      {inspectorMode === "design" && selectionCount === 0 && contract && contract.data.length > 0 ? (
         <div className="border-b border-[var(--line)]" data-testid="fixture-editor">
           <Section title="Preview data">
             <div className="flex items-center justify-between gap-3">
@@ -257,7 +291,8 @@ export function Inspector({
         </div>
       ) : null}
 
-      {selectionCount > 1 ? (
+      {inspectorMode === "design" ? selectionCount > 1 ? (
+        <>
         <div data-testid="multi-selection-inspector" className="border-b border-[var(--line)] px-3 py-2.5">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -290,6 +325,8 @@ export function Inspector({
           </div>
           {!selectionCanAlign ? <p className="mt-1.5 text-[9.5px] leading-[14px] text-[var(--faint)]">Alignment is available when every selected layer has freeform coordinates.</p> : null}
         </div>
+        <AppearanceInspector graph={graph} nodes={selectedNodes} onUpdate={updateSelection} />
+        </>
       ) : selectedNode ? (
         <div data-testid="semantic-inspector" className="divide-y divide-[var(--line)]">
           <div className="flex items-center justify-between py-2 pl-3 pr-1.5">
@@ -306,6 +343,8 @@ export function Inspector({
               <IconButton ariaLabel="Delete layer" onClick={onDelete} disabled={!canDelete} danger><Trash size={13} /></IconButton>
             </div>
           </div>
+
+          <AppearanceInspector graph={graph} nodes={selectedNodes} onUpdate={updateSelection} />
 
           {componentDefinition && componentInstance && componentContext ? (
             <Section title="Component instance">
@@ -725,7 +764,7 @@ export function Inspector({
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </aside>
   );
 }

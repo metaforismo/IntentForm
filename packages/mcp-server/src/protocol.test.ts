@@ -192,7 +192,7 @@ describe("MCP 2025-11-25 protocol surface", () => {
       expect(graph.contents[0]).toMatchObject({
         uri: "intentform://project/graph",
         mimeType: "application/json",
-        text: expect.stringContaining('"schemaVersion": "0.9.0"'),
+        text: expect.stringContaining('"schemaVersion": "0.10.0"'),
       });
       await expect(client.callTool({ name: "intentform_verify", arguments: { scenario: "wide" } }))
         .rejects.toThrow(/invalid.*arguments/i);

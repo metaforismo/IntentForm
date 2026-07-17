@@ -64,6 +64,8 @@ export interface PlatformIRNode {
     gridRow?: { start: number; span: number };
     splitRatio: number;
     position?: { x: number; y: number; z: number };
+    rotation?: number;
+    constraints?: NonNullable<SemanticNode["layout"]["constraints"]>;
     gapToken: string;
     paddingToken: string;
     gap: number;
@@ -356,6 +358,8 @@ function resolveNodeSemantics(
       ...(node.layout.gridRow ? { gridRow: node.layout.gridRow } : {}),
       splitRatio: node.layout.splitRatio,
       ...(node.layout.position ? { position: node.layout.position } : {}),
+      ...(node.layout.rotation !== undefined ? { rotation: node.layout.rotation } : {}),
+      ...(node.layout.constraints ? { constraints: node.layout.constraints } : {}),
       gapToken: node.layout.gapToken,
       paddingToken: node.layout.paddingToken,
       gap: node.layout.gap ?? tokens.spacing[node.layout.gapToken] ?? 0,
@@ -596,6 +600,33 @@ export function lowerGraph(graph: SemanticInterfaceGraph, target: PlatformTarget
             path: `screens.${screen.id}.nodes.${node.id}.layout`,
             message: "SwiftUI has no direct flex-shrink or flex-basis equivalent; generated output preserves constraints and uses natural sizing plus layout priority.",
           });
+        }
+        const appearance = node.style.appearance;
+        if ((target === "expo" || target === "swiftui") && appearance) {
+          for (const effect of appearance.effects.filter((candidate) => candidate.visible)) {
+            const supported = effect.type === "shadow" || (target === "swiftui" && effect.type === "blur");
+            if (!supported) {
+              diagnostics.push({
+                severity: "warning",
+                path: `screens.${screen.id}.nodes.${node.id}.style.appearance.effects.${effect.id}`,
+                message: `${target === "expo" ? "Expo" : "SwiftUI"} cannot lower ${effect.type} with exact portable fidelity; the effect remains authored in the graph and requires a target adapter.`,
+              });
+            }
+          }
+          if (appearance.fills.filter((fill) => fill.visible).length > 1) {
+            diagnostics.push({
+              severity: "warning",
+              path: `screens.${screen.id}.nodes.${node.id}.style.appearance.fills`,
+              message: `${target === "expo" ? "Expo" : "SwiftUI"} requires a target adapter for layered fills; generated output uses the first visible fill.`,
+            });
+          }
+          if (appearance.stroke?.visible && appearance.stroke.alignment !== "inside") {
+            diagnostics.push({
+              severity: "warning",
+              path: `screens.${screen.id}.nodes.${node.id}.style.appearance.stroke.alignment`,
+              message: `${target === "expo" ? "Expo" : "SwiftUI"} does not preserve ${appearance.stroke.alignment} stroke alignment exactly; generated output uses an inside stroke.`,
+            });
+          }
         }
         return {
           id: node.id,

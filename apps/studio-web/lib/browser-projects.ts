@@ -25,6 +25,8 @@ const browserProjectSchema = z.strictObject({
   localFingerprint: z.string().regex(/^[a-f0-9]{8}$/).optional(),
 });
 
+const browserProjectInputSchema = browserProjectSchema.extend({ graph: z.unknown() });
+
 const browserProjectManifestSchema = z.strictObject({
   version: z.literal(1),
   generation: z.string().min(1).max(120).regex(/^[a-z0-9-]+$/),
@@ -60,13 +62,20 @@ function parseCurrentProject(source: string): BrowserProjectLoadResult {
   if (input && typeof input === "object" && "version" in input && (input as { version?: unknown }).version !== 1) {
     return { status: "invalid", message: "This draft uses a newer browser project format and was left untouched." };
   }
-  const parsed = browserProjectSchema.safeParse(input);
+  const parsed = browserProjectInputSchema.safeParse(input);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     const location = issue?.path.length ? ` at ${issue.path.join(".")}` : "";
     return { status: "invalid", message: `The recovery project is invalid${location}: ${issue?.message ?? "schema validation failed"}.` };
   }
-  return { status: "ready", project: parsed.data };
+  try {
+    return {
+      status: "ready",
+      project: browserProjectSchema.parse({ ...parsed.data, graph: previewGraphMigration(parsed.data.graph).graph }),
+    };
+  } catch (error) {
+    return { status: "invalid", message: error instanceof Error ? `The recovery project graph is invalid: ${error.message.slice(0, 240)}.` : "The recovery project graph is invalid." };
+  }
 }
 
 function chunkKey(generation: string, index: number): string {

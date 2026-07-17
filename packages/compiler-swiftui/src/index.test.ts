@@ -24,4 +24,18 @@ describe("SwiftUI layout fidelity", () => {
       expect.stringContaining("no direct flex-shrink or flex-basis equivalent"),
     ]));
   });
+
+  it("keeps unsupported appearance effects explicit in SwiftUI diagnostics", () => {
+    const graph = structuredClone(demoGraph);
+    graph.screens[0]!.nodes[0]!.style.appearance = {
+      fills: [],
+      effects: [{ id: "inner-1", type: "inner-shadow", visible: true, color: { color: "rgba(0, 0, 0, 0.2)" }, x: 0, y: 2, blur: 8, spread: 0 }],
+      opacity: 1,
+      blendMode: "normal",
+    };
+    expect(compileSwiftUI(parseGraph(graph)).diagnostics).toContainEqual(expect.objectContaining({
+      path: expect.stringContaining("style.appearance.effects.inner-1"),
+      message: expect.stringContaining("cannot lower inner-shadow"),
+    }));
+  });
 });

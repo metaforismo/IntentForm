@@ -336,7 +336,75 @@ function resolvedWebStyle(node: PlatformIRNode, override: WebStyleOverride = {})
   return style;
 }
 
-function declarations(style: Omit<WebStyle, "breakpointOverrides">, node: PlatformIRNode): string[] {
+function appearanceColor(
+  binding: { color?: string | undefined; token?: string | undefined },
+  tokens: PlatformIR["tokens"],
+): string {
+  return binding.color ?? (binding.token ? tokens.colors[binding.token] : undefined) ?? "transparent";
+}
+
+function withOpacity(color: string, opacity: number): string {
+  return opacity === 1 ? color : `color-mix(in srgb, ${color} ${Math.round(opacity * 10000) / 100}%, transparent)`;
+}
+
+function appearanceDeclarations(node: PlatformIRNode, tokens: PlatformIR["tokens"]): string[] {
+  const appearance = node.style.appearance;
+  if (!appearance) return node.layout.rotation ? [`transform: rotate(${node.layout.rotation}deg)`] : [];
+  const fills = appearance.fills.filter((fill) => fill.visible);
+  const solid = fills.length === 1 && fills[0]?.type === "solid" ? fills[0] : undefined;
+  const layeredFills = solid ? [] : fills.map((fill) => {
+    if (fill.type === "solid") {
+      const color = withOpacity(appearanceColor(fill.color, tokens), fill.opacity);
+      return `linear-gradient(${color}, ${color})`;
+    }
+    const stops = fill.stops.map((stop) => `${appearanceColor(stop.color, tokens)} ${Math.round(stop.position * 10000) / 100}%`).join(", ");
+    return `linear-gradient(${fill.angle}deg, ${stops})`;
+  });
+  const radius = appearance.radius;
+  const radiusToken = radius?.token ? tokens.radii[radius.token] : undefined;
+  const effects = appearance.effects.filter((effect) => effect.visible);
+  const shadows = effects.flatMap((effect) => {
+    if (effect.type !== "shadow" && effect.type !== "inner-shadow") return [];
+    return [`${effect.type === "inner-shadow" ? "inset " : ""}${effect.x}px ${effect.y}px ${effect.blur}px ${effect.spread}px ${appearanceColor(effect.color, tokens)}`];
+  });
+  const blur = effects.find((effect) => effect.type === "blur");
+  const backdropBlur = effects.find((effect) => effect.type === "backdrop-blur");
+  const typography = appearance.typography;
+  const featureSettings = typography?.features.map((feature) => `"${feature}" 1`).join(", ");
+  return [
+    ...(solid ? [`background-color: ${withOpacity(appearanceColor(solid.color, tokens), solid.opacity)}`] : []),
+    ...(layeredFills.length > 0 ? [`background-image: ${layeredFills.join(", ")}`] : []),
+    ...(appearance.stroke?.visible ? [
+      `border-color: ${appearanceColor(appearance.stroke.color, tokens)}`,
+      `border-width: ${appearance.stroke.width}px`,
+      `border-style: ${appearance.stroke.style}`,
+      ...(appearance.stroke.alignment === "outside" ? [`outline: ${appearance.stroke.width}px ${appearance.stroke.style} ${appearanceColor(appearance.stroke.color, tokens)}`, `border-width: 0`] : []),
+    ] : []),
+    ...(radius ? radiusToken !== undefined
+      ? [`border-radius: ${radiusToken}px`]
+      : [`border-radius: ${radius.topLeft}px ${radius.topRight}px ${radius.bottomRight}px ${radius.bottomLeft}px`]
+    : []),
+    ...(shadows.length > 0 ? [`box-shadow: ${shadows.join(", ")}`] : []),
+    ...(blur?.type === "blur" ? [`filter: blur(${blur.radius}px)`] : []),
+    ...(backdropBlur?.type === "backdrop-blur" ? [`backdrop-filter: blur(${backdropBlur.radius}px)`] : []),
+    ...(appearance.opacity !== 1 ? [`opacity: ${appearance.opacity}`] : []),
+    ...(appearance.blendMode !== "normal" ? [`mix-blend-mode: ${appearance.blendMode}`] : []),
+    ...(node.layout.rotation ? [`transform: rotate(${node.layout.rotation}deg)`] : []),
+    ...(typography?.family ? [`font-family: ${typography.family}`] : typography?.familyToken && tokens.fontFamilies[typography.familyToken] ? [`font-family: ${tokens.fontFamilies[typography.familyToken]}`] : []),
+    ...(typography?.style === "italic" ? ["font-style: italic"] : []),
+    ...(typography?.weight !== undefined ? [`font-weight: ${typography.weight}`] : typography?.weightToken && tokens.fontWeights[typography.weightToken] !== undefined ? [`font-weight: ${tokens.fontWeights[typography.weightToken]}`] : []),
+    ...(typography?.size !== undefined ? [`font-size: ${typography.size}px`] : typography?.sizeToken && tokens.fontSizes[typography.sizeToken] !== undefined ? [`font-size: ${tokens.fontSizes[typography.sizeToken]}px`] : []),
+    ...(typography?.lineHeight !== undefined ? [`line-height: ${typography.lineHeight}px`] : typography?.lineHeightToken && tokens.lineHeights[typography.lineHeightToken] !== undefined ? [`line-height: ${tokens.lineHeights[typography.lineHeightToken]}px`] : []),
+    ...(typography?.letterSpacing !== undefined ? [`letter-spacing: ${typography.letterSpacing}px`] : typography?.letterSpacingToken && tokens.letterSpacing[typography.letterSpacingToken] !== undefined ? [`letter-spacing: ${tokens.letterSpacing[typography.letterSpacingToken]}px`] : []),
+    ...(typography ? [`text-align: ${typography.align}`, `text-transform: ${typography.transform}`] : []),
+    ...(typography?.wrapping === "nowrap" ? ["white-space: nowrap"] : typography?.wrapping === "balance" ? ["text-wrap: balance"] : []),
+    ...(typography?.truncation === "ellipsis" ? ["overflow: hidden", "text-overflow: ellipsis"] : typography?.truncation === "clip" ? ["overflow: hidden", "text-overflow: clip"] : []),
+    ...(typography?.maxLines ? ["display: -webkit-box", `-webkit-line-clamp: ${typography.maxLines}`, "-webkit-box-orient: vertical", "overflow: hidden"] : []),
+    ...(featureSettings ? [`font-feature-settings: ${featureSettings}`] : []),
+  ];
+}
+
+function declarations(style: Omit<WebStyle, "breakpointOverrides">, node: PlatformIRNode, tokens: PlatformIR["tokens"]): string[] {
   const align = node.layout.align === "start" ? "flex-start" : node.layout.align === "end" ? "flex-end" : node.layout.align;
   const justify = node.layout.justify === "start" ? "flex-start" : node.layout.justify === "end" ? "flex-end" : node.layout.justify;
   const result = [
@@ -386,6 +454,7 @@ function declarations(style: Omit<WebStyle, "breakpointOverrides">, node: Platfo
     ...(style.visual?.lineHeight !== undefined ? [`line-height: ${style.visual.lineHeight}px`] : []),
     ...(style.visual?.letterSpacing !== undefined ? [`letter-spacing: ${style.visual.letterSpacing}px`] : []),
     ...(style.visual?.textAlign ? [`text-align: ${style.visual.textAlign}`] : []),
+    ...appearanceDeclarations(node, tokens),
   ];
   return result;
 }
@@ -423,13 +492,13 @@ function stylesSource(ir: PlatformIR): string {
     const assetRule = node.asset
       ? `\n.${nodeClass(node.id)} img, .${nodeClass(node.id)} video { object-fit: ${node.asset.fit}; object-position: ${node.asset.focalPoint.x * 100}% ${node.asset.focalPoint.y * 100}%; }`
       : "";
-    return `.${nodeClass(node.id)} {\n  ${declarations(resolvedWebStyle(node), node).join(";\n  ")};\n}${assetRule}`;
+    return `.${nodeClass(node.id)} {\n  ${declarations(resolvedWebStyle(node), node, ir.tokens).join(";\n  ")};\n}${assetRule}`;
   }).join("\n");
   const breakpointRules = [...ir.web.breakpoints].sort((left, right) => left.minWidth - right.minWidth).map((breakpoint) => {
     const rules = allNodes.flatMap((node) => {
       const override = node.web?.breakpointOverrides[breakpoint.id];
       if (!override || Object.keys(override).length === 0) return [];
-      return [`.${nodeClass(node.id)} {\n    ${declarations(resolvedWebStyle(node, override), node).join(";\n    ")};\n  }`];
+      return [`.${nodeClass(node.id)} {\n    ${declarations(resolvedWebStyle(node, override), node, ir.tokens).join(";\n    ")};\n  }`];
     });
     if (rules.length === 0) return "";
     const query = `(min-width: ${breakpoint.minWidth}px)${breakpoint.maxWidth !== undefined ? ` and (max-width: ${breakpoint.maxWidth}px)` : ""}`;
