@@ -4,7 +4,7 @@ import { GeistSans } from "geist/font/sans";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://intentform-metaforismos-projects.vercel.app"),
+  metadataBase: new URL("https://intentform-amber.vercel.app"),
   title: "IntentForm — Agent-native interface design",
   description: "Design validated interfaces with humans and agents, then compile them deterministically to React, Web, Expo, and SwiftUI.",
   icons: {
