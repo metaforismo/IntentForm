@@ -1205,8 +1205,9 @@ export function Studio() {
                   title={item.label}
                   aria-label={item.label}
                   aria-current={active ? "page" : undefined}
+                  data-state={active ? "active" : "idle"}
                   onClick={() => setStage(item.id)}
-                  className={`group relative flex h-6 min-w-[62px] items-center justify-center gap-1 rounded-[4px] px-2 text-[10.5px] font-medium leading-[15px] ${active ? "bg-[var(--if-hover)] text-[var(--if-text)]" : "text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)] hover:text-[var(--if-text)]"}`}
+                  className="if-editor-segment group relative flex h-6 min-w-[62px] items-center justify-center gap-1 px-2 text-[10.5px] font-medium leading-[15px]"
                 >
                   <Icon size={12} weight={active ? "fill" : "regular"} />
                   <span>{item.shortLabel}</span>
@@ -1447,7 +1448,7 @@ export function Studio() {
       ) : null}
       {pendingTabClose ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-[var(--backdrop)] p-4">
-          <section role="alertdialog" aria-modal="true" aria-labelledby="dirty-tab-title" aria-describedby="dirty-tab-description" className="menu-pop w-full max-w-md rounded-[10px] p-4">
+          <section data-testid="dirty-tab-dialog" role="alertdialog" aria-modal="true" aria-labelledby="dirty-tab-title" aria-describedby="dirty-tab-description" className="menu-pop w-full max-w-md rounded-[10px] p-4 shadow-[var(--if-shadow-dialog)]">
             <span className="grid size-8 place-items-center rounded-[6px] bg-[var(--warn-soft)] text-[var(--warn)]"><Warning size={16} weight="fill" /></span>
             <h2 id="dirty-tab-title" className="mt-3 text-[15px] font-[550] leading-[21px]">Save changes before closing?</h2>
             <p id="dirty-tab-description" className="mt-2 text-[12px] leading-relaxed text-[var(--muted)]">{pendingTabClose.title} has project changes that are not yet committed to the durable catalog.</p>
@@ -1472,7 +1473,7 @@ export function Studio() {
       ) : null}
       {resetConfirmOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-[var(--backdrop)] p-4" onPointerDown={(event) => { if (event.target === event.currentTarget) cancelProjectReset(); }}>
-          <section ref={resetDialog} role="alertdialog" aria-modal="true" aria-labelledby="reset-project-title" aria-describedby="reset-project-description" className="menu-pop w-full max-w-md rounded-[10px] p-4">
+          <section ref={resetDialog} data-testid="reset-project-dialog" role="alertdialog" aria-modal="true" aria-labelledby="reset-project-title" aria-describedby="reset-project-description" className="menu-pop w-full max-w-md rounded-[10px] p-4 shadow-[var(--if-shadow-dialog)]">
             <span className="grid size-8 place-items-center rounded-[6px] bg-[var(--danger-soft)] text-[var(--danger)]"><ArrowsCounterClockwise size={16} weight="bold" /></span>
             <h2 id="reset-project-title" className="mt-3 text-[15px] font-[550] leading-[21px] tracking-[-.02em]">Reset this workspace?</h2>
             <p id="reset-project-description" className="mt-2 text-[12px] leading-relaxed text-[var(--muted)]">This replaces the current semantic graph with the verified sample. The previous committed revision remains available as last-known-good recovery.</p>

@@ -207,7 +207,7 @@ export function Inspector({
       role={visible ? "dialog" : undefined}
       aria-modal={visible ? "true" : undefined}
       aria-label="Design inspector"
-      className={`${visible ? "block" : "hidden"} ${desktopVisible ? "xl:block" : "xl:hidden"} absolute inset-y-0 right-0 z-[3] w-[min(var(--insp-w),calc(100%-16px))] min-h-0 min-w-0 max-w-full overflow-y-auto overflow-x-hidden border-l border-[var(--line)] bg-[var(--chrome)] text-[var(--t-strong)] shadow-[-24px_0_52px_-32px_var(--shadow-strong)] xl:relative xl:z-[3] xl:w-auto xl:shadow-none`}
+      className={`if-editor-surface ${visible ? "block" : "hidden"} ${desktopVisible ? "xl:block" : "xl:hidden"} absolute inset-y-0 right-0 z-[3] w-[min(var(--insp-w),calc(100%-16px))] min-h-0 min-w-0 max-w-full overflow-y-auto overflow-x-hidden border-y-0 border-r-0 text-[var(--t-strong)] shadow-[-24px_0_52px_-32px_var(--shadow-strong)] xl:relative xl:z-[3] xl:w-auto xl:shadow-none`}
     >
       <div className="sticky top-0 z-[2] flex h-11 min-w-0 max-w-full items-center justify-between overflow-hidden border-b border-[var(--line)] bg-[var(--chrome)] pl-3 pr-1.5">
         <div className="min-w-0">
@@ -218,7 +218,7 @@ export function Inspector({
       </div>
 
       <div role="tablist" aria-label="Inspector mode" className="sticky top-11 z-[1] grid grid-cols-3 border-b border-[var(--line)] bg-[var(--chrome)] px-2 pt-1">
-        {(["design", "prototype", "inspect"] as const).map((mode) => <button key={mode} type="button" role="tab" data-testid={`inspector-mode-${mode}`} aria-selected={inspectorMode === mode} onClick={() => setInspectorMode(mode)} className={`h-8 border-b text-[10.5px] font-medium capitalize ${inspectorMode === mode ? "border-[var(--if-blue)] text-[var(--if-text)]" : "border-transparent text-[var(--if-text-secondary)] hover:text-[var(--if-text)]"}`}>{mode}</button>)}
+        {(["design", "prototype", "inspect"] as const).map((mode) => <button key={mode} type="button" role="tab" data-testid={`inspector-mode-${mode}`} aria-selected={inspectorMode === mode} data-state={inspectorMode === mode ? "active" : "idle"} onClick={() => setInspectorMode(mode)} className={`h-8 border-b text-[10.5px] font-medium capitalize ${inspectorMode === mode ? "border-[var(--if-blue)] text-[var(--if-text)]" : "border-transparent text-[var(--if-text-secondary)] hover:text-[var(--if-text)]"}`}>{mode}</button>)}
       </div>
 
       {inspectorMode === "prototype" ? <div data-testid="prototype-inspector" className="divide-y divide-[var(--line)]">

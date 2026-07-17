@@ -689,7 +689,7 @@ export function LayersPanel({
       role={visible ? "dialog" : undefined}
       aria-modal={visible ? "true" : undefined}
       aria-label="Pages and layers"
-      className={`${visible ? "grid" : "hidden"} ${desktopVisible ? "xl:grid" : "xl:hidden"} absolute inset-y-0 left-0 z-[3] w-[min(var(--rail-w),calc(100%-16px))] min-h-0 min-w-0 max-w-full grid-rows-[auto_1fr] overflow-hidden border-r border-[var(--line)] bg-[var(--chrome)] shadow-[24px_0_52px_-32px_var(--shadow-strong)] xl:relative xl:z-[3] xl:w-auto xl:shadow-none`}
+      className={`if-editor-surface ${visible ? "grid" : "hidden"} ${desktopVisible ? "xl:grid" : "xl:hidden"} absolute inset-y-0 left-0 z-[3] w-[min(var(--rail-w),calc(100%-16px))] min-h-0 min-w-0 max-w-full grid-rows-[auto_1fr] overflow-hidden border-y-0 border-l-0 shadow-[24px_0_52px_-32px_var(--shadow-strong)] xl:relative xl:z-[3] xl:w-auto xl:shadow-none`}
     >
       <div className="grid h-[34px] min-w-0 max-w-full grid-cols-[minmax(0,1fr)_28px] items-center overflow-hidden border-b border-[var(--line)] px-2">
         <div className="flex min-w-0 items-center gap-0.5" role="tablist" aria-label="Left panel sections">

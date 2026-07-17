@@ -1579,6 +1579,64 @@ try {
   });
 
   await runSmokeScenario(browser, {
+    name: "permanent Studio surface contract",
+    context: { viewport: { width: 1536, height: 1024 } },
+    run: async (surfacePage) => {
+      await gotoStudio(surfacePage, origin);
+      const permanentSurfaces = [
+        surfacePage.locator(".studio-topbar"),
+        surfacePage.locator("#editor-structure-panel"),
+        surfacePage.locator("#editor-inspector-panel"),
+      ];
+      const panelBackground = await permanentSurfaces[0]!.evaluate((element) => getComputedStyle(element).backgroundColor);
+      for (const surface of permanentSurfaces) {
+        const background = await surface.evaluate((element) => getComputedStyle(element).backgroundColor);
+        if (background !== panelBackground) {
+          throw new Error(`Permanent Studio surface escaped the panel token: ${JSON.stringify({ background, panelBackground })}`);
+        }
+      }
+
+      const selectedTool = surfacePage.locator('aside[aria-label="Canvas tools"] button[aria-label="Select"]');
+      await selectedTool.click();
+      if (await selectedTool.getAttribute("data-state") !== "active") throw new Error("Selected canvas tool does not expose the shared active state");
+
+      await surfacePage.getByRole("button", { name: "Add comment" }).click();
+      await surfacePage.getByTestId("canvas-node-payment-request.confirm").click();
+      const review = surfacePage.getByTestId("review-panel");
+      await review.waitFor();
+      const reviewAppearance = await review.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { radius: Number.parseFloat(style.borderRadius), shadow: style.boxShadow };
+      });
+      if (reviewAppearance.radius > 10 || reviewAppearance.shadow === "none") {
+        throw new Error(`Review drawer does not follow compact overlay chrome: ${JSON.stringify(reviewAppearance)}`);
+      }
+      await review.getByRole("button", { name: "Close review comments" }).click();
+
+      await surfacePage.keyboard.press("Control+k");
+      const commandMenu = surfacePage.getByRole("dialog", { name: "Command menu" });
+      await commandMenu.waitFor();
+      const menuRadius = await commandMenu.evaluate((element) => Number.parseFloat(getComputedStyle(element).borderRadius));
+      if (menuRadius > 10) throw new Error(`Command menu radius is oversized: ${menuRadius}px`);
+      await surfacePage.keyboard.press("Escape");
+
+      await surfacePage.getByRole("button", { name: "Native outputs" }).click();
+      const codeWorkspace = surfacePage.getByTestId("code-workspace");
+      await codeWorkspace.waitFor();
+      const activeTarget = codeWorkspace.getByRole("button", { name: "react", exact: true });
+      if (await activeTarget.getAttribute("data-state") !== "active") throw new Error("Code target tabs do not use the shared active state");
+
+      await surfacePage.getByRole("button", { name: "Verification" }).click();
+      const verifyWorkspace = surfacePage.getByTestId("verify-workspace");
+      await verifyWorkspace.waitFor();
+      const activeFilter = verifyWorkspace.getByRole("button", { name: /^errors/i });
+      if (await activeFilter.getAttribute("data-state") !== "active") throw new Error("Verify filters do not use the shared active state");
+      const chromeRadii = await surfacePage.locator(".if-editor-control:visible, .if-editor-icon:visible, .if-editor-segment:visible, .if-editor-filter:visible").evaluateAll((elements) => elements.map((element) => Number.parseFloat(getComputedStyle(element).borderRadius)));
+      if (chromeRadii.some((radius) => radius > 10)) throw new Error(`Permanent control radius exceeds 10px: ${JSON.stringify(chromeRadii)}`);
+    },
+  });
+
+  await runSmokeScenario(browser, {
     name: "professional inspector appearance authoring",
     run: async (page) => {
       await gotoStudio(page, origin);
