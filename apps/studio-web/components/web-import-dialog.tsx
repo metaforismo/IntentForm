@@ -9,6 +9,11 @@ import {
   type DomImportProjection,
 } from "@intentform/compiler-web/dom-import";
 import type { SemanticInterfaceGraph } from "@intentform/semantic-schema";
+import {
+  formatImportChangeValue,
+  importChangeKind,
+  summarizeImportChanges,
+} from "./web-import-review";
 
 interface WebImportDialogProps {
   open: boolean;
@@ -22,6 +27,56 @@ const CSP = "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline';
 const BLOCKED_ELEMENTS = "script,iframe,frame,object,embed,link,base,meta,form,portal";
 const URL_ATTRIBUTES = new Set(["src", "srcset", "href", "action", "formaction", "poster", "data", "cite"]);
 const number = (value: string): number => Number.isFinite(Number.parseFloat(value)) ? Number.parseFloat(value) : 0;
+
+function ImportReview({ projection, removed }: { projection: DomImportProjection; removed: number }) {
+  const summary = summarizeImportChanges(projection.changes);
+  return (
+    <div className="grid gap-3" data-testid="web-import-review">
+      <section aria-labelledby="web-import-impact-title" className="rounded border border-[var(--line)] bg-[var(--raised)] p-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <h3 id="web-import-impact-title" className="mr-auto text-[10px] font-semibold text-[var(--ink)]">Reviewed impact</h3>
+          <span className="rounded bg-[var(--if-green-soft)] px-1.5 py-0.5 font-mono text-[8.5px] text-[var(--success)]">{summary.added} added</span>
+          <span className="rounded bg-[var(--danger-soft)] px-1.5 py-0.5 font-mono text-[8.5px] text-[var(--danger)]">{summary.removed} removed</span>
+          <span className="rounded bg-[var(--hover)] px-1.5 py-0.5 font-mono text-[8.5px] text-[var(--muted)]">{summary.updated} updated</span>
+        </div>
+        <p id="web-import-impact" data-testid="web-import-impact" className="mt-2 text-[9.5px] leading-4 text-[var(--muted)]">
+          This operation replaces {projection.replacedNodes} existing {projection.replacedNodes === 1 ? "node" : "nodes"} with {projection.importedNodes} imported {projection.importedNodes === 1 ? "node" : "nodes"} on the selected screen.
+          {summary.destructive ? " Removed paths remain recoverable through project history." : " No semantic paths are removed."}
+        </p>
+        {removed ? <p className="mt-1 text-[9.5px] text-[var(--warning)]">{removed} executable, embedded, or URL-bearing {removed === 1 ? "item was" : "items were"} removed before rendering.</p> : null}
+      </section>
+
+      <section aria-labelledby="web-import-diff-title" className="overflow-hidden rounded border border-[var(--line)]">
+        <header className="flex items-center justify-between bg-[var(--raised)] px-3 py-2">
+          <h3 id="web-import-diff-title" className="text-[10px] font-semibold text-[var(--ink)]">Semantic diff</h3>
+          <span className="font-mono text-[8.5px] text-[var(--faint)]">{summary.total} exact {summary.total === 1 ? "change" : "changes"}</span>
+        </header>
+        <ol className="max-h-48 divide-y divide-[var(--line)] overflow-auto" data-testid="web-import-diff">
+          {projection.changes.map((change, index) => {
+            const kind = importChangeKind(change);
+            return (
+              <li key={`${change.path}:${index}`} className="grid grid-cols-[52px_minmax(0,1fr)] gap-2 px-3 py-2">
+                <span className={`font-mono text-[8px] uppercase ${kind === "added" ? "text-[var(--success)]" : kind === "removed" ? "text-[var(--danger)]" : "text-[var(--muted)]"}`}>{kind}</span>
+                <div className="min-w-0">
+                  <strong className="block break-all font-mono text-[9px] font-medium text-[var(--ink)]">{change.path}</strong>
+                  <div className="mt-1 grid grid-cols-[10px_minmax(0,1fr)] gap-x-1 font-mono text-[8px] leading-3.5">
+                    <span className="text-[var(--danger)]">−</span><span className="break-all text-[var(--muted)]">{formatImportChangeValue(change.before)}</span>
+                    <span className="text-[var(--success)]">+</span><span className="break-all text-[var(--ink)]">{formatImportChangeValue(change.after)}</span>
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      </section>
+
+      <section aria-labelledby="web-import-diagnostics-title" className="rounded border border-[var(--line)] bg-[var(--raised)] p-3">
+        <h3 id="web-import-diagnostics-title" className="text-[10px] font-semibold text-[var(--ink)]">Diagnostics · {projection.diagnostics.length}</h3>
+        {projection.diagnostics.length ? <ul className="mt-2 max-h-28 space-y-1 overflow-auto">{projection.diagnostics.map((diagnostic, index) => <li key={`${diagnostic.path}:${diagnostic.message}:${index}`} className="text-[9px] leading-4 text-[var(--muted)]"><strong className="break-all font-mono font-medium text-[var(--ink)]">{diagnostic.path}</strong> · {diagnostic.message}</li>)}</ul> : <p className="mt-1 text-[9px] text-[var(--muted)]">No unsupported properties or preserved-contract warnings.</p>}
+      </section>
+    </div>
+  );
+}
 
 function sandboxSource(html: string, css: string): { source: string; removed: number } {
   const parsed = new DOMParser().parseFromString(html, "text/html");
@@ -199,21 +254,21 @@ export function WebImportDialog({ open, graph, screenId, onClose, onApply }: Web
           <div><h2 id="web-import-title" className="text-sm font-semibold text-[var(--ink)]">Import HTML/CSS</h2><p className="mt-0.5 text-[10px] text-[var(--muted)]">Scripts and network requests are blocked. The browser computes layout; only supported typed properties enter the graph.</p></div>
           <button type="button" onClick={onClose} className="h-7 rounded px-2 text-[10px] text-[var(--muted)] hover:bg-[var(--hover)]">Close</button>
         </header>
-        <div className="grid min-h-0 grid-cols-1 overflow-auto lg:grid-cols-2">
-          <div className="grid min-h-[520px] grid-rows-2 gap-3 border-b border-[var(--line)] p-3 lg:border-b-0 lg:border-r">
+        <div className="grid min-h-0 grid-cols-1 overflow-auto bg-[var(--if-panel)] lg:grid-cols-2 lg:overflow-hidden">
+          <div className="grid min-h-[520px] grid-rows-2 gap-3 border-b border-[var(--line)] bg-[var(--if-panel)] p-3 lg:min-h-0 lg:border-b-0 lg:border-r">
             <label className="grid min-h-0 grid-rows-[auto_1fr] gap-1 text-[10px] font-semibold text-[var(--muted)]">HTML · {byteCounts.html.toLocaleString()} bytes<textarea ref={htmlInput} value={html} onChange={(event) => setHtml(event.target.value)} spellCheck={false} className="min-h-0 resize-none rounded border border-[var(--line)] bg-[var(--field)] p-3 font-mono text-[11px] font-normal leading-5 text-[var(--ink)] outline-none focus:border-[var(--focus)]" /></label>
             <label className="grid min-h-0 grid-rows-[auto_1fr] gap-1 text-[10px] font-semibold text-[var(--muted)]">CSS · {byteCounts.css.toLocaleString()} bytes<textarea value={css} onChange={(event) => setCss(event.target.value)} spellCheck={false} className="min-h-0 resize-none rounded border border-[var(--line)] bg-[var(--field)] p-3 font-mono text-[11px] font-normal leading-5 text-[var(--ink)] outline-none focus:border-[var(--focus)]" /></label>
           </div>
-          <div className="grid min-h-[520px] grid-rows-[minmax(300px,1fr)_auto] gap-3 p-3">
+          <div className="grid min-h-[520px] grid-rows-[minmax(260px,1fr)_auto] gap-3 overflow-y-auto bg-[var(--if-panel)] p-3 lg:min-h-0">
             <iframe ref={frame} title="Isolated HTML and CSS import preview" sandbox="allow-same-origin" srcDoc={source} onLoad={capture} className="h-full min-h-[300px] w-full rounded border border-[var(--line)] bg-white" />
-            <div aria-live="polite" className="min-h-24 rounded border border-[var(--line)] bg-[var(--raised)] p-3 text-[10px] leading-5 text-[var(--muted)]">
-              {error ? <p role="alert" className="text-[var(--danger)]">{error}</p> : projection ? <><p><strong className="text-[var(--ink)]">Review ready</strong> · {projection.importedNodes} nodes · {projection.changes.length} semantic changes · {projection.diagnostics.length} diagnostics</p>{removed ? <p>{removed} executable, embedded, or URL-bearing items were removed before rendering.</p> : null}<div className="mt-2 max-h-24 overflow-auto">{projection.diagnostics.slice(0, 12).map((diagnostic) => <p key={`${diagnostic.path}:${diagnostic.message}`}><strong>{diagnostic.path}</strong> · {diagnostic.message}</p>)}</div></> : analyzing ? <p>Computing native browser styles…</p> : <p>Analyze to render the input inside the isolated browser and review the graph diff before applying.</p>}
+            <div aria-live="polite" className="min-h-24 text-[10px] leading-5 text-[var(--muted)]" style={{ backgroundColor: "var(--if-panel)" }}>
+              {error ? <p role="alert" className="rounded border border-[var(--danger)] bg-[var(--danger-soft)] p-3 text-[var(--danger)]">{error}</p> : projection ? <><p className="sr-only">Review ready</p><ImportReview projection={projection} removed={removed} /></> : analyzing ? <p className="rounded border border-[var(--line)] bg-[var(--raised)] p-3">Computing native browser styles…</p> : <p className="rounded border border-[var(--line)] bg-[var(--raised)] p-3">Analyze to render the input inside the isolated browser and review the graph diff before applying.</p>}
             </div>
           </div>
         </div>
         <footer className="flex items-center justify-between gap-3 border-t border-[var(--line)] px-4 py-3">
           <p className="text-[10px] text-[var(--muted)]">Applying replaces only the selected screen’s node tree. Project history remains reversible.</p>
-          <div className="flex gap-2"><button type="button" onClick={analyze} disabled={analyzing} className="h-8 rounded border border-[var(--line)] px-3 text-[11px] font-semibold text-[var(--ink)] disabled:opacity-40">{analyzing ? "Analyzing…" : "Analyze"}</button><button type="button" disabled={!projection} onClick={() => { if (projection) onApply(projection); }} className="h-8 rounded bg-[var(--accent-deep)] px-3 text-[11px] font-semibold text-white disabled:opacity-40">Apply reviewed import</button></div>
+          <div className="flex gap-2"><button type="button" onClick={analyze} disabled={analyzing} className="h-8 rounded border border-[var(--line)] px-3 text-[11px] font-semibold text-[var(--ink)] disabled:opacity-40">{analyzing ? "Analyzing…" : "Analyze"}</button><button type="button" aria-describedby={projection ? "web-import-impact" : undefined} disabled={!projection} onClick={() => { if (projection) onApply(projection); }} className="h-8 rounded bg-[var(--accent-deep)] px-3 text-[11px] font-semibold text-white disabled:opacity-40">Replace screen with reviewed import</button></div>
         </footer>
       </section>
     </div>

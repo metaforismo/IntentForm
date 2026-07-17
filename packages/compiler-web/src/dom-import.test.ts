@@ -61,6 +61,7 @@ describe("browser computed DOM projection", () => {
       paddingTop: 0, paddingRight: 0, paddingBottom: 0, paddingLeft: 0,
     }));
     expect(projection.importedNodes).toBe(2);
+    expect(projection.replacedNodes).toBeGreaterThan(0);
     expect(projection.changes.length).toBeGreaterThan(0);
     expect(parseGraph(projection.graph)).toEqual(projection.graph);
   });
