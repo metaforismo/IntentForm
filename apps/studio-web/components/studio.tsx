@@ -70,6 +70,7 @@ import { useBackgroundVerification } from "./use-background-verification";
 import { DesktopControl } from "./desktop-control";
 import { EcosystemControl } from "./ecosystem-control";
 import { AgentActivityPanel, type AgentReviewChange } from "./agent-activity-panel";
+import { BrandMark } from "./brand-mark";
 import { adaptiveAutosaveDelay } from "./reliability-model";
 
 type Stage = "canvas" | WorkflowStage;
@@ -1148,9 +1149,9 @@ export function Studio() {
                 aria-label="IntentForm project menu"
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen((open) => !open)}
-                className="grid size-7 shrink-0 place-items-center rounded-[6px] bg-[var(--accent-deep)] text-white transition-transform active:scale-[.96]"
+                className="grid size-7 shrink-0 place-items-center rounded-[6px] transition-transform active:scale-[.96]"
               >
-                <BracketsCurly size={14} weight="bold" />
+                <BrandMark size={28} />
               </button>
               {menuOpen ? (
                 <>

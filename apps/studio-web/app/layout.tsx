@@ -4,8 +4,24 @@ import { GeistSans } from "geist/font/sans";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "IntentForm — Product intent, compiled",
-  description: "Compile semantic product intent into React, SwiftUI and responsive web, then verify the result.",
+  metadataBase: new URL("https://intentform-metaforismos-projects.vercel.app"),
+  title: "IntentForm — Agent-native interface design",
+  description: "Design validated interfaces with humans and agents, then compile them deterministically to React, Web, Expo, and SwiftUI.",
+  icons: {
+    icon: "/brand/intentform-mark.png",
+    apple: "/brand/intentform-mark.png",
+  },
+  openGraph: {
+    title: "IntentForm — Agent-native interface design",
+    description: "A local-first visual design environment and deterministic interface compiler for humans and coding agents.",
+    images: [{ url: "/brand/intentform-mark.png", width: 1254, height: 1254, alt: "IntentForm mark" }],
+  },
+  twitter: {
+    card: "summary",
+    title: "IntentForm — Agent-native interface design",
+    description: "Design validated interfaces with humans and agents, then compile them into real software.",
+    images: ["/brand/intentform-mark.png"],
+  },
 };
 
 const themeScript = `try {

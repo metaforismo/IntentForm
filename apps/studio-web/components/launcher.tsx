@@ -61,6 +61,7 @@ import {
   parseLauncherPreferences,
   type LauncherPreferences,
 } from "../lib/launcher-preferences";
+import { BrandMark } from "./brand-mark";
 import { LauncherAgents, LauncherBuilds, LauncherHome, LauncherLearn, LauncherSettings, ProjectOrganizationControls } from "./launcher-sections";
 
 const MAX_IMPORT_BYTES = GRAPH_LIMITS.maxSerializedBytes;
@@ -592,7 +593,7 @@ export function Launcher() {
     <main className="studio-grain flex min-h-[100dvh] text-[var(--if-text)]">
       <input ref={importInput} type="file" accept="application/json,.json,.intentform" onChange={(event) => importProject(event.target.files?.[0])} className="sr-only" aria-label="Import IntentForm project" />
       <aside className="hidden w-[232px] shrink-0 flex-col border-r border-[var(--if-border-subtle)] bg-[var(--if-panel)] p-3 lg:flex" aria-label="Project launcher navigation">
-        <div className="flex h-10 items-center gap-2 px-2"><span className="grid size-6 place-items-center rounded-md bg-[var(--if-blue)] text-white"><BracketsCurly size={13} weight="bold" /></span><strong className="text-[13px] font-medium">IntentForm</strong></div>
+        <div className="flex h-10 items-center gap-2 px-2"><BrandMark /><strong className="text-[13px] font-medium">IntentForm</strong></div>
         <nav className="mt-5 grid gap-0.5 text-[11.5px]" aria-label="Projects">
           {([
             { id: "home", label: "Home", icon: House },
