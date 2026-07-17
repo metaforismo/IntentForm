@@ -12,6 +12,7 @@ import {
   Cube,
   DotsThree,
   FileArrowUp,
+  FlagCheckered,
   FolderOpen,
   Gear,
   List,
@@ -635,6 +636,7 @@ export function Launcher() {
               <button type="button" aria-label="List view" aria-pressed={catalogView === "list"} onClick={() => setPreferences((current) => ({ ...current, catalogView: "list" }))} className={`grid size-7 place-items-center rounded-[4px] ${catalogView === "list" ? "bg-[var(--if-pressed)] text-[var(--if-text)]" : "text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)]"}`}><List size={14} /></button>
             </div>
             <label className="relative"><MagnifyingGlass size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--if-text-tertiary)]" /><input ref={searchInput} value={projectQuery} onChange={(event) => { setProjectQuery(event.target.value); if (event.target.value.trim()) setSection("projects"); }} aria-label="Search projects" placeholder="Search" className="h-8 w-32 rounded-md border border-[var(--if-border)] bg-[var(--if-input)] pl-8 pr-2 text-[11px] outline-none focus:border-[var(--if-blue)] sm:w-56" /></label>
+            <a href="/studio?judge=1&step=design" className="hidden h-8 items-center gap-1.5 rounded-md border border-[var(--if-border)] px-3 text-[11px] font-medium text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)] hover:text-[var(--if-text)] md:inline-flex"><FlagCheckered size={13} /> Judge Mode</a>
             <button type="button" onClick={openLocalProject} disabled={bridge !== "available" || opening !== null} className="hidden h-8 items-center gap-1.5 rounded-md border border-[var(--if-border)] bg-[var(--if-raised)] px-3 text-[11px] font-medium hover:bg-[var(--if-hover)] disabled:opacity-45 sm:inline-flex"><FolderOpen size={13} /> Open project</button>
             <button type="button" onClick={() => { setView("new"); setError(null); }} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--if-blue)] px-3 text-[11px] font-medium text-white hover:bg-[var(--if-blue-hover)]"><Plus size={13} /> New project</button>
           </div>

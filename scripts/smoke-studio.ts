@@ -399,6 +399,68 @@ try {
   });
 
   await runSmokeScenario(browser, {
+    name: "deterministic Judge Mode and submission readiness",
+    run: async (judgePage) => {
+      await judgePage.route("**/api/readiness", (route) => route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          checkedAt: "2026-07-17T00:00:00.000Z",
+          repository: { reachable: true, status: 200, detail: "Public endpoint responded successfully." },
+          publicDemo: { reachable: false, status: null, detail: "NEXT_PUBLIC_SITE_URL is not configured with an HTTPS URL.", url: null },
+          artifacts: {
+            readme: true,
+            license: true,
+            demoVideo: { configured: false, url: null },
+            devpost: { configured: false, url: null },
+          },
+        }),
+      }));
+      await judgePage.addInitScript(() => {
+        try {
+          localStorage.setItem("intentform-active-project-id", "catalog-project-must-remain-untouched");
+        } catch {
+          // Sandboxed preview frames intentionally have no same-origin storage.
+        }
+      });
+
+      await navigateToStudio(judgePage, origin, "/");
+      const launcherJudgeLink = judgePage.getByRole("link", { name: "Judge Mode" });
+      await launcherJudgeLink.waitFor();
+      if (await launcherJudgeLink.getAttribute("href") !== "/studio?judge=1&step=design") throw new Error("Launcher Judge Mode deep link is invalid");
+
+      const response = await navigateToStudio(judgePage, origin, "/studio?judge=1&step=code");
+      assertSecurityHeaders(response, "Judge Mode");
+      const panel = judgePage.getByTestId("judge-mode-panel");
+      await panel.getByRole("heading", { name: "Judge Mode" }).waitFor();
+      await judgePage.getByRole("button", { name: "Native outputs" }).and(judgePage.locator('[aria-current="page"]')).waitFor();
+      await panel.getByRole("button", { name: /^2\. Read native output/ }).and(judgePage.locator('[aria-current="step"]')).waitFor();
+      if (!judgePage.url().endsWith("/studio?judge=1&step=code")) throw new Error(`Judge deep link drifted to ${judgePage.url()}`);
+
+      await panel.getByRole("button", { name: "Submission readiness" }).click();
+      await panel.getByText("Public endpoint responded successfully.", { exact: true }).waitFor();
+      await panel.getByText("Placeholder only; add after recording.", { exact: true }).waitFor();
+      await panel.getByText("Placeholder only; no external write performed.", { exact: true }).waitFor();
+
+      await panel.getByRole("button", { name: /^3\. Verify and repair/ }).click();
+      await judgePage.waitForURL(`${origin}/studio?judge=1&step=verify`);
+      await judgePage.getByRole("button", { name: "Verification" }).and(judgePage.locator('[aria-current="page"]')).waitFor();
+      await judgePage.reload({ waitUntil: "networkidle" });
+      await judgePage.getByTestId("judge-mode-panel").getByRole("button", { name: /^3\. Verify and repair/ }).and(judgePage.locator('[aria-current="step"]')).waitFor();
+
+      await judgePage.getByTestId("judge-mode-panel").getByRole("button", { name: "Reset" }).click();
+      await judgePage.waitForURL(`${origin}/studio?judge=1&step=design`);
+      await judgePage.getByTestId("canvas-node-payment-request.amount").waitFor();
+      const preservedProjectId = await judgePage.evaluate(() => localStorage.getItem("intentform-active-project-id"));
+      if (preservedProjectId !== "catalog-project-must-remain-untouched") throw new Error("Judge Mode mutated durable catalog selection");
+
+      await judgePage.getByRole("button", { name: "Exit Judge Mode" }).click();
+      await judgePage.waitForURL(`${origin}/`);
+      await judgePage.getByRole("heading", { name: "Home", level: 1 }).waitFor();
+    },
+  });
+
+  await runSmokeScenario(browser, {
     name: "durable project catalog and document tabs",
     run: async (page) => {
       const createProject = async (name: string) => {
