@@ -51,6 +51,7 @@ export const verificationFindingSchema = z.object({
   propertyPaths: z.array(z.string().min(1).max(500)).max(256).optional(),
   deviceProfile: z.string().min(1).max(160).optional(),
   visualState: identifier.optional(),
+  sourceFingerprint: z.string().regex(/^[a-f0-9]{8}$/).optional(),
   suggestedRepair: z.object({ description: boundedText(1_000) }).strict().optional(),
   subjective: z.literal(false).optional(),
 }).strict();

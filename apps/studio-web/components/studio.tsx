@@ -25,7 +25,8 @@ import {
 } from "@phosphor-icons/react";
 import { demoBrief, demoGraph } from "@intentform/proof-report/demo";
 import type { DomImportProjection } from "@intentform/compiler-web/dom-import";
-import { applyRepair, type RepairProposal } from "@intentform/repair-planner";
+import type { RepairProposal } from "@intentform/repair-planner";
+import type { BuildEvidenceState } from "@intentform/preview-daemon";
 import {
   flattenSemanticNodes,
   parseGraph,
@@ -35,7 +36,7 @@ import {
 } from "@intentform/semantic-schema";
 import type { VerificationFinding } from "@intentform/verifier";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   activeBrowserProjectId,
   browserProjectCatalog,
@@ -52,13 +53,18 @@ import {
 import { hasUnsavedLocalChanges, serializedGraphFingerprint } from "../lib/project-save-state";
 import { ManualEditor, type WorkflowStage } from "./manual-editor";
 import { reconcileGraphSelection } from "./editor/direct-manipulation";
-import { editorProfiles, type DeviceId } from "./editor/support";
+import { editorProfiles, type DeviceId, type VisualState } from "./editor/support";
 import { compileStudioTarget } from "./target-compilation";
 import { BriefStage } from "./stages/brief-stage";
 import { GraphStage } from "./stages/graph-stage";
 import { OutputsStage } from "./stages/outputs-stage";
 import { ReportStage } from "./stages/report-stage";
 import { VerifyStage } from "./stages/verify-stage";
+import {
+  createRepairPreview,
+  verificationNavigationTarget,
+  type RepairPreview,
+} from "./stages/workspace-model";
 import { useLocalPreviews, type LocalPreviewTarget } from "./use-local-previews";
 import { useBackgroundVerification } from "./use-background-verification";
 import { DesktopControl } from "./desktop-control";
@@ -155,6 +161,10 @@ export function Studio() {
   const [draftReady, setDraftReady] = useState(false);
   const [theme, setThemeState] = useState<"light" | "dark">("light");
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [repairPreview, setRepairPreview] = useState<RepairPreview | null>(null);
+  const [verificationRunId, setVerificationRunId] = useState(1);
+  const [verificationFocus, setVerificationFocus] = useState<{ key: number; screenId: string; nodeId: string | null; visualState: VisualState } | null>(null);
+  const [verificationReturnFindingId, setVerificationReturnFindingId] = useState<string | null>(null);
   const [requestFailure, setRequestFailure] = useState<RequestFailure | null>(null);
   const [localProjectFingerprint, setLocalProjectFingerprint] = useState<string | null>(null);
   const [projectType, setProjectType] = useState<ProjectType>("application");
@@ -185,6 +195,8 @@ export function Studio() {
   const resetReturnFocus = useRef<HTMLElement | null>(null);
   const resetShouldRestoreFocus = useRef(false);
   const dirtyCloseCancelButton = useRef<HTMLButtonElement>(null);
+  const dirtyCloseReturnFocus = useRef<HTMLElement | null>(null);
+  const dirtyCloseShouldRestoreFocus = useRef(false);
   const themeTrigger = useRef<HTMLButtonElement>(null);
   const agentTrigger = useRef<HTMLButtonElement>(null);
   const agentCloseButton = useRef<HTMLButtonElement>(null);
@@ -212,9 +224,16 @@ export function Studio() {
   };
 
   const cancelDirtyClose = () => {
+    dirtyCloseShouldRestoreFocus.current = true;
     setPendingTabClose(null);
-    requestAnimationFrame(() => document.getElementById(`document-tab-${workspaceRef.current.openTabs.findIndex((tab) => tab.id === workspaceRef.current.activeTabId)}`)?.focus());
   };
+
+  useLayoutEffect(() => {
+    if (pendingTabClose || !dirtyCloseShouldRestoreFocus.current) return;
+    dirtyCloseShouldRestoreFocus.current = false;
+    const returnFocus = dirtyCloseReturnFocus.current;
+    if (returnFocus?.isConnected) returnFocus.focus();
+  }, [pendingTabClose]);
 
   useEffect(() => {
     if (!pendingTabClose) return;
@@ -245,6 +264,8 @@ export function Studio() {
 
   const closeDocument = (tab: BrowserDocumentTab, allowDirty = false) => {
     if (!allowDirty && tab.kind === "screen" && catalogSaveState !== "saved") {
+      const activeIndex = workspaceRef.current.openTabs.findIndex((candidate) => candidate.id === workspaceRef.current.activeTabId);
+      dirtyCloseReturnFocus.current = document.getElementById(`document-tab-${activeIndex}`);
       setPendingTabClose(tab);
       return;
     }
@@ -588,9 +609,23 @@ export function Studio() {
     && !("unavailable" in previewEvidence)
     ? previewEvidence.buildStatus
     : "not-run";
+  const buildEvidenceState: BuildEvidenceState = !localProjectFingerprint
+    ? "not-generated"
+    : !localPreviews.graphIsSaved
+      ? "stale"
+      : previewEvidence && "unavailable" in previewEvidence
+        ? "unavailable"
+        : previewEvidence?.buildState ?? "not-run";
   const verificationScenario = useMemo(
-    () => ({ target: verificationTarget, viewport: scenario.viewport, buildStatus }),
-    [buildStatus, scenario.viewport, verificationTarget],
+    () => ({
+      target: verificationTarget,
+      viewport: scenario.viewport,
+      buildStatus,
+      deviceProfile: scenarioId,
+      visualState: "idle",
+      sourceFingerprint: currentGraphFingerprint,
+    }),
+    [buildStatus, currentGraphFingerprint, scenario.viewport, scenarioId, verificationRunId, verificationTarget],
   );
   const verification = useBackgroundVerification(graph, verificationScenario);
   const changes = useMemo(() => stage === "report" ? semanticDiff(baseline, graph) : [], [baseline, graph, stage]);
@@ -890,7 +925,7 @@ export function Studio() {
     })();
   };
 
-  const repairFinding = (finding: VerificationFinding) => {
+  const previewFindingRepair = (finding: VerificationFinding) => {
     const active = beginRequest("repair");
     const baseSnapshot = stableSerialize(graph);
     const graphToRepair = graph;
@@ -915,18 +950,18 @@ export function Studio() {
         if (graphSnapshotRef.current !== baseSnapshot) {
           throw new Error("The graph changed while the repair was being planned. Re-run verification before retrying.");
         }
-        const repaired = applyRepair(graphToRepair, result.proposal);
-        commitGraph(repaired, result.proposal.summary);
+        const preview = createRepairPreview(graphToRepair, finding, result.proposal, currentGraphFingerprint);
+        setRepairPreview(preview);
         setMode(result.mode);
         setModel(result.model);
         setLastTrace(result.trace ?? null);
-        setStage("report");
+        setNotice(`Repair preview ready · ${preview.changes.length} semantic change${preview.changes.length === 1 ? "" : "s"}. The graph is unchanged.`);
       } catch (error) {
         if (!isCurrentRequest(active.id) || active.controller.signal.aborted) return;
         failRequest(
           error instanceof Error ? error.message : "Repair failed.",
           "Retry repair",
-          () => repairFinding(finding),
+          () => previewFindingRepair(finding),
         );
       } finally {
         finishRequest(active.id);
@@ -934,15 +969,44 @@ export function Studio() {
     })();
   };
 
+  const applyFindingRepair = () => {
+    if (!repairPreview) return;
+    if (repairPreview.sourceFingerprint !== currentGraphFingerprint) {
+      setRepairPreview(null);
+      setNotice("The graph changed after this repair was previewed. Re-run verification and create a new preview.");
+      return;
+    }
+    commitGraph(repairPreview.repairedGraph, repairPreview.proposal.summary);
+    setRepairPreview(null);
+    setVerificationRunId((current) => current + 1);
+    setStage("verify");
+  };
+
+  const rerunVerification = () => {
+    setRepairPreview(null);
+    setVerificationRunId((current) => current + 1);
+    void localPreviews.refresh();
+    setNotice(`Verification re-run requested for ${scenario.label} · ${currentGraphFingerprint}.`);
+  };
+
   const inspectVerificationFinding = (finding: VerificationFinding) => {
-    const screen = graph.screens.find((candidate) => candidate.id === finding.screenId) ?? graph.screens[0];
-    if (!screen) return;
-    const nodes = flattenSemanticNodes(screen.nodes);
-    const node = nodes.find((candidate) => candidate.kind === "primary-action") ?? nodes[0];
-    setSelectedScreen(screen.id);
-    setSelectedNodeId(finding.responsibleLayer === "graph" ? node?.id ?? null : null);
+    const target = verificationNavigationTarget(graph, finding, new Set(Object.keys(scenarios)), currentGraphFingerprint);
+    if (!target) {
+      setNotice(`The exact evidence target for ${finding.id} no longer exists. Re-run verification against the current graph.`);
+      return;
+    }
+    setSelectedScreen(target.screenId);
+    setSelectedNodeId(target.nodeId);
+    if (target.deviceProfile) setScenarioId(target.deviceProfile as ScenarioId);
+    setVerificationFocus({
+      key: Date.now(),
+      screenId: target.screenId,
+      nodeId: target.nodeId,
+      visualState: target.visualState as VisualState,
+    });
+    setVerificationReturnFindingId(finding.id);
     setStage("canvas");
-    setNotice(`Showing ${finding.id} on ${screen.title}. Return to Verify to keep the evidence context.`);
+    setNotice(`Showing the exact evidence target for ${finding.id}.`);
   };
 
   const previewAgentChanges = (reviewChanges: AgentReviewChange[]) => {
@@ -1170,6 +1234,12 @@ export function Studio() {
         </header>
 
         <section id="studio-workspace" tabIndex={-1} className="relative min-h-0 min-w-0 overflow-hidden" aria-busy={isPending} aria-label={`${stages.find((item) => item.id === stage)?.label ?? stage} workspace`}>
+          {stage === "canvas" && verificationReturnFindingId ? (
+            <div className="absolute left-1/2 top-3 z-[9] flex -translate-x-1/2 items-center gap-2 rounded-[6px] border border-[var(--if-blue)]/40 bg-[var(--if-panel)] px-2.5 py-1.5 text-[10px] shadow-[var(--if-shadow-menu)]">
+              <span className="max-w-[42vw] truncate text-[var(--if-text-secondary)]">Inspecting {verificationReturnFindingId}</span>
+              <button type="button" onClick={() => { setStage("verify"); setVerificationReturnFindingId(null); }} className="h-6 rounded-[4px] bg-[var(--if-blue-action)] px-2 font-medium text-white">Return to Verify</button>
+            </div>
+          ) : null}
           {pendingAction ? (
             <span className="sr-only" role="status" aria-live="polite">Request in progress: {pendingAction}.</span>
           ) : null}
@@ -1208,6 +1278,7 @@ export function Studio() {
                   localProjectEnabled={localProjectFingerprint !== null}
                   localProjectFingerprint={localProjectFingerprint}
                   localProjectSaved={localProjectFingerprint !== null && !localChangesAreUnsaved}
+                  verificationFocus={verificationFocus}
                   onSelectScreen={setSelectedScreen}
                   onDeviceId={setScenarioId}
                   onSelectNode={setSelectedNodeId}
@@ -1275,9 +1346,15 @@ export function Studio() {
                   scenarioId={scenarioId}
                   setScenarioId={setScenarioId}
                   scenarios={scenarios}
-                  repairFinding={repairFinding}
+                  repairPreview={repairPreview}
+                  previewRepair={previewFindingRepair}
+                  applyRepair={applyFindingRepair}
+                  dismissRepair={() => setRepairPreview(null)}
+                  rerunVerification={rerunVerification}
                   inspectFinding={inspectVerificationFinding}
                   sourceFingerprint={currentGraphFingerprint}
+                  buildEvidenceState={buildEvidenceState}
+                  verificationRunId={verificationRunId}
                   isPending={isPending}
                 />
               ) : null}

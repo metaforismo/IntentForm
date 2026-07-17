@@ -1665,8 +1665,21 @@ try {
       await transactionPage.getByRole("button", { name: "Request payment 4", exact: true }).waitFor();
       await transactionPage.getByRole("button", { name: "Verification" }).click();
       await transactionPage.getByRole("button", { name: /primary action must remain persistently reachable/i }).click();
-      await transactionPage.getByRole("button", { name: "Plan and apply repair" }).click();
-      await transactionPage.getByRole("heading", { name: "The repair changed the graph. Available output was regenerated; verification is still pending." }).waitFor();
+      await transactionPage.getByRole("button", { name: "Show on canvas" }).click();
+      await transactionPage.getByTestId("canvas-node-payment-request.confirm").waitFor();
+      if (!await transactionPage.getByTestId("canvas-node-payment-request.confirm").evaluate((element) => element === document.activeElement)) {
+        throw new Error("Show on canvas did not focus the exact verification node");
+      }
+      await transactionPage.getByRole("button", { name: "Return to Verify" }).click();
+      await transactionPage.getByRole("button", { name: /primary action must remain persistently reachable/i }).click();
+      await transactionPage.getByRole("button", { name: "Preview repair" }).click();
+      const repairPreview = transactionPage.getByLabel("Repair preview");
+      await repairPreview.waitFor();
+      await repairPreview.getByText(/set-placement/).waitFor();
+      await transactionPage.getByRole("heading", { name: /Verification ·/ }).waitFor();
+      await repairPreview.getByRole("button", { name: "Apply repair" }).click();
+      await transactionPage.getByRole("heading", { name: /Verification ·/ }).waitFor();
+      await transactionPage.getByRole("button", { name: "Re-run" }).click();
       await transactionPage.getByRole("button", { name: "Design canvas" }).click();
       await transactionPage.getByTestId("layer-payment-request.confirm").click();
       const repairedPlacement = transactionPage.getByRole("group", { name: "Compact placement" });

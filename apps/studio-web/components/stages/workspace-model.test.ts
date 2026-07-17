@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { VerificationFinding } from "@intentform/verifier";
 import {
   countVerificationFindings,
+  createRepairPreview,
   defaultComparisonProfileIds,
   filterVerificationFindings,
   localPreviewTarget,
@@ -9,8 +10,11 @@ import {
   reconcileComparisonProfileIds,
   replaceComparisonProfile,
   usableLocalPreview,
+  verificationNavigationTarget,
 } from "./workspace-model";
 import type { DeviceProfile } from "../editor/support";
+import { demoGraph } from "@intentform/proof-report/demo";
+import { stableSerialize } from "@intentform/semantic-schema";
 
 function profile(id: string, width: number, presentation: DeviceProfile["presentation"] = "device"): DeviceProfile {
   return {
@@ -112,6 +116,43 @@ describe("Code and Verify workspace model", () => {
     const base = { query: "", severities: new Set(["error"] as const), profileId: "all", category: "all" as const };
     expect(filterVerificationFindings(findings, { ...base, showSuppressed: false })).toEqual([]);
     expect(filterVerificationFindings(findings, { ...base, showSuppressed: true })).toEqual(findings);
+  });
+
+  it("navigates only to the exact screen, node, device, and visual state from evidence", () => {
+    const exactNode = demoGraph.screens[0]!.nodes[0]!.id;
+    expect(verificationNavigationTarget(demoGraph, finding({
+      screenId: demoGraph.screens[0]!.id,
+      nodeId: exactNode,
+      deviceProfile: "device:known",
+      visualState: "idle",
+      sourceFingerprint: "1234abcd",
+    }), new Set(["device:known"]), "1234abcd")).toEqual({
+      screenId: demoGraph.screens[0]!.id,
+      nodeId: exactNode,
+      deviceProfile: "device:known",
+      visualState: "idle",
+    });
+    expect(verificationNavigationTarget(demoGraph, finding({ screenId: "missing" }), new Set(), "1234abcd")).toBeNull();
+    expect(verificationNavigationTarget(demoGraph, finding({ screenId: demoGraph.screens[0]!.id, nodeId: "missing" }), new Set(), "1234abcd")).toBeNull();
+    expect(verificationNavigationTarget(demoGraph, finding({ screenId: demoGraph.screens[0]!.id, sourceFingerprint: "feedc0de" }), new Set(), "1234abcd")).toBeNull();
+  });
+
+  it("previews a repair without mutating the canonical graph", () => {
+    const node = demoGraph.screens.flatMap((screen) => screen.nodes).find((candidate) => candidate.id === "payment-request.confirm")!;
+    const before = stableSerialize(demoGraph);
+    const preview = createRepairPreview(demoGraph, finding({ id: "react.primary.compact-reachability" }), {
+      layer: "graph",
+      summary: "Keep the primary action reachable on compact screens.",
+      patch: {
+        id: "repair.preview-test",
+        rationale: "Compact reachability",
+        operations: [{ op: "set-placement", target: node.id, compact: "persistent-bottom", regular: "inline" }],
+      },
+    }, "1234abcd");
+    expect(stableSerialize(demoGraph)).toBe(before);
+    expect(preview.sourceFingerprint).toBe("1234abcd");
+    expect(preview.repairedGraph).not.toBe(demoGraph);
+    expect(preview.changes.length).toBeGreaterThan(0);
   });
 
   it("filters deterministic design-quality findings by category and exact property path", () => {

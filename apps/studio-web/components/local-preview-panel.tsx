@@ -16,9 +16,9 @@ const labels = {
 const activePhases = new Set(["queued", "generating", "building"]);
 
 function statusTone(entry: LocalPreviewStatus): string {
-  if (entry.freshness === "stale") return "text-amber-300";
-  if (entry.buildStatus === "passed") return "text-emerald-300";
-  if (entry.buildStatus === "failed" || entry.phase === "toolchain-missing") return "text-red-300";
+  if (["stale", "generated", "queued", "running"].includes(entry.buildState)) return "text-amber-300";
+  if (entry.buildState === "passed") return "text-emerald-300";
+  if (entry.buildState === "failed" || entry.buildState === "unavailable") return "text-red-300";
   return "text-white/50";
 }
 
@@ -52,7 +52,7 @@ export function LocalPreviewPanel({ previews }: { previews: LocalPreviewsControl
                 <div className="flex items-center justify-between gap-3">
                   <strong className="text-[11px] text-white/85">{labels[target]}</strong>
                   <span className={`font-mono text-[9px] ${status ? statusTone(status) : "text-white/40"}`}>
-                    {unavailable ? "unavailable" : status ? `${status.freshness} · ${status.phase}` : "loading"}
+                    {unavailable ? "unavailable" : status ? status.buildState : "loading"}
                   </span>
                 </div>
                 {unavailable ? (
@@ -64,6 +64,7 @@ export function LocalPreviewPanel({ previews }: { previews: LocalPreviewsControl
                       <dt>profile</dt><dd className="truncate text-white/60">{status.expectedBinding.profileId}</dd>
                       <dt>revision</dt><dd className="truncate text-white/60">{status.manifest?.lastVerifiedRevision ?? "not verified"}</dd>
                     </dl>
+                    {status.priorValidEvidence && status.buildState !== "passed" ? <p className="mt-2 text-[8px] text-white/45">Prior verified evidence retained · {status.priorValidEvidence.binding.revisionFingerprint}</p> : null}
                     {status.manifest?.failure ? <p role="alert" className="mt-2 text-[10px] leading-relaxed text-red-200/75">{status.manifest.failure.message}</p> : null}
                     {logs.length > 0 ? (
                       <div className="mt-3 max-h-24 overflow-auto rounded-lg bg-black/20 p-2 font-mono text-[8px] leading-relaxed text-white/40" aria-label={`${labels[target]} recent logs`}>

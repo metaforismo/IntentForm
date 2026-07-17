@@ -44,6 +44,20 @@ export const PREVIEW_EVIDENCE_LEVELS = [
 ] as const;
 export type PreviewEvidenceLevel = typeof PREVIEW_EVIDENCE_LEVELS[number];
 
+export const BUILD_EVIDENCE_STATES = [
+  "not-generated",
+  "generated",
+  "stale",
+  "not-run",
+  "queued",
+  "running",
+  "passed",
+  "failed",
+  "cancelled",
+  "unavailable",
+] as const;
+export type BuildEvidenceState = typeof BUILD_EVIDENCE_STATES[number];
+
 const fingerprint8 = z.string().regex(/^[a-f0-9]{8}$/);
 const fingerprint64 = z.string().regex(/^[a-f0-9]{64}$/);
 const boundedText = z.string().max(1_000);
@@ -74,6 +88,14 @@ export const previewArtifactSchema = z.strictObject({
 });
 export type PreviewArtifact = z.infer<typeof previewArtifactSchema>;
 
+export const priorValidPreviewEvidenceSchema = z.strictObject({
+  binding: previewBindingSchema,
+  evidence: z.enum(["built", "render-verified"]),
+  completedAt: z.string().datetime({ offset: true }),
+  artifacts: z.array(previewArtifactSchema).max(24),
+});
+export type PriorValidPreviewEvidence = z.infer<typeof priorValidPreviewEvidenceSchema>;
+
 export const previewEvidenceManifestSchema = z.strictObject({
   version: z.literal("1.0.0"),
   runId: z.string().uuid(),
@@ -91,6 +113,7 @@ export const previewEvidenceManifestSchema = z.strictObject({
   }).nullable(),
   logs: z.array(previewLogSchema).max(240),
   artifacts: z.array(previewArtifactSchema).max(24),
+  priorValidEvidence: priorValidPreviewEvidenceSchema.nullable().default(null),
 });
 export type PreviewEvidenceManifest = z.infer<typeof previewEvidenceManifestSchema>;
 
@@ -100,8 +123,10 @@ export interface PreviewEvidenceView {
   evidence: PreviewEvidenceLevel;
   freshness: "fresh" | "stale" | "not-run";
   buildStatus: "passed" | "failed" | "not-run";
+  buildState: BuildEvidenceState;
   expectedBinding: PreviewBinding;
   manifest: PreviewEvidenceManifest | null;
+  priorValidEvidence: PriorValidPreviewEvidence | null;
 }
 
 export const MAX_EVIDENCE_BYTES = 256_000;
@@ -349,7 +374,23 @@ export function recoverOrphanedPreviewEvidence(
   return recovered;
 }
 
-export function createQueuedManifest(binding: PreviewBinding, at = new Date().toISOString()): PreviewEvidenceManifest {
+function priorValidEvidence(manifest: PreviewEvidenceManifest | null | undefined): PriorValidPreviewEvidence | null {
+  if (manifest?.phase === "ready" && manifest.completedAt && ["built", "render-verified"].includes(manifest.evidence)) {
+    return priorValidPreviewEvidenceSchema.parse({
+      binding: manifest.binding,
+      evidence: manifest.evidence,
+      completedAt: manifest.completedAt,
+      artifacts: manifest.artifacts,
+    });
+  }
+  return manifest?.priorValidEvidence ?? null;
+}
+
+export function createQueuedManifest(
+  binding: PreviewBinding,
+  at = new Date().toISOString(),
+  previous?: PreviewEvidenceManifest | null,
+): PreviewEvidenceManifest {
   return previewEvidenceManifestSchema.parse({
     version: "1.0.0",
     runId: randomUUID(),
@@ -364,7 +405,24 @@ export function createQueuedManifest(binding: PreviewBinding, at = new Date().to
     failure: null,
     logs: [{ at, stream: "system", text: `Queued local ${binding.target} preview.` }],
     artifacts: [],
+    priorValidEvidence: priorValidEvidence(previous),
   });
+}
+
+export function buildEvidenceState(
+  expectedBinding: PreviewBinding,
+  manifest: PreviewEvidenceManifest | null,
+): BuildEvidenceState {
+  if (!manifest) return "not-generated";
+  if (!samePreviewBinding(expectedBinding, manifest.binding)) return "stale";
+  if (manifest.phase === "queued") return "queued";
+  if (manifest.phase === "generating") return "running";
+  if (manifest.phase === "building") return manifest.evidence === "generated" ? "generated" : "running";
+  if (manifest.phase === "ready") return ["built", "render-verified"].includes(manifest.evidence) ? "passed" : "generated";
+  if (manifest.phase === "failed") return "failed";
+  if (manifest.phase === "cancelled") return "cancelled";
+  if (manifest.phase === "toolchain-missing") return "unavailable";
+  return "not-run";
 }
 
 export function resolvePreviewEvidence(
@@ -376,7 +434,7 @@ export function resolvePreviewEvidence(
     ? readPreviewEvidence(projectDir, expectedBinding.target)
     : manifestOverride;
   if (!manifest) {
-    return { target: expectedBinding.target, phase: "idle", evidence: "not-run", freshness: "not-run", buildStatus: "not-run", expectedBinding, manifest: null };
+    return { target: expectedBinding.target, phase: "idle", evidence: "not-run", freshness: "not-run", buildStatus: "not-run", buildState: "not-generated", expectedBinding, manifest: null, priorValidEvidence: null };
   }
   const fresh = samePreviewBinding(expectedBinding, manifest.binding);
   const buildStatus = !fresh
@@ -392,7 +450,9 @@ export function resolvePreviewEvidence(
     evidence: manifest.evidence,
     freshness: fresh ? "fresh" : "stale",
     buildStatus,
+    buildState: buildEvidenceState(expectedBinding, manifest),
     expectedBinding,
     manifest,
+    priorValidEvidence: manifest.priorValidEvidence,
   };
 }
