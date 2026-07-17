@@ -62,6 +62,13 @@ import type { VerificationFinding } from "@intentform/verifier";
 import type { DeviceBezelReference } from "@intentform/device-registry";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CanvasStage, type CanvasApi } from "./editor/canvas";
+import {
+  EDITOR_PANEL_LIMITS,
+  EDITOR_PANEL_WIDTHS_STORAGE_KEY,
+  clampEditorPanelWidths,
+  readEditorPanelWidths,
+  type EditorViewportInsets,
+} from "./editor/editor-viewport";
 import { importLocalAsset } from "./editor/asset-import";
 import { Inspector } from "./editor/inspector";
 import { LayersPanel } from "./editor/layers-panel";
@@ -322,20 +329,10 @@ export function ManualEditor({
   const [bezelPacks, setBezelPacks] = useState<LocalBezelPack[]>([]);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>(() => selectedNodeId ? [selectedNodeId] : []);
-  const [panelWidths, setPanelWidths] = useState(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = JSON.parse(window.localStorage.getItem("intentform-panel-widths-v2") ?? "") as { rail?: number; inspector?: number };
-        return {
-          rail: Math.min(340, Math.max(216, saved.rail ?? 224)),
-          inspector: Math.min(360, Math.max(248, saved.inspector ?? 264)),
-        };
-      } catch {
-        // Fall through to defaults when nothing valid is stored.
-      }
-    }
-    return { rail: 224, inspector: 264 };
-  });
+  const [panelWidths, setPanelWidths] = useState(() => readEditorPanelWidths(
+    typeof window === "undefined" ? null : window.localStorage,
+  ));
+  const [desktopDocked, setDesktopDocked] = useState(false);
   const canvasApi = useRef<CanvasApi>(null);
   const previewHistory = useRef<string[]>([]);
   const previewWasOpen = useRef(false);
@@ -361,18 +358,23 @@ export function ManualEditor({
   const previousMobilePanel = useRef<MobilePanel>(null);
   const previousInsertOpen = useRef(false);
   const previousZoomOpen = useRef(false);
-  const panelLimits = {
-    rail: { min: 216, max: 340 },
-    inspector: { min: 248, max: 360 },
-  } as const;
+  const panelLimits = EDITOR_PANEL_LIMITS;
 
   useEffect(() => {
     try {
-      window.localStorage.setItem("intentform-panel-widths-v2", JSON.stringify(panelWidths));
+      window.localStorage.setItem(EDITOR_PANEL_WIDTHS_STORAGE_KEY, JSON.stringify(clampEditorPanelWidths(panelWidths)));
     } catch {
       // Persisting panel sizes is best-effort.
     }
   }, [panelWidths]);
+
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 1280px)");
+    const sync = () => setDesktopDocked(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
 
   useEffect(() => {
     if (!verificationFocus || verificationFocus.screenId !== selectedScreen) return;
@@ -1618,6 +1620,12 @@ export function ManualEditor({
       : visibleDesktopPanels.inspector
         ? "xl:grid-cols-[42px_minmax(420px,1fr)_var(--insp-w)]"
         : "xl:grid-cols-[42px_minmax(0,1fr)]";
+  const viewportInsets = useMemo<EditorViewportInsets>(() => ({
+    top: 52,
+    bottom: 36,
+    left: !desktopDocked && mobilePanel === "structure" ? panelWidths.rail : 24,
+    right: !desktopDocked && mobilePanel === "inspector" ? panelWidths.inspector : 24,
+  }), [desktopDocked, mobilePanel, panelWidths.inspector, panelWidths.rail]);
 
   useEffect(() => {
     if (!insertOpen && !zoomMenuOpen) return;
@@ -1682,6 +1690,8 @@ export function ManualEditor({
       className={`editor-shell relative grid h-full min-h-0 grid-cols-1 overflow-hidden bg-[var(--workspace)] text-[var(--t-strong)] ${desktopGrid}`}
       data-preview-mode={previewMode}
       data-minimal-ui={minimalUi}
+      data-panel-rail-width={panelWidths.rail}
+      data-panel-inspector-width={panelWidths.inspector}
       style={{ "--rail-w": `${panelWidths.rail}px`, "--insp-w": `${panelWidths.inspector}px` } as React.CSSProperties}
       onDragOver={(event) => { if (event.dataTransfer.types.includes("application/x-intentform-asset")) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }}
       onDrop={(event) => { const assetId = event.dataTransfer.getData("application/x-intentform-asset"); if (assetId) { event.preventDefault(); placeAsset(assetId); } }}
@@ -1837,6 +1847,7 @@ export function ManualEditor({
             showDeviceChrome={showDeviceChrome}
             bezelOverlay={bezelOverlay}
             profile={activeProfile}
+            viewportInsets={viewportInsets}
             apiRef={canvasApi}
             visualStateFor={visualStateFor}
             frameStatus={(screenId) => statusByScreen.get(screenId) ?? { errors: 0, warnings: 0 }}

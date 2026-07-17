@@ -689,9 +689,9 @@ export function LayersPanel({
       role={visible ? "dialog" : undefined}
       aria-modal={visible ? "true" : undefined}
       aria-label="Pages and layers"
-      className={`${visible ? "grid" : "hidden"} ${desktopVisible ? "xl:grid" : "xl:hidden"} absolute inset-y-0 left-0 z-[3] w-[268px] min-h-0 grid-rows-[auto_1fr] border-r border-[var(--line)] bg-[var(--chrome)] shadow-[24px_0_52px_-32px_var(--shadow-strong)] xl:relative xl:z-[3] xl:w-auto xl:shadow-none`}
+      className={`${visible ? "grid" : "hidden"} ${desktopVisible ? "xl:grid" : "xl:hidden"} absolute inset-y-0 left-0 z-[3] w-[min(var(--rail-w),calc(100%-16px))] min-h-0 min-w-0 max-w-full grid-rows-[auto_1fr] overflow-hidden border-r border-[var(--line)] bg-[var(--chrome)] shadow-[24px_0_52px_-32px_var(--shadow-strong)] xl:relative xl:z-[3] xl:w-auto xl:shadow-none`}
     >
-      <div className="grid h-[34px] grid-cols-[minmax(0,1fr)_28px] items-center border-b border-[var(--line)] px-2">
+      <div className="grid h-[34px] min-w-0 max-w-full grid-cols-[minmax(0,1fr)_28px] items-center overflow-hidden border-b border-[var(--line)] px-2">
         <div className="flex min-w-0 items-center gap-0.5" role="tablist" aria-label="Left panel sections">
           {([
             ["layers", "Layers", TreeStructure],
@@ -729,13 +729,13 @@ export function LayersPanel({
       </div>
 
       {railTab === "layers" ? (
-        <div id="editor-layers-tabpanel" role="tabpanel" aria-labelledby="editor-layers-tab" className="grid min-h-0 grid-rows-[auto_auto_1fr]">
-          <div className="border-b border-[var(--line)] px-2 pb-2 pt-1.5">
+        <div id="editor-layers-tabpanel" role="tabpanel" aria-labelledby="editor-layers-tab" className="grid min-h-0 min-w-0 max-w-full grid-rows-[auto_auto_1fr] overflow-hidden">
+          <div className="min-w-0 max-w-full overflow-hidden border-b border-[var(--line)] px-2 pb-2 pt-1.5">
             <PanelHeading
               label="Pages"
               action={<IconButton ariaLabel="Add screen" onClick={onAddScreen}><Plus size={13} /></IconButton>}
             />
-            <Reorder.Group ref={pagesListRef} axis="y" as="div" values={pageOrder} onReorder={setPageOrder} className="relative mt-0.5 grid grid-cols-1 gap-px">
+            <Reorder.Group ref={pagesListRef} axis="y" as="div" values={pageOrder} onReorder={setPageOrder} className="relative mt-0.5 grid min-w-0 max-w-full grid-cols-1 gap-px overflow-hidden">
               {pageOrder.map((screenId) => {
                 const item = graph.screens.find((candidate) => candidate.id === screenId);
                 if (!item) return null;
@@ -748,7 +748,7 @@ export function LayersPanel({
                     dragConstraints={pagesListRef}
                     dragElastic={0.03}
                     onDragEnd={commitPageOrder}
-                    className="relative"
+                    className="relative min-w-0 max-w-full overflow-hidden"
                   >
                     <div className={`group relative flex h-7 items-center overflow-hidden rounded-[5px] ${active ? "bg-[var(--accent-soft)]" : "hover:bg-[var(--hover)]"}`}>
                       <button

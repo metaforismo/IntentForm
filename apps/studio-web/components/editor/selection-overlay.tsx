@@ -84,6 +84,11 @@ function clearTranslations(elements: readonly HTMLElement[]) {
   for (const element of elements) element.style.translate = "";
 }
 
+function renderedWorldScale(world: HTMLElement, worldRect: DOMRect, fallback: number): number {
+  const measured = world.offsetWidth > 0 ? worldRect.width / world.offsetWidth : fallback;
+  return Number.isFinite(measured) && measured > 0 ? measured : fallback;
+}
+
 export function SelectionOverlay({
   graph,
   screenId,
@@ -130,7 +135,10 @@ export function SelectionOverlay({
       return;
     }
     const worldRect = world.getBoundingClientRect();
-    const scale = getScale();
+    // Smooth camera transitions render between the old and target transforms.
+    // Reading the target view scale here makes the overlay briefly drift or
+    // double in size, so geometry must use the scale actually being painted.
+    const scale = renderedWorldScale(world, worldRect, getScale());
     const rects = elements.map((element) => element.getBoundingClientRect());
     const left = Math.min(...rects.map((rect) => rect.left));
     const top = Math.min(...rects.map((rect) => rect.top));

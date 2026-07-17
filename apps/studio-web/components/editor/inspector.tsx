@@ -207,9 +207,9 @@ export function Inspector({
       role={visible ? "dialog" : undefined}
       aria-modal={visible ? "true" : undefined}
       aria-label="Design inspector"
-      className={`${visible ? "block" : "hidden"} ${desktopVisible ? "xl:block" : "xl:hidden"} absolute inset-y-0 right-0 z-[3] w-[304px] min-h-0 overflow-y-auto overflow-x-hidden border-l border-[var(--line)] bg-[var(--chrome)] text-[var(--t-strong)] shadow-[-24px_0_52px_-32px_var(--shadow-strong)] xl:relative xl:z-[3] xl:w-auto xl:shadow-none`}
+      className={`${visible ? "block" : "hidden"} ${desktopVisible ? "xl:block" : "xl:hidden"} absolute inset-y-0 right-0 z-[3] w-[min(var(--insp-w),calc(100%-16px))] min-h-0 min-w-0 max-w-full overflow-y-auto overflow-x-hidden border-l border-[var(--line)] bg-[var(--chrome)] text-[var(--t-strong)] shadow-[-24px_0_52px_-32px_var(--shadow-strong)] xl:relative xl:z-[3] xl:w-auto xl:shadow-none`}
     >
-      <div className="sticky top-0 z-[2] flex h-11 items-center justify-between border-b border-[var(--line)] bg-[var(--chrome)] pl-3 pr-1.5">
+      <div className="sticky top-0 z-[2] flex h-11 min-w-0 max-w-full items-center justify-between overflow-hidden border-b border-[var(--line)] bg-[var(--chrome)] pl-3 pr-1.5">
         <div className="min-w-0">
           <span className="block truncate text-[11.5px] font-medium text-[var(--ink)]">{selectionCount > 1 ? `${selectionCount} layers` : selectedNode?.intent.label ?? screen.title}</span>
           <span className="block truncate text-[9.5px] text-[var(--faint)]">{selectedNode ? `${nodeNames[selectedNode.kind]}${componentContext ? " · Component instance" : ""}` : selectionCount > 1 ? "Mixed selection" : "Screen"}</span>
