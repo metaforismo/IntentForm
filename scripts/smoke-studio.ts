@@ -1481,6 +1481,104 @@ try {
   });
 
   await runSmokeScenario(browser, {
+    name: "editor panel containment and zoom geometry",
+    context: { viewport: { width: 1536, height: 1024 } },
+    run: async (page) => {
+      await page.addInitScript(() => {
+        localStorage.removeItem("intentform-panel-widths-v3");
+        localStorage.setItem("intentform-panel-widths-v2", JSON.stringify({ rail: -400, inspector: 9_000 }));
+      });
+      await gotoStudio(page, origin);
+      const shell = page.locator(".editor-shell");
+      const renderedWidths = {
+        rail: await shell.getAttribute("data-panel-rail-width"),
+        inspector: await shell.getAttribute("data-panel-inspector-width"),
+      };
+      if (renderedWidths.rail !== "216" || renderedWidths.inspector !== "360") {
+        throw new Error(`Persisted panel widths were not clamped during migration: ${JSON.stringify(renderedWidths)}`);
+      }
+      const migrated = await page.evaluate(() => ({
+        current: JSON.parse(localStorage.getItem("intentform-panel-widths-v3") ?? "null"),
+        legacy: localStorage.getItem("intentform-panel-widths-v2"),
+      }));
+      if (JSON.stringify(migrated.current) !== JSON.stringify({ rail: 216, inspector: 360 }) || migrated.legacy !== null) {
+        throw new Error(`Panel-width migration was not canonical: ${JSON.stringify(migrated)}`);
+      }
+
+      await page.keyboard.press("Escape");
+      const longTitle = "Payment request with an intentionally long localized screen name for containment";
+      const screenName = page.getByLabel("Screen name");
+      await screenName.fill(longTitle);
+      await screenName.press("Enter");
+      const longLabel = page.getByText(longTitle, { exact: true }).first();
+      await longLabel.waitFor();
+      await page.waitForTimeout(420);
+
+      for (const zoom of [1, 1.1, 1.25]) {
+        await page.evaluate((value) => { document.body.style.zoom = String(value); }, zoom);
+        await page.waitForTimeout(80);
+        const geometry = await page.evaluate(() => {
+          const bounds = (selector: string) => {
+            const rect = document.querySelector<HTMLElement>(selector)?.getBoundingClientRect();
+            return rect ? { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width } : null;
+          };
+          const label = [...document.querySelectorAll<HTMLElement>("#editor-structure-panel *")].find((element) =>
+            element.textContent?.trim() === "Payment request with an intentionally long localized screen name for containment"
+            && getComputedStyle(element).textOverflow === "ellipsis");
+          return {
+            shell: bounds(".editor-shell"),
+            rail: bounds("#editor-structure-panel"),
+            canvas: bounds('[data-testid="canvas-viewport"]'),
+            inspector: bounds("#editor-inspector-panel"),
+            label: label ? {
+              right: label.getBoundingClientRect().right,
+              overflow: getComputedStyle(label).textOverflow,
+              panelOverflow: getComputedStyle(document.querySelector<HTMLElement>("#editor-structure-panel")!).overflowX,
+            } : null,
+            documentOverflow: document.documentElement.scrollWidth - window.innerWidth,
+          };
+        });
+        if (!geometry.shell || !geometry.rail || !geometry.canvas || !geometry.inspector || !geometry.label) {
+          throw new Error(`Missing editor geometry at ${zoom * 100}% zoom`);
+        }
+        if (geometry.rail.left < geometry.shell.left - 1 || geometry.inspector.right > geometry.shell.right + 1
+          || geometry.canvas.left < geometry.rail.right - 1 || geometry.canvas.right > geometry.inspector.left + 1) {
+          throw new Error(`Editor regions overlap or escape the shell at ${zoom * 100}%: ${JSON.stringify(geometry)}`);
+        }
+        if (geometry.label.overflow !== "ellipsis" || geometry.label.panelOverflow !== "hidden") {
+          throw new Error(`Long screen label is not contained at ${zoom * 100}%: ${JSON.stringify(geometry.label)}`);
+        }
+        if (geometry.documentOverflow > 1) throw new Error(`Editor introduced ${geometry.documentOverflow}px overflow at ${zoom * 100}% zoom`);
+      }
+      await page.evaluate(() => { document.body.style.zoom = ""; });
+      await page.getByTestId("canvas-node-payment-request.amount").click();
+      await page.getByRole("button", { name: "Fit canvas", exact: true }).click();
+      await page.waitForTimeout(420);
+      const selectionDelta = await page.evaluate(() => {
+        const overlay = document.querySelector<HTMLElement>('[data-testid="selection-overlay"]')?.getBoundingClientRect();
+        const node = document.querySelector<HTMLElement>('[data-testid="canvas-node-payment-request.amount"]')?.getBoundingClientRect();
+        return overlay && node ? {
+          x: Math.abs(overlay.x - node.x),
+          y: Math.abs(overlay.y - node.y),
+          width: Math.abs(overlay.width - node.width),
+          height: Math.abs(overlay.height - node.height),
+        } : null;
+      });
+      if (!selectionDelta || Object.values(selectionDelta).some((delta) => delta > 0.5)) {
+        throw new Error(`Selection overlay drifted after a smooth camera fit: ${JSON.stringify(selectionDelta)}`);
+      }
+      await page.getByRole("button", { name: "Toggle color theme" }).click();
+      const selectColors = await page.getByLabel("Preview device").evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { background: style.backgroundColor, color: style.color, colorScheme: style.colorScheme };
+      });
+      if (selectColors.colorScheme !== "dark" || selectColors.background === "rgb(255, 255, 255)") {
+        throw new Error(`Dark editor select has a non-semantic background: ${JSON.stringify(selectColors)}`);
+      }
+    },
+  });
+
+  await runSmokeScenario(browser, {
     name: "professional inspector appearance authoring",
     run: async (page) => {
       await gotoStudio(page, origin);

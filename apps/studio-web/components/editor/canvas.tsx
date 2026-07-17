@@ -28,6 +28,13 @@ import {
 import { NodePreview, semanticNodeBoxStyle } from "./node-preview";
 import { SelectionOverlay } from "./selection-overlay";
 import {
+  fitWorldRect,
+  translateViewBetweenViewports,
+  usableEditorViewport,
+  type EditorViewportInsets,
+  type EditorViewportRect,
+} from "./editor-viewport";
+import {
   beginInlineTextEdit,
   inlineTextCommitValue,
   loadLatestInlineText,
@@ -88,6 +95,7 @@ interface CanvasStageProps {
     viewport: { x: number; y: number; width: number; height: number };
   } | null;
   profile: DeviceProfile;
+  viewportInsets: EditorViewportInsets;
   apiRef: RefObject<CanvasApi | null>;
   visualStateFor(screenId: string): VisualState;
   frameStatus(screenId: string): FrameStatus;
@@ -163,6 +171,7 @@ export function CanvasStage({
   showDeviceChrome,
   bezelOverlay,
   profile,
+  viewportInsets,
   apiRef,
   visualStateFor,
   frameStatus,
@@ -193,7 +202,7 @@ export function CanvasStage({
   const worldRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<ViewTransform>({ x: 0, y: 0, scale: 0.6 });
   const panSession = useRef<{ pointerId: number; x: number; y: number; view: ViewTransform } | null>(null);
-  const interacted = useRef(false);
+  const safeViewportRef = useRef<EditorViewportRect | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const contextMenuReturnFocus = useRef<HTMLElement | null>(null);
   const renameReturnFocus = useRef<HTMLElement | null>(null);
@@ -216,6 +225,13 @@ export function CanvasStage({
   const [visibleFrameIds, setVisibleFrameIds] = useState<readonly string[]>([selectedScreen]);
   const worldWidth = frameSpatialIndex.worldWidth;
   const worldHeight = profile.height + FRAME_HEADER_WORLD;
+
+  const safeViewport = useCallback(() => {
+    const viewport = viewportRef.current;
+    return viewport
+      ? usableEditorViewport(viewport.clientWidth, viewport.clientHeight, viewportInsets)
+      : null;
+  }, [viewportInsets]);
 
   const refreshFrameVisibility = useCallback((view: ViewTransform) => {
     const viewport = viewportRef.current;
@@ -263,40 +279,33 @@ export function CanvasStage({
   const fitAll = useCallback((smooth = true) => {
     const viewport = viewportRef.current;
     if (!viewport) return;
-    const scale = clampScale(Math.min(
-      (viewport.clientWidth - 150) / worldWidth,
-      (viewport.clientHeight - 130) / worldHeight,
+    const safe = safeViewport();
+    if (!safe) return;
+    safeViewportRef.current = safe;
+    applyView(fitWorldRect(
+      { x: 0, y: 0, width: worldWidth, height: worldHeight },
+      safe,
+      { x: 36, y: 28 },
       1,
-    ));
-    applyView({
-      scale,
-      x: (viewport.clientWidth - worldWidth * scale) / 2,
-      y: (viewport.clientHeight - worldHeight * scale) / 2 + FRAME_HEADER_WORLD * scale * 0.4,
-    }, smooth);
-  }, [applyView, worldHeight, worldWidth]);
+      MIN_SCALE,
+    ), smooth);
+  }, [applyView, safeViewport, worldHeight, worldWidth]);
 
   const fitScreen = useCallback((screenId: string, smooth = true) => {
     const viewport = viewportRef.current;
     const frame = frames.find((item) => item.screen.id === screenId);
     if (!viewport || !frame) return;
-    const compactWorkspace = viewport.clientWidth < 640;
-    const horizontalInset = compactWorkspace ? 40 : 260;
-    const topInset = compactWorkspace ? 104 : 0;
-    const bottomInset = compactWorkspace ? 56 : 0;
-    const availableHeight = viewport.clientHeight - topInset - bottomInset;
-    const scale = clampScale(Math.min(
-      (viewport.clientWidth - horizontalInset) / profile.width,
-      (compactWorkspace ? availableHeight : viewport.clientHeight - 150) / worldHeight,
+    const safe = safeViewport();
+    if (!safe) return;
+    safeViewportRef.current = safe;
+    applyView(fitWorldRect(
+      { x: frame.x, y: 0, width: profile.width, height: worldHeight },
+      safe,
+      { x: safe.width < 640 ? 20 : 56, y: 28 },
       1.1,
-    ));
-    applyView({
-      scale,
-      x: viewport.clientWidth / 2 - (frame.x + profile.width / 2) * scale,
-      y: compactWorkspace
-        ? topInset + (availableHeight - worldHeight * scale) / 2 + FRAME_HEADER_WORLD * scale * 0.4
-        : (viewport.clientHeight - worldHeight * scale) / 2 + FRAME_HEADER_WORLD * scale * 0.4,
-    }, smooth);
-  }, [applyView, frames, profile.width, worldHeight]);
+      MIN_SCALE,
+    ), smooth);
+  }, [applyView, frames, profile.width, safeViewport, worldHeight]);
 
   const zoomAt = useCallback((px: number, py: number, nextScale: number, smooth = false) => {
     const view = viewRef.current;
@@ -311,16 +320,16 @@ export function CanvasStage({
   const zoomBy = useCallback((factor: number) => {
     const viewport = viewportRef.current;
     if (!viewport) return;
-    interacted.current = true;
-    zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, viewRef.current.scale * factor, true);
-  }, [zoomAt]);
+    const safe = safeViewport();
+    zoomAt(safe ? safe.x + safe.width / 2 : viewport.clientWidth / 2, safe ? safe.y + safe.height / 2 : viewport.clientHeight / 2, viewRef.current.scale * factor, true);
+  }, [safeViewport, zoomAt]);
 
   const zoomTo = useCallback((scale: number) => {
     const viewport = viewportRef.current;
     if (!viewport) return;
-    interacted.current = true;
-    zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, scale, true);
-  }, [zoomAt]);
+    const safe = safeViewport();
+    zoomAt(safe ? safe.x + safe.width / 2 : viewport.clientWidth / 2, safe ? safe.y + safe.height / 2 : viewport.clientHeight / 2, scale, true);
+  }, [safeViewport, zoomAt]);
 
   const focusNode = useCallback((nodeId: string, smooth = true) => {
     const viewport = viewportRef.current;
@@ -329,14 +338,15 @@ export function CanvasStage({
     const viewportBounds = viewport.getBoundingClientRect();
     const nodeBounds = element.getBoundingClientRect();
     const view = viewRef.current;
+    const safe = safeViewport();
     applyView({
       ...view,
-      x: view.x + viewportBounds.left + viewportBounds.width / 2 - (nodeBounds.left + nodeBounds.width / 2),
-      y: view.y + viewportBounds.top + viewportBounds.height / 2 - (nodeBounds.top + nodeBounds.height / 2),
+      x: view.x + viewportBounds.left + (safe ? safe.x + safe.width / 2 : viewportBounds.width / 2) - (nodeBounds.left + nodeBounds.width / 2),
+      y: view.y + viewportBounds.top + (safe ? safe.y + safe.height / 2 : viewportBounds.height / 2) - (nodeBounds.top + nodeBounds.height / 2),
     }, smooth);
     element.focus({ preventScroll: true });
     return true;
-  }, [applyView]);
+  }, [applyView, safeViewport]);
 
   const alignSelection = useCallback((action: SelectionAlignment) => {
     const viewport = viewportRef.current;
@@ -376,7 +386,6 @@ export function CanvasStage({
     if (!viewport) return;
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
-      interacted.current = true;
       setContextMenu(null);
       setRename(null);
       const view = viewRef.current;
@@ -414,16 +423,35 @@ export function CanvasStage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile.id, frames.length]);
 
+  const previousSelectedScreen = useRef(selectedScreen);
+  useEffect(() => {
+    if (previousSelectedScreen.current === selectedScreen) return;
+    previousSelectedScreen.current = selectedScreen;
+    fitScreenRef.current(selectedScreen, true);
+  }, [selectedScreen]);
+
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
     const observer = new ResizeObserver(() => {
-      if (!interacted.current) fitScreenRef.current(selectedScreenRef.current, false);
-      else refreshFrameVisibility(viewRef.current);
+      const next = safeViewport();
+      if (!next) return;
+      const previous = safeViewportRef.current;
+      safeViewportRef.current = next;
+      if (previous) applyView(translateViewBetweenViewports(viewRef.current, previous, next), false);
+      else fitScreenRef.current(selectedScreenRef.current, false);
     });
     observer.observe(viewport);
     return () => observer.disconnect();
-  }, [refreshFrameVisibility]);
+  }, [applyView, safeViewport]);
+
+  useLayoutEffect(() => {
+    const next = safeViewport();
+    if (!next) return;
+    const previous = safeViewportRef.current;
+    safeViewportRef.current = next;
+    if (previous) applyView(translateViewBetweenViewports(viewRef.current, previous, next), false);
+  }, [applyView, safeViewport, viewportInsets]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -461,7 +489,6 @@ export function CanvasStage({
   const beginPan = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!panActive && event.button !== 1) return;
     event.preventDefault();
-    interacted.current = true;
     panSession.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, view: viewRef.current };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -617,6 +644,10 @@ export function CanvasStage({
       data-testid="canvas-viewport"
       data-rendered-screen-count={visibleFrames.length}
       data-total-screen-count={frames.length}
+      data-safe-inset-top={viewportInsets.top}
+      data-safe-inset-right={viewportInsets.right}
+      data-safe-inset-bottom={viewportInsets.bottom}
+      data-safe-inset-left={viewportInsets.left}
       className={`editor-viewport absolute inset-0 overflow-hidden ${panActive ? "cursor-grab active:cursor-grabbing" : ""}`}
       onPointerDown={(event) => {
         if (panActive || event.button === 1) {

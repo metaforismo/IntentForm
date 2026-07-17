@@ -345,6 +345,22 @@ html[data-intentform-minimal-ui] .studio-topbar {
 
 .editor-shell button:active:not(:disabled) { transform: scale(.97); }
 .editor-shell button:disabled { cursor: default; }
+.editor-shell input:disabled,
+.editor-shell select:disabled,
+.editor-shell textarea:disabled,
+.editor-shell input[readonly],
+.editor-shell textarea[readonly] {
+  border-color: var(--line);
+  color: var(--faint);
+  background: var(--field);
+  opacity: .72;
+}
+
+html[data-theme="dark"] .editor-shell select { color-scheme: dark; }
+html[data-theme="dark"] .editor-shell select option {
+  color: var(--t-strong);
+  background: var(--field);
+}
 
 .editor-shell button:focus-visible,
 .editor-shell input:focus-visible,
