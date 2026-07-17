@@ -167,6 +167,7 @@ interface ManualEditorProps {
   localProjectSaved: boolean;
   verificationFocus: { key: number; screenId: string; nodeId: string | null; visualState: VisualState } | null;
   agentPreview: { transactionId: string; nodeIds: string[]; changes: number } | null;
+  agentReviewTarget: { key: number; threadId: string } | null;
   onClearAgentPreview(): void;
   onSelectScreen(screenId: string): void;
   onDeviceId(deviceId: DeviceId): void;
@@ -301,6 +302,7 @@ export function ManualEditor({
   localProjectSaved,
   verificationFocus,
   agentPreview,
+  agentReviewTarget,
   onClearAgentPreview,
   onSelectScreen,
   onDeviceId,
@@ -356,6 +358,22 @@ export function ManualEditor({
   const canvasApi = useRef<CanvasApi>(null);
   const previewHistory = useRef<string[]>([]);
   const previewWasOpen = useRef(false);
+  const handledAgentReviewTarget = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!agentReviewTarget || handledAgentReviewTarget.current === agentReviewTarget.key) return;
+    const thread = graph.reviewThreads.find((candidate) => candidate.id === agentReviewTarget.threadId);
+    if (!thread) return;
+    handledAgentReviewTarget.current = agentReviewTarget.key;
+    setReviewDraftAnchor(null);
+    setActiveReviewThreadId(thread.id);
+    setReviewOpen(true);
+    setTool("select");
+    const frame = requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>('[data-testid="review-panel"] textarea, [data-testid="review-panel"] button')?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [agentReviewTarget, graph.reviewThreads]);
 
   useEffect(() => {
     if (guideProjectId.current !== projectId) {

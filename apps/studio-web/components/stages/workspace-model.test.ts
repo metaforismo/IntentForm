@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { VerificationFinding } from "@intentform/verifier";
 import {
   countVerificationFindings,
+  buildPresentation,
   createRepairPreview,
   defaultComparisonProfileIds,
   filterVerificationFindings,
@@ -78,6 +79,27 @@ describe("Code and Verify workspace model", () => {
   it("does not treat toolchain-unavailable entries as build evidence", () => {
     expect(usableLocalPreview({ target: "swiftui", unavailable: true, message: "Xcode missing" })).toBeNull();
     expect(usableLocalPreview(undefined)).toBeNull();
+  });
+
+  it("presents build lifecycle states without treating stale or generated output as verified", () => {
+    expect(buildPresentation(false, undefined, false)).toMatchObject({ state: "disabled", canStart: false });
+    expect(buildPresentation(true, undefined, false)).toMatchObject({ state: "not-run", canStart: true });
+    expect(buildPresentation(true, { target: "swiftui", unavailable: true, message: "Xcode missing" }, false))
+      .toMatchObject({ state: "unavailable", canStart: false });
+    const base = {
+      target: "browser" as const,
+      evidence: "built" as const,
+      freshness: "fresh" as const,
+      buildStatus: "passed" as const,
+      buildState: "passed" as const,
+      expectedBinding: {} as never,
+      manifest: null,
+      priorValidEvidence: null,
+    };
+    expect(buildPresentation(true, { ...base, phase: "building" }, false)).toMatchObject({ state: "running", canCancel: true });
+    expect(buildPresentation(true, { ...base, phase: "ready" }, false)).toMatchObject({ state: "current", label: "Evidence current" });
+    expect(buildPresentation(true, { ...base, phase: "ready", freshness: "stale", buildState: "stale" }, false))
+      .toMatchObject({ state: "stale", canStart: true });
   });
 
   it("finds generated source lines case-insensitively without matching an empty query", () => {

@@ -30,7 +30,7 @@ import { WebImportDialog } from "../web-import-dialog";
 import { PhonePreview } from "./phone-preview";
 import { SourceViewer } from "./source-viewer";
 import { sourceLanguage, sourceNodeReferences } from "./source-viewer-model";
-import { localPreviewTarget, matchingCodeLineNumbers, usableLocalPreview } from "./workspace-model";
+import { buildPresentation, localPreviewTarget, matchingCodeLineNumbers, usableLocalPreview } from "./workspace-model";
 
 type EvidenceTab = "build" | "layout" | "accessibility" | "design-quality" | "screenshot" | "logs";
 
@@ -86,8 +86,10 @@ export function OutputsStage({
   const [webImportOpen, setWebImportOpen] = useState(false);
   const webScreen = graph.screens.find((screen) => screen.id === selectedScreen) ?? graph.screens[0];
   const previewTarget = localPreviewTarget(outputTarget);
-  const previewEvidence = usableLocalPreview(localPreviews.byTarget[previewTarget]);
+  const previewEntry = localPreviews.byTarget[previewTarget];
+  const previewEvidence = usableLocalPreview(previewEntry);
   const outputFreshness = previewEvidence?.freshness ?? "not-run";
+  const build = buildPresentation(localPreviews.enabled, previewEntry, localPreviews.pendingTarget === previewTarget);
   const files = output?.files ?? [];
   const selectedLines = selectedCode?.content.split("\n") ?? [];
   const matchingLines = useMemo(() => matchingCodeLineNumbers(selectedLines, codeQuery), [codeQuery, selectedLines]);
@@ -204,9 +206,9 @@ export function OutputsStage({
         <div className="flex min-w-0 items-center gap-2 text-[9px] text-[var(--muted)]">
           <span className="hidden truncate md:inline">{scenarioLabel}</span>
           <span className="hidden font-mono lg:inline" aria-live="polite">{outputTarget === "react" && reactOutput ? `${previewStatus === "ready" ? "Current" : previewStatus === "error" ? "Failed" : "Syncing"} · ${reactOutput.fingerprint}` : output ? `Generated · ${output.fingerprint}` : "Not generated"}</span>
-          <span className={`rounded px-1.5 py-1 font-semibold ${outputFreshness === "fresh" ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--warn-soft)] text-[var(--warn)]"}`}>{outputFreshness}</span>
+          <span data-testid="code-build-state" data-state={build.state} className={`rounded px-1.5 py-1 font-semibold ${build.state === "current" ? "bg-[var(--success-soft)] text-[var(--success)]" : build.state === "failed" ? "bg-[var(--danger-soft)] text-[var(--danger)]" : "bg-[var(--warn-soft)] text-[var(--warn)]"}`}>{build.label}</span>
           <span className="hidden font-mono lg:inline">{output?.fingerprint ?? "not-generated"}</span>
-          <button type="button" disabled={!localPreviews.enabled || localPreviews.pendingTarget === previewTarget} onClick={() => void localPreviews.mutate("start", previewTarget)} className="inline-flex h-7 items-center gap-1 rounded bg-[var(--accent-deep)] px-2.5 font-semibold text-white disabled:opacity-40"><Play size={11} /> Build</button>
+          {build.canCancel ? <button type="button" disabled={localPreviews.pendingTarget === previewTarget} onClick={() => void localPreviews.mutate("cancel", previewTarget)} className="inline-flex h-7 items-center gap-1 rounded border border-[var(--warn)]/35 px-2.5 font-semibold text-[var(--warn)] disabled:opacity-40">Cancel build</button> : <button type="button" disabled={!build.canStart} onClick={() => void localPreviews.mutate(previewEvidence ? "restart" : "start", previewTarget)} className="inline-flex h-7 items-center gap-1 rounded bg-[var(--accent-deep)] px-2.5 font-semibold text-white disabled:opacity-40"><Play size={11} /> {previewEvidence ? "Rebuild" : "Build"}</button>}
           <button type="button" disabled={!selectedCode} onClick={copyGeneratedFile} title={selectedCode && output ? `Copy ${outputTarget} · ${selectedCode.path} · ${output.fingerprint}` : undefined} className="inline-flex h-7 items-center gap-1 rounded border border-[var(--line)] px-2 font-semibold disabled:opacity-40">{copied ? <CheckCircle size={11} /> : <Copy size={11} />}{copied ? `Copied ${outputTarget}` : "Copy file"}</button>
           <button type="button" disabled={!selectedCode} onClick={openGeneratedFile} className="inline-flex h-7 items-center gap-1 rounded border border-[var(--line)] px-2 font-semibold disabled:opacity-40"><ArrowSquareOut size={11} /> Open externally</button>
           {outputTarget === "web" ? <button type="button" onClick={() => setWebImportOpen(true)} className="inline-flex h-7 items-center gap-1 rounded border border-[var(--line)] px-2 font-semibold"><UploadSimple size={11} /> Import HTML/CSS</button> : null}

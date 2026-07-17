@@ -46,15 +46,21 @@ if (localTestProjectDir) {
   const packId = "fixture.browser";
   const packRoot = join(localTestProjectDir, "bezel-packs", packId);
   mkdirSync(packRoot, { recursive: true });
-  writeFileSync(join(localTestProjectDir, "graph.json"), JSON.stringify(demoGraph));
-  const localProjectFingerprint = graphFingerprint(demoGraph);
-  createHistoryBranch(localTestProjectDir, "agent-copy", demoGraph, localProjectFingerprint, "agent");
+  const localGraph = structuredClone(demoGraph);
+  localGraph.reviewThreads = [{
+    id: "review.agent-link",
+    anchor: { screenId: "payment-request", nodeId: "payment-request.confirm", x: 0.5, y: 0.5 },
+    messages: [{ id: "review.agent-link.message", author: { id: "reviewer", name: "Product review", kind: "human" }, createdAt: new Date().toISOString(), body: "Refine this action before approval.", mentions: [] }],
+  }];
+  writeFileSync(join(localTestProjectDir, "graph.json"), JSON.stringify(localGraph));
+  const localProjectFingerprint = graphFingerprint(localGraph);
+  createHistoryBranch(localTestProjectDir, "agent-copy", localGraph, localProjectFingerprint, "agent");
   applyHistoryBranchPatch(localTestProjectDir, "agent-copy", {
     id: "smoke-agent-label",
     rationale: "Review an isolated agent label",
     operations: [{ op: "set-label", target: "payment-request.confirm", label: "Confirm securely" }],
   }, localProjectFingerprint, "agent");
-  createHistoryBranch(localTestProjectDir, "conflict-copy", demoGraph, localProjectFingerprint, "agent");
+  createHistoryBranch(localTestProjectDir, "conflict-copy", localGraph, localProjectFingerprint, "agent");
   applyHistoryBranchPatch(localTestProjectDir, "conflict-copy", {
     id: "smoke-conflicting-label",
     rationale: "Exercise path-level conflict review",
@@ -72,7 +78,7 @@ if (localTestProjectDir) {
     rationale: "Review the primary action copy",
     operations: [{ op: "set-label", target: "payment-request.confirm", label: "Confirm after review" }],
   };
-  const reviewPreviewFingerprint = graphFingerprint(applyGraphPatch(demoGraph, reviewPatch));
+  const reviewPreviewFingerprint = graphFingerprint(applyGraphPatch(localGraph, reviewPatch));
   writeFileSync(join(localTestProjectDir, "transaction-reviews.json"), JSON.stringify({
     version: 1,
     entries: [{
@@ -82,6 +88,8 @@ if (localTestProjectDir) {
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
       resolvedAt: null,
+      commentId: "review.agent-link",
+      historyOperationId: null,
       baseFingerprint: localProjectFingerprint,
       previewFingerprint: reviewPreviewFingerprint,
       status: "previewed",
@@ -770,14 +778,47 @@ try {
       const agentPanel = page.getByRole("dialog", { name: "Agent review" });
       await agentPanel.getByText("Local MCP agent", { exact: true }).waitFor();
       await agentPanel.getByText("No shell · no filesystem escape · no network", { exact: true }).waitFor();
+      const identity = agentPanel.getByTestId("agent-context-identity");
+      const identityText = await identity.textContent();
+      for (const field of ["Project", "Target / file", "Page", "Node", "Device / state", "Fingerprint"]) {
+        if (!identityText?.includes(field)) throw new Error(`Agent context identity omitted ${field}`);
+      }
+      const selectedIdentity = identity.getByText("Node", { exact: true }).locator("xpath=following-sibling::dd[1]");
+      if ((await selectedIdentity.textContent())?.trim() === "No selection") throw new Error("Agent context identity omitted the current node");
+      await identity.getByText(/device:neutral\.phone\.compact · idle/).waitFor();
+      const fingerprintIdentity = identity.getByText("Fingerprint", { exact: true }).locator("xpath=following-sibling::dd[1]");
+      if (!/^[a-f0-9]{8}$/.test((await fingerprintIdentity.textContent())?.trim() ?? "")) throw new Error("Agent context identity omitted the graph fingerprint");
       await agentPanel.getByText("Review the primary action copy", { exact: true }).waitFor();
       await agentPanel.getByText("payment-request.confirm.intent.label", { exact: true }).waitFor();
       await agentPanel.getByText("get graph", { exact: true }).waitFor();
       await agentPanel.getByText("succeeded", { exact: true }).waitFor();
+      await agentPanel.getByRole("button", { name: "Open linked comment · review.agent-link" }).click();
+      const linkedReview = page.getByTestId("review-panel");
+      await linkedReview.getByText("Refine this action before approval.", { exact: true }).waitFor();
+      await page.getByText(/Agent preview.*canonical graph unchanged/).waitFor();
+      await page.getByLabel("Close review comments").click();
+      await page.getByRole("button", { name: "Ask agent" }).click();
       await agentPanel.getByRole("button", { name: "Preview on canvas" }).click();
       await page.getByTestId("canvas-node-payment-request.confirm").waitFor();
+      const agentTargetLabel = page.getByTestId("semantic-inspector").getByLabel("Label", { exact: true });
+      await agentTargetLabel.fill("Unsaved local draft");
+      await agentTargetLabel.press("Enter");
       await page.getByRole("button", { name: "Ask agent" }).click();
-      await page.getByRole("dialog", { name: "Agent review" }).getByRole("button", { name: "Reject" }).click();
+      const reopenedAgentPanel = page.getByRole("dialog", { name: "Agent review" });
+      await reopenedAgentPanel.getByText(/targets an older graph fingerprint/).waitFor();
+      if (!await reopenedAgentPanel.getByRole("button", { name: "Commit" }).isDisabled()) throw new Error("Agent commit remained enabled over unsaved Studio edits");
+      await page.getByRole("button", { name: "Close agent review" }).click();
+      await page.getByRole("button", { name: "Undo" }).click();
+      await page.getByRole("button", { name: "Ask agent" }).click();
+      const commitAgentChange = page.getByRole("dialog", { name: "Agent review" }).getByRole("button", { name: "Commit" });
+      await page.waitForFunction(() => [...document.querySelectorAll<HTMLButtonElement>('button')].some((button) => button.textContent?.trim() === "Commit" && !button.disabled));
+      if (await commitAgentChange.isDisabled()) throw new Error("Agent commit did not recover after resolving the Studio fingerprint divergence");
+      await commitAgentChange.click();
+      await page.getByText("No transaction is waiting for review.", { exact: false }).waitFor();
+      await page.getByText("Last committed decision", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Preview revert" }).click();
+      await page.getByText(/inverse changes/).waitFor();
+      await page.getByRole("button", { name: "Apply revert" }).click();
       await page.getByText("No transaction is waiting for review.", { exact: false }).waitFor();
       await page.getByRole("button", { name: "Close agent review" }).click();
       const agentTrigger = page.getByRole("button", { name: "Ask agent" });
@@ -796,8 +837,8 @@ try {
       await historyPanel.getByTestId("history-branch-conflict-copy").getByRole("button", { name: "Preview", exact: true }).click();
       await historyPanel.getByTestId("history-merge-conflicts").getByText(/both-modified.*intent\.label/).waitFor();
       await page.getByRole("button", { name: "Close history drawer" }).click();
-      await page.locator("#studio-workspace").getByRole("button", { name: "Build", exact: true }).click();
-      await page.getByText("fresh", { exact: true }).waitFor({ timeout: 30_000 });
+      await page.locator("#studio-workspace").getByRole("button", { name: /^(Build|Rebuild)$/ }).click();
+      await page.getByTestId("code-build-state").getByText("Evidence current", { exact: true }).waitFor({ timeout: 30_000 });
       await page.getByRole("button", { name: /Evidence and diagnostics/ }).click();
       await page.getByText(/ready · render-verified|ready · built/).waitFor();
       await page.screenshot({ path: join(root, "output/playwright/continuous-preview-evidence.png"), fullPage: true });
@@ -805,6 +846,25 @@ try {
       await page.getByRole("heading", { name: /Verification ·/ }).waitFor();
       await page.getByRole("heading", { name: "Exact evidence" }).waitFor();
       await page.getByText(/react · Neutral compact phone · [a-f0-9]{8}/).waitFor();
+    },
+  });
+
+  if (!remoteOrigin) await runSmokeScenario(browser, {
+    name: "disconnected agent recovery state",
+    allowConsoleError: (message) => message.text().includes("Failed to load resource: net::ERR_FAILED")
+      && message.location().url.includes("/api/project/agent-activity"),
+    allowRequestFailure: (request) => request.failure()?.errorText === "net::ERR_FAILED"
+      && request.url().includes("/api/project/agent-activity"),
+    run: async (page) => {
+      await gotoStudio(page, origin, "/");
+      await page.locator("header").getByRole("button", { name: "Open project" }).click();
+      await page.waitForURL(`${origin}/studio`);
+      await page.route("**/api/project/agent-activity*", (route) => route.abort("failed"));
+      await page.getByRole("button", { name: "Ask agent" }).click();
+      const panel = page.getByRole("dialog", { name: "Agent review" });
+      await panel.getByText("Disconnected · reconnect required", { exact: true }).waitFor();
+      await panel.getByRole("button", { name: "Retry" }).waitFor();
+      await page.unroute("**/api/project/agent-activity*");
     },
   });
 
@@ -1988,6 +2048,8 @@ try {
 
   await runSmokeScenario(browser, {
     name: "editor transactions and repair history",
+    allowRequestFailure: (request) => request.failure()?.errorText === "net::ERR_ABORTED"
+      && request.url().includes("/api/repair"),
     run: async (transactionPage) => {
       await gotoStudio(transactionPage, origin);
 
@@ -2055,6 +2117,17 @@ try {
       }
       await transactionPage.getByRole("button", { name: "Return to Verify" }).click();
       await transactionPage.getByRole("button", { name: /primary action must remain persistently reachable/i }).click();
+      await transactionPage.route("**/api/repair", async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        try { await route.continue(); } catch { /* The request was intentionally cancelled. */ }
+      });
+      await transactionPage.getByRole("button", { name: "Preview repair" }).click();
+      await transactionPage.getByRole("button", { name: "Cancel repair" }).click();
+      const workspaceStatusTrigger = transactionPage.getByRole("button", { name: "Show workspace status" });
+      if (await workspaceStatusTrigger.getAttribute("aria-expanded") !== "true") await workspaceStatusTrigger.click();
+      await transactionPage.getByRole("region", { name: "Workspace status" }).getByText(/Repair planning cancelled.*No project changes were applied/i).waitFor();
+      if (await transactionPage.getByLabel("Repair preview").count() !== 0) throw new Error("Cancelling repair planning leaked a preview");
+      await transactionPage.unroute("**/api/repair");
       await transactionPage.getByRole("button", { name: "Preview repair" }).click();
       const repairPreview = transactionPage.getByLabel("Repair preview");
       await repairPreview.waitFor();
