@@ -41,6 +41,7 @@ export interface SmokeScenario {
   name: string;
   context?: BrowserContextOptions;
   allowConsoleError?(message: ConsoleMessage): boolean;
+  allowPageError?(error: Error): boolean;
   allowRequestFailure?(request: Request): boolean;
   run(page: Page, context: BrowserContext): Promise<void>;
 }
@@ -63,7 +64,9 @@ export async function runSmokeScenario(browser: Browser, scenario: SmokeScenario
         failures.push(consoleFailure(message));
       }
     });
-    page.on("pageerror", (error) => failures.push(`page error: ${redact(error.message)}`));
+    page.on("pageerror", (error) => {
+      if (!scenario.allowPageError?.(error)) failures.push(`page error: ${redact(error.message)}`);
+    });
     page.on("requestfailed", (request) => {
       if (!scenario.allowRequestFailure?.(request)) failures.push(requestFailure(request));
     });

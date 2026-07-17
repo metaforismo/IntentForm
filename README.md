@@ -14,7 +14,9 @@
 
 IntentForm is an open-source, local-first design environment where people and coding agents edit the same validated Semantic Interface Graph. It compiles that graph into readable React, responsive Web, Expo, and SwiftUI, then verifies each target against current evidence instead of treating generation as proof.
 
-![IntentForm project launcher with local projects, agent status, and working examples](docs/assets/readme/launcher.png)
+![IntentForm showing the Aster Sound semantic source across synchronized desktop, tablet, and phone frames](docs/assets/readme/aster-showcase.png)
+
+**One-minute version:** edit intent directly on the canvas, let an agent propose a bounded semantic transaction, review the exact diff, compile the accepted graph into Web, React, Expo, or SwiftUI, and verify each target against evidence bound to the current fingerprint.
 
 ## Why IntentForm exists
 
@@ -31,6 +33,8 @@ Agent transactions ─┘              │
 ```
 
 Generated files are integration artifacts, not the source of truth. Every accepted mutation is schema-validated, fingerprint-bound, attributable, reversible, and represented as a semantic diff.
+
+![IntentForm project launcher with local projects, agent status, and working examples](docs/assets/readme/launcher.png)
 
 ## Product today
 
@@ -56,6 +60,21 @@ The product has three primary workspaces instead of a generation wizard:
 ![IntentForm Design workspace with semantic layers, direct selection, prototype flow, and inspector](docs/assets/readme/design-workspace.png)
 
 The editor chrome is deliberately neutral. Blue is reserved for selection and editing, green for connected or verified state, and the authored project keeps its own visual identity.
+
+## Judge demo
+
+The public replay path takes about four minutes and requires no login, API key, account, or model call:
+
+1. Open [Judge Mode](https://intentform-amber.vercel.app/studio?judge=1&step=design).
+2. Inspect the validated Verdant Pay graph and make one semantic canvas edit.
+3. Continue to **Code** and inspect the generated target files and fingerprint.
+4. Continue to **Verify**, preview the bounded repair, apply it, and rerun the finding.
+5. Open submission readiness to distinguish live checks from owner-supplied video and Devpost fields.
+6. Reset or exit; Judge Mode never changes the durable project catalog.
+
+For the richer product tour, open **Examples → Aster Sound**. It includes original graph-native artwork, desktop/tablet/phone frames, components, token modes, prototype navigation, loading/empty/error/success states, and a comment linked to an agent transaction.
+
+![Aster Sound review thread with a fingerprint-bound Codex transaction linked to the selected playback flow](docs/assets/readme/agent-review.png)
 
 ## Quick start
 
@@ -211,6 +230,17 @@ Current high-value work still includes:
 - a deterministic Compose backend;
 - multi-user presence and hosted verification workers;
 - continuing canvas-to-output layout fidelity work across font metrics and platform-native measurement.
+
+## OpenAI Build Week
+
+IntentForm was developed for the 2026 OpenAI Build Week Developer Tools track. The work is intentionally split between probabilistic judgment and deterministic product infrastructure:
+
+- **Codex** accelerated implementation, repository-wide audits, focused refactors, test authoring, browser/native verification, failure diagnosis, and release review.
+- **GPT-5.6** is used only where ambiguity is useful: interpreting a brief or proposing a constrained repair. Its output must satisfy the typed schema and graph invariants before it can become a reviewable transaction.
+- **Deterministic code** owns migrations, fingerprints, diffs, compilers, evidence binding, history, and rollback. GPT-5.6 does not emit the production source files.
+- **Human decisions** retained authority over product scope, interaction and visual direction, architecture boundaries, acceptance criteria, transaction approval, and every external publication step.
+
+The dated Git history preserves the build sequence from the canonical graph and compilers through the professional editor, durable catalog, Judge Mode, exact Code/Verify journeys, and Aster showcase. The public demo video is **not published yet**; it will be linked here after the owner records and approves the final sub-three-minute walkthrough. No Devpost submission or release is performed by repository automation.
 
 ## Contributing
 

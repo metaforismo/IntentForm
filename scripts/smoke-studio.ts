@@ -454,6 +454,7 @@ try {
       await reviewPanel.getByText(/Keep the primary playback action reachable/i).click();
       await reviewPanel.getByText(/fingerprint-bound persistent placement change/i).waitFor();
       await reviewPanel.getByText("transaction transaction.aster-player-placement", { exact: true }).waitFor();
+      await showcasePage.screenshot({ path: join(root, "output/playwright/aster-sound-agent-review.png"), fullPage: true });
       await showcasePage.getByLabel("Close review comments").click();
 
       await showcasePage.getByRole("button", { name: /^Library/ }).first().click();
@@ -473,13 +474,18 @@ try {
       }
       const webPreview = showcaseWebFrame.contentFrame();
       await webPreview.locator("main[data-screen-id='player']").waitFor();
+      await showcasePage.screenshot({ path: join(root, "output/playwright/aster-sound-code.png"), fullPage: true });
       await showcasePage.getByRole("button", { name: "Verification" }).click();
       await showcasePage.getByRole("heading", { name: /Verification ·/ }).waitFor();
+      await showcasePage.screenshot({ path: join(root, "output/playwright/aster-sound-verify.png"), fullPage: true });
     },
   });
 
   await runSmokeScenario(browser, {
     name: "deterministic Judge Mode and submission readiness",
+    allowPageError: (error) => Boolean(remoteOrigin)
+      && error.message.includes("Failed to read the 'cookie' property from 'Document'")
+      && error.message.includes("sandboxed and lacks the 'allow-same-origin' flag"),
     run: async (judgePage) => {
       await judgePage.route("**/api/readiness", (route) => route.fulfill({
         status: 200,
@@ -527,6 +533,8 @@ try {
       await judgePage.getByRole("button", { name: "Verification" }).and(judgePage.locator('[aria-current="page"]')).waitFor();
       await judgePage.reload({ waitUntil: "networkidle" });
       await judgePage.getByTestId("judge-mode-panel").getByRole("button", { name: /^3\. Verify and repair/ }).and(judgePage.locator('[aria-current="step"]')).waitFor();
+      await mkdir(join(root, "output/playwright"), { recursive: true });
+      await judgePage.screenshot({ path: join(root, "output/playwright/studio-judge-mode.png"), fullPage: true });
 
       await judgePage.getByTestId("judge-mode-panel").getByRole("button", { name: "Reset" }).click();
       await judgePage.waitForURL(`${origin}/studio?judge=1&step=design`);
