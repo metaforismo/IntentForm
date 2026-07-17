@@ -46,9 +46,9 @@ export function ReviewPanel({
   };
 
   return (
-    <aside data-testid="review-panel" aria-label="Review comments" className="absolute right-3 top-14 z-[8] flex max-h-[calc(100%-72px)] w-[320px] flex-col overflow-hidden rounded-[8px] border border-[var(--line)] bg-[var(--if-app)] text-[var(--if-text)] shadow-[0_20px_60px_rgba(0,0,0,.38)]">
+    <aside data-testid="review-panel" aria-label="Review comments" className="if-editor-surface absolute right-3 top-14 z-[8] flex max-h-[calc(100%-72px)] w-[min(320px,calc(100%-24px))] flex-col overflow-hidden rounded-[8px] text-[var(--if-text)] shadow-[var(--if-shadow-menu)]">
       <header className="flex h-11 shrink-0 items-center justify-between border-b border-[var(--line)] px-3">
-        <div className="flex items-center gap-2"><ChatCircle size={14} /><strong className="text-[11.5px] font-medium">Review</strong><span className="rounded-[4px] bg-[var(--hover)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--faint)]">{graph.reviewThreads.filter((thread) => !thread.resolvedAt).length} open</span></div>
+        <div className="flex items-center gap-2"><ChatCircle size={14} /><strong className="text-[11.5px] font-medium">Review</strong><span className="if-editor-badge bg-[var(--if-panel-alt)] font-mono text-[var(--faint)]">{graph.reviewThreads.filter((thread) => !thread.resolvedAt).length} open</span></div>
         <button type="button" aria-label="Close review comments" onClick={onClose} className="grid size-7 place-items-center rounded-[5px] text-[var(--muted)] hover:bg-[var(--hover)]"><X size={13} /></button>
       </header>
 

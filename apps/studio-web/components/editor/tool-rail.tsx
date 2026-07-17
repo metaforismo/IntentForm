@@ -36,7 +36,7 @@ interface ToolRailProps {
   onMinimalUi(): void;
 }
 
-const quietButton = "grid size-8 place-items-center rounded-[6px] text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]";
+const quietButton = "if-editor-icon grid size-8 place-items-center";
 
 export function ToolRail({
   tool,
@@ -62,7 +62,7 @@ export function ToolRail({
     const Icon = icon;
     const active = tool === id && !(id === "select" && spaceHeld);
     return (
-      <button key={id} type="button" title={label} aria-label={label} aria-pressed={tool === id} onClick={() => onTool(id)} className={`${quietButton} ${active || (id === "hand" && spaceHeld) ? "bg-[var(--accent)] text-white hover:bg-[var(--accent)] hover:text-white" : ""}`}>
+      <button key={id} type="button" title={label} aria-label={label} aria-pressed={tool === id} data-state={active || (id === "hand" && spaceHeld) ? "active" : "idle"} onClick={() => onTool(id)} className={quietButton}>
         <Icon size={15} weight={active ? "fill" : "regular"} />
       </button>
     );
@@ -75,7 +75,7 @@ export function ToolRail({
         {toolButton("hand", "Pan", Hand)}
         {toolButton("comment", "Add comment", ChatCircle)}
         <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
-          <button type="button" title="Insert semantic component" aria-label="Insert component" aria-expanded={insertOpen} onClick={onInsert} className={`${quietButton} ${insertOpen ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : ""}`}>
+          <button type="button" title="Insert semantic component" aria-label="Insert component" aria-expanded={insertOpen} data-state={insertOpen ? "active" : "idle"} onClick={onInsert} className={quietButton}>
             <Plus size={15} weight="bold" />
           </button>
           {insertMenu}
@@ -85,10 +85,10 @@ export function ToolRail({
         <button type="button" title="Redo" aria-label="Redo" disabled={!canRedo} onClick={onRedo} className={`${quietButton} disabled:opacity-25`}><ArrowClockwise size={14} /></button>
       </div>
       <div className="mt-auto flex flex-col items-center gap-1">
-        <button type="button" title="Pages and layers · ⌥L" aria-label="Open pages and layers" aria-pressed={structureOpen} onClick={onStructure} className={`${quietButton} ${structureOpen ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : ""}`}><TreeStructure size={15} weight={structureOpen ? "fill" : "regular"} /></button>
-        <button type="button" title="Design inspector · ⌥I" aria-label="Toggle design inspector" aria-pressed={inspectorOpen} onClick={onInspector} className={`${quietButton} ${inspectorOpen ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : ""}`}><Selection size={15} weight={inspectorOpen ? "fill" : "regular"} /></button>
+        <button type="button" title="Pages and layers · ⌥L" aria-label="Open pages and layers" aria-pressed={structureOpen} data-state={structureOpen ? "active" : "idle"} onClick={onStructure} className={quietButton}><TreeStructure size={15} weight={structureOpen ? "fill" : "regular"} /></button>
+        <button type="button" title="Design inspector · ⌥I" aria-label="Toggle design inspector" aria-pressed={inspectorOpen} data-state={inspectorOpen ? "active" : "idle"} onClick={onInspector} className={quietButton}><Selection size={15} weight={inspectorOpen ? "fill" : "regular"} /></button>
         <button type="button" title="Commands · ⌘K" aria-label="Open command menu" aria-expanded={commandOpen} onClick={onCommands} className={quietButton}><Command size={15} /></button>
-        <button type="button" title={`${minimalUi ? "Exit" : "Enter"} minimal UI · ⌘\\`} aria-label="Toggle minimal UI" aria-pressed={minimalUi} onClick={onMinimalUi} className={`${quietButton} ${minimalUi ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : ""}`}><FrameCorners size={15} /></button>
+        <button type="button" title={`${minimalUi ? "Exit" : "Enter"} minimal UI · ⌘\\`} aria-label="Toggle minimal UI" aria-pressed={minimalUi} data-state={minimalUi ? "active" : "idle"} onClick={onMinimalUi} className={quietButton}><FrameCorners size={15} /></button>
       </div>
     </aside>
   );

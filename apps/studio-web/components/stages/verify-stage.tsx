@@ -108,7 +108,7 @@ export function VerifyStage({
       : `${counts.error} errors · ${counts.warning} warnings`;
 
   return (
-    <div className="mx-auto grid h-full min-h-[680px] max-w-[1500px] grid-rows-[auto_minmax(0,1fr)] overflow-hidden border border-[var(--line)] bg-[var(--panel)]">
+    <div data-testid="verify-workspace" className="if-editor-surface mx-auto grid h-full min-h-[680px] max-w-[1500px] grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
       <header className="border-b border-[var(--line)] px-3 py-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0"><h2 className="text-sm font-semibold text-[var(--ink)]">Verification · {graph.product.name}</h2><p className="mt-0.5 truncate text-[10px] text-[var(--muted)]">{verification.scenario.target} · {scenario.label} · {sourceFingerprint}</p></div>
@@ -116,8 +116,8 @@ export function VerifyStage({
         </div>
         <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5" aria-label="Verification filters">
           <Funnel size={12} className="shrink-0 text-[var(--faint)]" />
-          {(["error", "warning", "info"] as const).map((severity) => <button key={severity} type="button" aria-pressed={severities.has(severity)} onClick={() => toggleSeverity(severity)} className={`h-7 shrink-0 rounded border px-2 text-[9px] font-semibold capitalize ${severities.has(severity) ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-text)]" : "border-[var(--line)] text-[var(--muted)]"}`}>{severity}s · {counts[severity]}</button>)}
-          <button type="button" aria-pressed={showSuppressed} onClick={() => setShowSuppressed((value) => !value)} className={`h-7 shrink-0 rounded border px-2 text-[9px] font-semibold ${showSuppressed ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-text)]" : "border-[var(--line)] text-[var(--muted)]"}`}>Suppressed · {counts.suppressed}</button>
+          {(["error", "warning", "info"] as const).map((severity) => <button key={severity} type="button" aria-pressed={severities.has(severity)} data-state={severities.has(severity) ? "active" : "idle"} onClick={() => toggleSeverity(severity)} className="if-editor-filter h-7 shrink-0 px-2 text-[9px] font-semibold capitalize">{severity}s · {counts[severity]}</button>)}
+          <button type="button" aria-pressed={showSuppressed} data-state={showSuppressed ? "active" : "idle"} onClick={() => setShowSuppressed((value) => !value)} className="if-editor-filter h-7 shrink-0 px-2 text-[9px] font-semibold">Suppressed · {counts.suppressed}</button>
           <select aria-label="Verification device" value={scenarioId} onChange={(event) => setScenarioId(event.target.value as ScenarioId)} className="select-control h-7 min-h-0 max-w-full text-[9px] sm:max-w-48">{Object.entries(scenarios).map(([id, item]) => <option key={id} value={id}>{item.label}</option>)}</select>
           <select aria-label="Accessibility profile filter" value={profileId} onChange={(event) => setProfileId(event.target.value)} className="select-control h-7 min-h-0 max-w-full text-[9px] sm:max-w-48"><option value="all">All accessibility profiles</option>{ACCESSIBILITY_PROFILES.map((profile) => <option key={profile.id} value={profile.id}>{profile.id} · {profile.locale} · {Math.round(profile.textScale * 100)}%</option>)}</select>
           <select aria-label="Verification category filter" value={category} onChange={(event) => setCategory(event.target.value as "all" | VerificationCategory)} className="select-control h-7 min-h-0 max-w-full text-[9px] sm:max-w-48"><option value="all">All categories</option><option value="design-quality">Design quality</option><option value="accessibility">Accessibility</option><option value="build">Build evidence</option><option value="semantic">Semantic intent</option></select>

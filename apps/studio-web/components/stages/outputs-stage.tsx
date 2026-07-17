@@ -196,10 +196,10 @@ export function OutputsStage({
   };
 
   return (
-    <div className="relative mx-auto grid h-full min-h-[680px] max-w-[1600px] grid-rows-[42px_minmax(0,1fr)_auto] overflow-hidden border border-[var(--line)] bg-[var(--panel)]">
+    <div data-testid="code-workspace" className="if-editor-surface relative mx-auto grid h-full min-h-[680px] max-w-[1600px] grid-rows-[42px_minmax(0,1fr)_auto] overflow-hidden">
       <header className="relative col-span-full flex min-w-0 items-center justify-between gap-3 border-b border-[var(--line)] px-2">
         <div className="flex items-center gap-1" role="group" aria-label="Output target">
-          {(["web", "react", "expo", "swiftui"] as const).map((target) => <button key={target} type="button" aria-pressed={outputTarget === target} onClick={() => { setOutputTarget(target); setOutputFilePath(null); }} className={`h-7 rounded px-2.5 text-[10px] font-semibold capitalize ${outputTarget === target ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>{target}</button>)}
+          {(["web", "react", "expo", "swiftui"] as const).map((target) => <button key={target} type="button" aria-pressed={outputTarget === target} data-state={outputTarget === target ? "active" : "idle"} onClick={() => { setOutputTarget(target); setOutputFilePath(null); }} className="if-editor-segment h-7 px-2.5 text-[10px] font-semibold capitalize">{target}</button>)}
         </div>
         <div className="flex min-w-0 items-center gap-2 text-[9px] text-[var(--muted)]">
           <span className="hidden truncate md:inline">{scenarioLabel}</span>
