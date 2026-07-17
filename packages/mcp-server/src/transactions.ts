@@ -23,6 +23,7 @@ interface TransactionRecord {
   patch: GraphPatch | null;
   previewFingerprint: string | null;
   transport: "stdio" | "http";
+  commentId: string | null;
 }
 
 function publicRecord(record: TransactionRecord) {
@@ -34,6 +35,7 @@ function publicRecord(record: TransactionRecord) {
     expiresAt: record.expiresAt,
     status: record.patch ? "previewed" as const : "open" as const,
     previewFingerprint: record.previewFingerprint,
+    commentId: record.commentId,
   };
 }
 
@@ -48,9 +50,9 @@ export class SemanticTransactionService {
     this.ttlMs = ttlMs;
   }
 
-  begin(projectDir: string, ownerId: string, expectedFingerprint: string, rationale: string, transport: "stdio" | "http" = "stdio") {
+  begin(projectDir: string, ownerId: string, expectedFingerprint: string, rationale: string, transport: "stdio" | "http" = "stdio", commentId?: string) {
     this.#prune();
-    const { fingerprint } = loadProject(projectDir);
+    const { graph, fingerprint } = loadProject(projectDir);
     if (fingerprint !== expectedFingerprint) {
       throw new Error(`Project fingerprint conflict: expected ${expectedFingerprint}, current ${fingerprint}.`);
     }
@@ -59,6 +61,12 @@ export class SemanticTransactionService {
     }
     if (this.#transactions.size >= MAX_TRANSACTIONS) {
       throw new Error("The local MCP transaction capacity is full.");
+    }
+    const linkedComment = commentId?.trim() || null;
+    if (linkedComment) {
+      const thread = graph.reviewThreads.find((candidate) => candidate.id === linkedComment);
+      if (!thread) throw new Error(`Unknown review comment: ${linkedComment}.`);
+      if (thread.resolvedAt) throw new Error(`Review comment is resolved: ${linkedComment}.`);
     }
     const createdAt = new Date();
     const record: TransactionRecord = {
@@ -72,6 +80,7 @@ export class SemanticTransactionService {
       patch: null,
       previewFingerprint: null,
       transport,
+      commentId: linkedComment,
     };
     this.#transactions.set(record.id, record);
     return publicRecord(record);
@@ -94,6 +103,8 @@ export class SemanticTransactionService {
       patch,
       changes: preview.changes,
       verification: preview.verification,
+      commentId: record.commentId,
+      historyOperationId: null,
     });
     return { ...publicRecord(record), preview };
   }

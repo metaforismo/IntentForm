@@ -2,6 +2,7 @@
 
 import {
   ArrowSquareOut,
+  CaretLeft,
   CaretDown,
   CaretRight,
   CheckCircle,
@@ -27,9 +28,11 @@ import type { LocalPreviewsController } from "../use-local-previews";
 import { HistoryPanel } from "../history-panel";
 import { WebImportDialog } from "../web-import-dialog";
 import { PhonePreview } from "./phone-preview";
+import { SourceViewer } from "./source-viewer";
+import { sourceLanguage, sourceNodeReferences } from "./source-viewer-model";
 import { localPreviewTarget, matchingCodeLineNumbers, usableLocalPreview } from "./workspace-model";
 
-type EvidenceTab = "build" | "accessibility" | "layout" | "screenshot" | "logs";
+type EvidenceTab = "build" | "layout" | "accessibility" | "design-quality" | "screenshot" | "logs";
 
 interface OutputsStageProps {
   outputTarget: OutputTarget;
@@ -48,6 +51,7 @@ interface OutputsStageProps {
   scenarioLabel: string;
   onLocalProjectChanged: () => void;
   onApplyWebImport: (projection: DomImportProjection) => void;
+  onInspectNode: (nodeId: string) => void;
 }
 
 export function OutputsStage({
@@ -67,6 +71,7 @@ export function OutputsStage({
   scenarioLabel,
   onLocalProjectChanged,
   onApplyWebImport,
+  onInspectNode,
 }: OutputsStageProps) {
   const previewFrame = useRef<HTMLIFrameElement>(null);
   const fileTree = useRef<HTMLDivElement>(null);
@@ -74,6 +79,7 @@ export function OutputsStage({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewWidth, setPreviewWidth] = useState(100);
   const [codeQuery, setCodeQuery] = useState("");
+  const [activeMatchIndex, setActiveMatchIndex] = useState(0);
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [evidenceTab, setEvidenceTab] = useState<EvidenceTab>("build");
   const [projectDrawerOpen, setProjectDrawerOpen] = useState(false);
@@ -85,6 +91,21 @@ export function OutputsStage({
   const files = output?.files ?? [];
   const selectedLines = selectedCode?.content.split("\n") ?? [];
   const matchingLines = useMemo(() => matchingCodeLineNumbers(selectedLines, codeQuery), [codeQuery, selectedLines]);
+  const matchingLineList = useMemo(() => [...matchingLines], [matchingLines]);
+  const sourceReferences = useMemo(
+    () => selectedCode ? sourceNodeReferences(graph, selectedCode.content) : [],
+    [graph, selectedCode],
+  );
+  const nodeLines = useMemo(() => {
+    const result = new Map<number, string[]>();
+    for (const reference of sourceReferences) {
+      const current = result.get(reference.line) ?? [];
+      current.push(reference.nodeId);
+      result.set(reference.line, current);
+    }
+    return result;
+  }, [sourceReferences]);
+  const language = selectedCode ? sourceLanguage(selectedCode.path, outputTarget) : "Text";
   const webPreviewSource = useMemo(() => {
     if (outputTarget !== "web" || !output || !webScreen) return null;
     const html = output.files.find((file) => file.path === `html/${webScreen.id}.html`)?.content;
@@ -92,6 +113,8 @@ export function OutputsStage({
     if (!html || !css) return null;
     return html.replace('<link rel="stylesheet" href="./styles.css">', `<style>${css.replaceAll("</style", "<\\/style")}</style>`);
   }, [output, outputTarget, webScreen]);
+
+  useEffect(() => setActiveMatchIndex(0), [codeQuery, selectedCode?.path]);
 
   const sendPreview = useCallback(() => {
     if (!reactOutput) return;
@@ -140,11 +163,8 @@ export function OutputsStage({
   const openGeneratedFile = () => {
     if (!selectedCode) return;
     const url = URL.createObjectURL(new Blob([selectedCode.content], { type: "text/plain" }));
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = selectedCode.path.split("/").at(-1) ?? "generated.txt";
-    anchor.click();
-    URL.revokeObjectURL(url);
+    window.open(url, "_blank", "noopener,noreferrer");
+    window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
   };
 
   const renderPreview = () => {
@@ -170,13 +190,14 @@ export function OutputsStage({
     if (evidenceTab === "build") return <div className="grid gap-1"><strong>{previewEvidence ? `${previewEvidence.phase} · ${previewEvidence.evidence}` : "Not run"}</strong><span>Freshness: {outputFreshness}. Build status: {previewEvidence?.buildStatus ?? "not-run"}.</span></div>;
     if (evidenceTab === "accessibility") return <div>Open Verify for the current target, device, visual state, and WCAG profile matrix.</div>;
     if (evidenceTab === "layout") return <div className="font-mono">graph {previewEvidence?.expectedBinding.graphDigest ?? "not-bound"} · compiler {previewEvidence?.expectedBinding.compilerFingerprint ?? output?.fingerprint ?? "not-generated"}</div>;
+    if (evidenceTab === "design-quality") return <div className="grid gap-1"><strong>{sourceReferences.length} exact graph-to-source links</strong><span>{output?.diagnostics.length ?? 0} compiler findings · {graph.reviewThreads.filter((thread) => !thread.resolvedAt).length} open review threads.</span></div>;
     if (evidenceTab === "screenshot") return <div>{previewEvidence?.manifest?.artifacts.length ? previewEvidence.manifest.artifacts.map((artifact) => <p key={artifact.path}>{artifact.kind} · {artifact.path.split("/").at(-1)}</p>) : "No screenshot evidence captured."}</div>;
     return <div className="max-h-36 overflow-auto font-mono">{previewEvidence?.manifest?.logs.length ? previewEvidence.manifest.logs.map((log) => <p key={`${log.at}:${log.text}`}>{log.stream} · {log.text}</p>) : "No build logs yet."}</div>;
   };
 
   return (
     <div className="relative mx-auto grid h-full min-h-[680px] max-w-[1600px] grid-rows-[42px_minmax(0,1fr)_auto] overflow-hidden border border-[var(--line)] bg-[var(--panel)]">
-      <header className="col-span-full flex min-w-0 items-center justify-between gap-3 border-b border-[var(--line)] px-2">
+      <header className="relative col-span-full flex min-w-0 items-center justify-between gap-3 border-b border-[var(--line)] px-2">
         <div className="flex items-center gap-1" role="group" aria-label="Output target">
           {(["web", "react", "expo", "swiftui"] as const).map((target) => <button key={target} type="button" aria-pressed={outputTarget === target} onClick={() => { setOutputTarget(target); setOutputFilePath(null); }} className={`h-7 rounded px-2.5 text-[10px] font-semibold capitalize ${outputTarget === target ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>{target}</button>)}
         </div>
@@ -186,11 +207,12 @@ export function OutputsStage({
           <span className={`rounded px-1.5 py-1 font-semibold ${outputFreshness === "fresh" ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--warn-soft)] text-[var(--warn)]"}`}>{outputFreshness}</span>
           <span className="hidden font-mono lg:inline">{output?.fingerprint ?? "not-generated"}</span>
           <button type="button" disabled={!localPreviews.enabled || localPreviews.pendingTarget === previewTarget} onClick={() => void localPreviews.mutate("start", previewTarget)} className="inline-flex h-7 items-center gap-1 rounded bg-[var(--accent-deep)] px-2.5 font-semibold text-white disabled:opacity-40"><Play size={11} /> Build</button>
-          <button type="button" disabled={!selectedCode} onClick={copyGeneratedFile} className="inline-flex h-7 items-center gap-1 rounded border border-[var(--line)] px-2 font-semibold disabled:opacity-40">{copied ? <CheckCircle size={11} /> : <Copy size={11} />}{copied ? "Copied" : "Copy file"}</button>
-          <button type="button" disabled={!selectedCode} onClick={openGeneratedFile} className="inline-flex h-7 items-center gap-1 rounded border border-[var(--line)] px-2 font-semibold disabled:opacity-40"><ArrowSquareOut size={11} /> Open output</button>
+          <button type="button" disabled={!selectedCode} onClick={copyGeneratedFile} title={selectedCode && output ? `Copy ${outputTarget} · ${selectedCode.path} · ${output.fingerprint}` : undefined} className="inline-flex h-7 items-center gap-1 rounded border border-[var(--line)] px-2 font-semibold disabled:opacity-40">{copied ? <CheckCircle size={11} /> : <Copy size={11} />}{copied ? `Copied ${outputTarget}` : "Copy file"}</button>
+          <button type="button" disabled={!selectedCode} onClick={openGeneratedFile} className="inline-flex h-7 items-center gap-1 rounded border border-[var(--line)] px-2 font-semibold disabled:opacity-40"><ArrowSquareOut size={11} /> Open externally</button>
           {outputTarget === "web" ? <button type="button" onClick={() => setWebImportOpen(true)} className="inline-flex h-7 items-center gap-1 rounded border border-[var(--line)] px-2 font-semibold"><UploadSimple size={11} /> Import HTML/CSS</button> : null}
           <button type="button" aria-expanded={projectDrawerOpen} onClick={() => setProjectDrawerOpen((open) => !open)} className="h-7 rounded border border-[var(--line)] px-2 font-semibold">History</button>
         </div>
+        {copied && selectedCode && output ? <span role="status" className="absolute right-2 top-10 z-10 max-w-[min(520px,80vw)] truncate rounded border border-[var(--success)]/25 bg-[var(--panel)] px-2 py-1.5 font-mono text-[8px] text-[var(--success)] shadow-lg">Copied {outputTarget} · {selectedCode.path} · {output.fingerprint}</span> : null}
       </header>
 
       <main className="grid min-h-0 grid-cols-1 xl:grid-cols-[minmax(320px,42fr)_180px_minmax(360px,58fr)]">
@@ -210,18 +232,16 @@ export function OutputsStage({
 
         <section className="min-h-0 overflow-hidden bg-[#1d1f21] text-[#d8dee9]" aria-label="Generated source">
           <div className="flex h-9 items-center justify-between gap-2 border-b border-white/10 px-3">
-            <span className="truncate font-mono text-[9px] text-white/45">{selectedCode?.path ?? "No file selected"} · source {selectedScreen}</span>
-            <label className="flex h-6 items-center gap-1 rounded border border-white/10 px-1.5 text-white/45"><MagnifyingGlass size={10} /><input aria-label="Search generated code" value={codeQuery} onChange={(event) => setCodeQuery(event.target.value)} placeholder="Search" className="w-24 bg-transparent font-mono text-[9px] text-white outline-none" />{codeQuery ? <span className="font-mono text-[8px]">{matchingLines.size}</span> : null}</label>
+            <span className="truncate font-mono text-[9px] text-white/45">{selectedCode?.path ?? "No file selected"} · {language} · {output?.fingerprint ?? "not-generated"}</span>
+            <div className="flex items-center gap-1"><label className="flex h-6 items-center gap-1 rounded border border-white/10 px-1.5 text-white/45"><MagnifyingGlass size={10} /><input aria-label="Search generated code" value={codeQuery} onChange={(event) => setCodeQuery(event.target.value)} placeholder="Search" className="w-24 bg-transparent font-mono text-[9px] text-white outline-none" />{codeQuery ? <span className="font-mono text-[8px]">{matchingLineList.length ? `${activeMatchIndex + 1}/${matchingLineList.length}` : "0/0"}</span> : null}</label>{codeQuery ? <><button type="button" aria-label="Previous source match" disabled={!matchingLineList.length} onClick={() => setActiveMatchIndex((index) => (index - 1 + matchingLineList.length) % matchingLineList.length)} className="grid size-6 place-items-center rounded border border-white/10 text-white/50 disabled:opacity-30"><CaretLeft size={10} /></button><button type="button" aria-label="Next source match" disabled={!matchingLineList.length} onClick={() => setActiveMatchIndex((index) => (index + 1) % matchingLineList.length)} className="grid size-6 place-items-center rounded border border-white/10 text-white/50 disabled:opacity-30"><CaretRight size={10} /></button></> : null}</div>
           </div>
-          <div className="code-scroll h-[calc(100%_-_36px)] overflow-auto py-3 font-mono text-[10px] leading-5">
-            {selectedCode ? selectedLines.map((line, index) => <div key={index} className={`grid min-w-max grid-cols-[48px_1fr] pr-5 ${matchingLines.has(index) ? "bg-amber-300/10" : ""}`}><span className="select-none border-r border-white/8 pr-3 text-right text-white/25">{index + 1}</span><code className="whitespace-pre pl-4">{line || " "}</code></div>) : <p className="px-5 text-amber-100/70">{outputMessage}</p>}
-          </div>
+          {selectedCode ? <SourceViewer filePath={selectedCode.path} lines={selectedLines} matchingLines={matchingLines} activeMatchLine={matchingLineList[activeMatchIndex] ?? null} nodeLines={nodeLines} onInspectNode={onInspectNode} /> : <p className="px-5 py-3 text-[10px] text-amber-100/70">{outputMessage}</p>}
         </section>
       </main>
 
       <section className="col-span-full border-t border-[var(--line)] bg-[var(--panel)]" aria-label="Output evidence">
         <button type="button" aria-expanded={evidenceOpen} onClick={() => setEvidenceOpen((open) => !open)} className="flex h-9 w-full items-center justify-between px-3 text-[10px] font-semibold text-[var(--muted)] hover:bg-[var(--hover)]"><span>Evidence and diagnostics · {output?.diagnostics.length ?? 0} compiler findings</span>{evidenceOpen ? <CaretDown size={12} /> : <CaretRight size={12} />}</button>
-        {evidenceOpen ? <div className="grid min-h-[180px] grid-cols-[140px_minmax(0,1fr)] border-t border-[var(--line)]"><div role="tablist" aria-label="Evidence category" className="border-r border-[var(--line)] p-1">{(["build", "accessibility", "layout", "screenshot", "logs"] as const).map((tab) => <button key={tab} type="button" role="tab" aria-selected={evidenceTab === tab} onClick={() => setEvidenceTab(tab)} className={`block min-h-8 w-full rounded px-2 text-left text-[10px] capitalize ${evidenceTab === tab ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>{tab}</button>)}</div><div role="tabpanel" className="p-4 text-[10px] leading-relaxed text-[var(--muted)]">{evidenceContent()}{output?.diagnostics.length ? <div className="mt-3 border-t border-[var(--line)] pt-3">{output.diagnostics.map((diagnostic) => <p key={`${diagnostic.path}:${diagnostic.message}`}><strong>{diagnostic.path}</strong> · {diagnostic.message}</p>)}</div> : null}</div></div> : null}
+        {evidenceOpen ? <div className="grid min-h-[180px] grid-cols-[140px_minmax(0,1fr)] border-t border-[var(--line)]"><div role="tablist" aria-label="Evidence category" className="border-r border-[var(--line)] p-1">{(["build", "layout", "accessibility", "design-quality", "screenshot", "logs"] as const).map((tab) => <button key={tab} type="button" role="tab" aria-selected={evidenceTab === tab} onClick={() => setEvidenceTab(tab)} className={`block min-h-8 w-full rounded px-2 text-left text-[10px] capitalize ${evidenceTab === tab ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>{tab.replace("-", " ")}</button>)}</div><div role="tabpanel" className="p-4 text-[10px] leading-relaxed text-[var(--muted)]">{evidenceContent()}{output?.diagnostics.length ? <div className="mt-3 border-t border-[var(--line)] pt-3">{output.diagnostics.map((diagnostic) => <p key={`${diagnostic.path}:${diagnostic.message}`}><strong>{diagnostic.path}</strong> · {diagnostic.message}</p>)}</div> : null}</div></div> : null}
       </section>
       {projectDrawerOpen ? <><button type="button" aria-label="Close project history" onClick={() => setProjectDrawerOpen(false)} className="absolute inset-0 z-[4] bg-[var(--backdrop)]/40" /><aside className="absolute inset-y-0 right-0 z-[5] w-[min(390px,92vw)] overflow-auto border-l border-[var(--line)] bg-[var(--panel)] p-3 shadow-[-20px_0_50px_-32px_var(--shadow-strong)]" aria-label="Project history drawer"><div className="mb-2 flex items-center justify-between"><strong className="text-[11px] text-[var(--ink)]">Project history</strong><button type="button" aria-label="Close history drawer" onClick={() => setProjectDrawerOpen(false)} className="rounded px-2 py-1 text-[10px] text-[var(--muted)] hover:bg-[var(--hover)]">Close</button></div><HistoryPanel enabled={localPreviews.enabled} onProjectChanged={onLocalProjectChanged} /></aside></> : null}
       <WebImportDialog open={webImportOpen} graph={graph} screenId={selectedScreen} onClose={() => setWebImportOpen(false)} onApply={(projection) => { onApplyWebImport(projection); setWebImportOpen(false); }} />

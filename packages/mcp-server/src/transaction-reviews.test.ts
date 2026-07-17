@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadProject } from "./store.ts";
+import { loadProject, saveProject } from "./store.ts";
 import { applyPatch } from "./tools.ts";
 import { SemanticTransactionService } from "./transactions.ts";
 import {
@@ -52,6 +52,28 @@ describe("persisted agent transaction reviews", () => {
     expect(loadProject(dir).fingerprint).toBe(before.fingerprint);
   });
 
+  it("binds a transaction to one exact unresolved canvas comment", () => {
+    const transactions = new SemanticTransactionService();
+    const initial = loadProject(dir);
+    const commentId = "review.agent-link";
+    initial.graph.reviewThreads.push({
+      id: commentId,
+      anchor: { screenId: initial.graph.screens[0]!.id, x: 0.5, y: 0.5 },
+      messages: [{ id: "message.agent-link", author: { id: "reviewer", name: "Reviewer", kind: "human" }, createdAt: new Date().toISOString(), body: "Please address this", mentions: [] }],
+    });
+    saveProject(dir, initial.graph, "add review comment", initial.fingerprint);
+    const before = loadProject(dir);
+    const begun = transactions.begin(dir, "session-a", before.fingerprint, "Address canvas feedback", "http", commentId);
+    transactions.preview(dir, "session-a", begun.transactionId, patch("review.comment", "Comment linked"));
+    expect(readTransactionReviews(dir).reviews[0]?.commentId).toBe(commentId);
+    expect(() => transactions.begin(dir, "session-b", before.fingerprint, "Unknown comment", "stdio", "missing-comment")).toThrow(/unknown review comment/i);
+    const thread = before.graph.reviewThreads.find((candidate) => candidate.id === commentId)!;
+    thread.resolvedAt = new Date().toISOString();
+    thread.resolvedBy = { id: "reviewer", name: "Reviewer", kind: "human" };
+    const resolved = saveProject(dir, before.graph, "resolve review comment", before.fingerprint);
+    expect(() => transactions.begin(dir, "session-b", resolved.fingerprint, "Resolved comment", "stdio", commentId)).toThrow(/review comment is resolved/i);
+  });
+
   it("allows Studio to commit the reviewed fingerprint exactly once", () => {
     const transactions = new SemanticTransactionService();
     const before = loadProject(dir);
@@ -61,6 +83,7 @@ describe("persisted agent transaction reviews", () => {
     const result = commitTransactionReview(dir, begun.transactionId, previewed.preview.previewFingerprint);
     expect(result.committed.fingerprint).toBe(previewed.preview.previewFingerprint);
     expect(result.review.status).toBe("committed");
+    expect(result.review.historyOperationId).toBe(result.committed.operation?.id);
     expect(loadProject(dir).graph.screens[1]?.nodes[3]?.intent.label).toBe("Committed in Studio");
     expect(() => transactions.clearOwner("session-a")).not.toThrow();
     expect(readTransactionReviews(dir).reviews[0]?.status).toBe("committed");

@@ -829,17 +829,21 @@ try {
       const compiledFrame = page.getByTestId("responsive-web-preview").locator("iframe").contentFrame();
       await compiledFrame.locator("main[data-screen-id='home']").waitFor();
       await page.getByRole("treeitem", { name: "src/styles.css", exact: true }).click();
-      const css = await page.getByRole("region", { name: "Generated source" }).textContent();
-      if (!css?.includes("grid-template-columns: repeat(auto-fit, minmax(") || !css.includes("@media (min-width: 1200px)")) {
-        throw new Error("Responsive-web output omitted intrinsic grid or declared breakpoint CSS");
+      const generatedSource = page.getByRole("region", { name: "Generated source" });
+      const sourceSearch = page.getByLabel("Search generated code");
+      for (const expected of ["grid-template-columns: repeat(auto-fit, minmax(", "@media (min-width: 1200px)"]) {
+        await sourceSearch.fill(expected);
+        await page.locator('[data-source-line]').filter({ hasText: expected }).first().waitFor();
       }
-      if (css.includes("if-site-nav") || css.includes("if-page-header") || css.includes("font-size: clamp(2.5rem")) {
-        throw new Error("Responsive-web output still imposed the removed universal navigation or hero template");
+      for (const removedTemplate of ["if-site-nav", "if-page-header", "font-size: clamp(2.5rem"]) {
+        await sourceSearch.fill(removedTemplate);
+        const searchStatus = await sourceSearch.locator("..").textContent();
+        if (!searchStatus?.includes("0/0")) throw new Error("Responsive-web output still imposed the removed universal navigation or hero template");
       }
       await page.getByRole("treeitem", { name: "html/home.html", exact: true }).click();
-      const htmlExport = await page.getByRole("region", { name: "Generated source" }).textContent();
-      if (!htmlExport?.includes('data-screen-id="home"') || !htmlExport.includes("Skip to content")) {
-        throw new Error("Responsive-web output omitted its runnable semantic HTML export");
+      for (const expected of ['data-screen-id="home"', "Skip to content"]) {
+        await sourceSearch.fill(expected);
+        await generatedSource.locator('[data-source-line]').filter({ hasText: expected }).first().waitFor();
       }
 
       await page.getByRole("button", { name: "Import HTML/CSS" }).click();
@@ -857,9 +861,9 @@ try {
       await importDialog.waitFor({ state: "detached" });
       await page.getByTestId("responsive-web-preview").locator("iframe").contentFrame().getByText("Browser oracle", { exact: true }).waitFor();
       await page.getByRole("treeitem", { name: "src/styles.css", exact: true }).click();
-      const importedCss = await page.getByRole("region", { name: "Generated source" }).textContent();
-      if (!importedCss?.includes("grid-template-columns: 1fr 2fr") || !importedCss.includes("font-size: 32px")) {
-        throw new Error(`Browser-computed grid or typography did not survive the reviewed graph projection: ${importedCss?.slice(0, 4_000) ?? "no source"}`);
+      for (const expected of ["grid-template-columns: 1fr 2fr", "font-size: 32px"]) {
+        await sourceSearch.fill(expected);
+        await generatedSource.locator('[data-source-line]').filter({ hasText: expected }).first().waitFor();
       }
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       if (overflow > 1) throw new Error(`Responsive-web Studio has ${overflow}px horizontal overflow`);

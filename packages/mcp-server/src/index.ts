@@ -834,6 +834,7 @@ export const toolDefinitions: ToolDefinition[] = [
       properties: {
         expectedFingerprint: { type: "string", pattern: "^[a-f0-9]{8}$" },
         rationale: { type: "string", minLength: 1, maxLength: 160 },
+        commentId: { type: "string", pattern: "^[A-Za-z0-9._:-]{1,160}$", description: "Optional unresolved canvas review thread to bind to this transaction." },
       },
       required: ["expectedFingerprint", "rationale"],
       additionalProperties: false,
@@ -844,6 +845,7 @@ export const toolDefinitions: ToolDefinition[] = [
       String(args.expectedFingerprint ?? ""),
       String(args.rationale ?? ""),
       context.transport,
+      typeof args.commentId === "string" ? args.commentId : undefined,
     ),
   },
   {
