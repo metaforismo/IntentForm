@@ -3,6 +3,7 @@ import { defaultDeviceConfiguration } from "@intentform/device-registry";
 import {
   parseGraph,
   emptyTokenModeValues,
+  flattenSemanticNodes,
   type PlatformTarget,
   type SemanticInterfaceGraph,
   type SemanticNode,
@@ -251,7 +252,17 @@ export function createLumenShowcaseGraph(): SemanticInterfaceGraph {
       radii: { "radius.control": 12, "radius.surface": 18 },
     },
   };
-  graph.components = structuredClone(demoGraph.components.slice(0, 2));
+  const playbackAction = structuredClone(demoGraph.components.find((component) => component.id === "intent.primary-action")!);
+  playbackAction.id = "aster.playback-action";
+  playbackAction.name = "Playback action";
+  playbackAction.description = "A reusable, stateful control for starting or pausing original audio.";
+  playbackAction.template.intent = { purpose: "Control the active release", label: "Play", importance: "primary" };
+  playbackAction.template.accessibility.label = "Play";
+  const releaseSurface = structuredClone(demoGraph.components.find((component) => component.id === "intent.surface-card")!);
+  releaseSurface.id = "aster.release-surface";
+  releaseSurface.name = "Release surface";
+  releaseSurface.description = "An editorial surface for original cover artwork, release metadata, and playback.";
+  graph.components = [playbackAction, releaseSurface];
   const seed = graph.screens[0]!.nodes[0]!;
   const node = (
     id: string,
@@ -260,29 +271,77 @@ export function createLumenShowcaseGraph(): SemanticInterfaceGraph {
     children: SemanticNode[] = [],
     layout: Partial<SemanticNode["layout"]> = {},
     states: SemanticNode["states"] = [],
-  ): SemanticNode => ({
-    ...structuredClone(seed),
-    id,
-    kind,
-    intent: { purpose: `Present ${label.toLowerCase()} in the Aster Sound experience`, label, importance: kind === "action" ? "primary" : "supporting" },
-    layout: { ...structuredClone(seed.layout), ...layout },
-    style: { role: kind === "shape" ? "abstract-artwork" : kind, emphasis: kind === "action" ? "strong" : "normal" },
-    accessibility: { label, live: kind === "status-message" ? "polite" : "off" },
-    states,
-    interactions: [],
-    provenance: { author: "system", revision: 0 },
-    children,
-  });
+  ): SemanticNode => {
+    const base = structuredClone(seed);
+    delete base.web;
+    return {
+      ...base,
+      id,
+      kind,
+      intent: { purpose: `Present ${label.toLowerCase()} in the Aster Sound experience`, label, importance: kind === "action" ? "primary" : "supporting" },
+      layout: { ...structuredClone(seed.layout), ...layout },
+      style: { role: kind === "shape" ? "abstract-artwork" : kind, emphasis: kind === "action" ? "strong" : "normal" },
+      accessibility: { label, live: kind === "status-message" ? "polite" : "off" },
+      states,
+      interactions: [],
+      provenance: { author: "system", revision: 0 },
+      children,
+    };
+  };
+  const artwork = (id: string, title: string, palette: readonly [string, string, string]) => {
+    const layer = (suffix: string, color: string, rotation: number, opacity: number) => {
+      const shape = node(`${id}.${suffix}`, "shape", `${title} ${suffix} vector layer`, [], {
+        width: "fill", height: "fill", rotation,
+      });
+      shape.style.role = "original-vector-art";
+      shape.style.appearance = {
+        fills: [{ id: `${id}.${suffix}.fill`, type: "linear-gradient", angle: rotation + 135, stops: [
+          { position: 0, color: { color } },
+          { position: 1, color: { color: palette[2] } },
+        ], opacity, blendMode: suffix === "glow" ? "screen" : "normal", visible: true }],
+        radius: { linked: true, topLeft: 160, topRight: 160, bottomRight: 160, bottomLeft: 160 },
+        effects: suffix === "glow" ? [{ id: `${id}.${suffix}.blur`, type: "blur", radius: 18, visible: true }] : [],
+        opacity: 1,
+        blendMode: "normal",
+      };
+      return shape;
+    };
+    const base = node(`${id}.base`, "shape", `${title} original gradient field`, [], { width: "fill", height: "fill" });
+    base.style.role = "original-vector-art";
+    base.style.appearance = {
+      fills: [{ id: `${id}.base.fill`, type: "linear-gradient", angle: 145, stops: [
+        { position: 0, color: { color: palette[0] } },
+        { position: 0.55, color: { color: palette[1] } },
+        { position: 1, color: { color: palette[2] } },
+      ], opacity: 1, blendMode: "normal", visible: true }],
+      radius: { linked: true, topLeft: 22, topRight: 22, bottomRight: 22, bottomLeft: 22, token: "radius.surface" },
+      effects: [], opacity: 1, blendMode: "normal",
+    };
+    const art = node(id, "overlay", `${title} original graph-native cover`, [
+      base,
+      layer("orbit", palette[1], -18, 0.84),
+      layer("glow", palette[0], 24, 0.56),
+    ], { width: "fill", height: "fixed", fixedHeight: 180, overflow: "clip" });
+    art.style.role = "original-cover-art";
+    return art;
+  };
+  const coverPalettes: Record<string, readonly [string, string, string]> = {
+    "Tidal Memory": ["#6f75ff", "#252560", "#ef9a72"],
+    "Glass Hours": ["#91e4d2", "#244651", "#855cf8"],
+    "Soft Orbit": ["#f7b36b", "#713f72", "#20203a"],
+    "Quiet Current": ["#7be1c5", "#275476", "#13162d"],
+    "Mirror Weather": ["#ef8faf", "#764ed0", "#25243f"],
+  };
   const cover = (id: string, title: string) => node(id, "frame", title, [
-    node(`${id}.art`, "shape", `${title} original abstract cover`, [], { height: "fixed", fixedHeight: 180 }),
+    artwork(`${id}.art`, title, coverPalettes[title] ?? coverPalettes["Tidal Memory"]!),
     node(`${id}.title`, "text", title),
-    node(`${id}.artist`, "text", "Aster Editions"),
+    node(`${id}.artist`, "text", title === "Tidal Memory" ? "Mira Vale · Aster Editions" : "Aster Editions"),
     node(`${id}.play`, "action", `Play ${title}`),
   ], { width: "fill", height: "hug", paddingTokens: { top: "space.16", right: "space.16", bottom: "space.16", left: "space.16" } });
   graph.screens = [{
     id: "library", title: "Library", purpose: "Browse original releases and playlists", route: "/", nodes: [
       node("library.shell", "frame", "Aster Sound library", [
-        node("library.header", "stack", "Responsive library header", [node("library.brand", "text", "ASTER / SOUND"), node("library.search", "input", "Search artists, releases, and playlists")], { axis: "horizontal" }),
+        node("library.header", "stack", "Responsive library header", [node("library.brand", "text", "ASTER / SOUND"), node("library.search", "input", "Search artists, releases, and playlists"), node("library.open-collection", "action", "Open late-hours collection")], { axis: "horizontal" }),
         node("library.featured", "grid", "Featured original releases", [cover("library.tidal", "Tidal Memory"), cover("library.glass", "Glass Hours"), cover("library.orbit", "Soft Orbit")], { columns: 3, gridTracks: [1, 1, 1], gap: 20 }),
         node("library.playlists", "list", "Playlist table", [node("library.track.1", "text", "01 · Between Signals · 4:12"), node("library.track.2", "text", "02 · Violet Static · 3:48"), node("library.track.3", "text", "03 · Night Geometry · 5:06")]),
         node("library.player", "frame", "Persistent player · Tidal Memory", [node("library.now", "text", "Now playing · Between Signals"), node("library.pause", "action", "Pause")], { axis: "horizontal", placement: { compact: "persistent-bottom", regular: "persistent-bottom" } }),
@@ -309,10 +368,49 @@ export function createLumenShowcaseGraph(): SemanticInterfaceGraph {
       ]),
     ],
   }];
-  graph.flows = [];
+  const graphNodes = new Map(graph.screens.flatMap((screen) => flattenSemanticNodes(screen.nodes)).map((item) => [item.id, item]));
+  for (const item of flattenSemanticNodes(graph.screens.find((screen) => screen.id === "library")!.nodes)) {
+    if (item.kind === "action") item.intent.importance = "supporting";
+  }
+  graphNodes.get("library.tidal.play")!.kind = "primary-action";
+  graphNodes.get("library.tidal.play")!.intent.importance = "primary";
+  graphNodes.get("library.tidal.play")!.interactions = [{ event: "onPlayFeatured", requires: [] }];
+  graphNodes.get("library.tidal.play")!.prototypeActions = [{ id: "prototype.play-tidal", trigger: "click", type: "navigate", targetScreenId: "player", transition: { type: "push", durationMs: 240, easing: "ease-out" } }];
+  graphNodes.get("library.open-collection")!.interactions = [{ event: "onOpenCollection", requires: [] }];
+  graphNodes.get("library.open-collection")!.prototypeActions = [{ id: "prototype.open-collection", trigger: "click", type: "navigate", targetScreenId: "collection", transition: { type: "slide-left", durationMs: 220, easing: "ease-out" } }];
+  graphNodes.get("player.previous")!.prototypeActions = [{ id: "prototype.player-back", trigger: "click", type: "back", transition: { type: "slide-right", durationMs: 180, easing: "ease-out" } }];
+  graphNodes.get("player.play")!.prototypeActions = [{ id: "prototype.player-complete", trigger: "click", type: "change-state", state: "completed", transition: { type: "dissolve", durationMs: 180, easing: "ease-out" } }];
+  graphNodes.get("player.next")!.prototypeActions = [{ id: "prototype.player-retry", trigger: "click", type: "change-state", state: "idle", transition: { type: "instant", durationMs: 0, easing: "linear" } }];
+  graph.flows = [{ id: "aster-discovery", steps: [
+    { from: "library", event: "onPlayFeatured", to: "player" },
+    { from: "library", event: "onOpenCollection", to: "collection" },
+  ] }];
   graph.prototype.startScreenId = "library";
-  graph.reviewThreads = [];
+  graph.reviewThreads = [{
+    id: "review.aster-player-action",
+    anchor: { screenId: "player", nodeId: "player.play", x: 0.52, y: 0.76 },
+    messages: [{
+      id: "review.aster-player-action.human",
+      author: { id: "reviewer.jules", name: "Jules", kind: "human" },
+      createdAt: "2026-07-17T09:00:00.000Z",
+      body: "Keep the primary playback action reachable without covering the original artwork.",
+      mentions: ["agent.codex"],
+    }, {
+      id: "review.aster-player-action.agent",
+      author: { id: "agent.codex", name: "Codex", kind: "agent" },
+      createdAt: "2026-07-17T09:02:00.000Z",
+      body: "Prepared a fingerprint-bound persistent placement change for review; the canonical graph is unchanged.",
+      mentions: ["reviewer.jules"],
+      transactionId: "transaction.aster-player-placement",
+    }],
+  }];
   graph.contracts = [{
+    screenId: "library",
+    data: [],
+    events: [{ name: "onPlayFeatured" }, { name: "onOpenCollection" }],
+    visualStates: ["idle"],
+    fixtures: ["library.idle"],
+  }, {
     screenId: "collection",
     data: [{ name: "status", type: "status", required: true }],
     events: [],
@@ -326,6 +424,7 @@ export function createLumenShowcaseGraph(): SemanticInterfaceGraph {
     fixtures: ["player.idle", "player.failed", "player.completed"],
   }];
   graph.fixtures = [
+    { id: "library.idle", screenId: "library", state: "idle", data: {} },
     { id: "collection.idle", screenId: "collection", state: "idle", data: { status: "idle" } },
     { id: "collection.loading", screenId: "collection", state: "loading", data: { status: "loading" } },
     { id: "collection.empty", screenId: "collection", state: "empty", data: { status: "empty" } },

@@ -407,6 +407,74 @@ try {
   });
 
   await runSmokeScenario(browser, {
+    name: "Aster Sound winning showcase",
+    run: async (showcasePage) => {
+      await gotoStudio(showcasePage, origin, "/");
+      await showcasePage.getByRole("button", { name: "Examples", exact: true }).click();
+      await showcasePage.getByRole("button", { name: /^Aster Sound/ }).click();
+      await showcasePage.waitForURL(`${origin}/studio`);
+      await showcasePage.getByText("Aster Sound", { exact: true }).first().waitFor();
+      await showcasePage.getByTestId("canvas-node-library.tidal.art.base").waitFor({ state: "attached" });
+      await showcasePage.getByTestId("canvas-node-library.glass.art.glow").waitFor({ state: "attached" });
+      const artworkPresentation = await showcasePage.getByTestId("canvas-node-library.tidal.art.base").evaluate((element) => {
+        const style = getComputedStyle(element);
+        const bounds = element.getBoundingClientRect();
+        return { width: bounds.width, height: bounds.height, backgroundImage: style.backgroundImage, display: style.display };
+      });
+      if (artworkPresentation.width < 40 || artworkPresentation.height < 40 || artworkPresentation.backgroundImage === "none") {
+        throw new Error(`Aster original artwork is not visibly rendered (${JSON.stringify(artworkPresentation)})`);
+      }
+
+      const comparisonToggle = showcasePage.getByRole("button", { name: "Toggle responsive comparison" });
+      await comparisonToggle.click();
+      const comparison = showcasePage.getByRole("region", { name: "Multi-device comparison" });
+      await comparison.waitFor();
+      if (await comparison.locator("[data-comparison-profile]").count() !== 3) {
+        throw new Error("Aster showcase did not present desktop, tablet, and phone together");
+      }
+      await mkdir(join(root, "output/playwright"), { recursive: true });
+      await showcasePage.screenshot({ path: join(root, "output/playwright/aster-sound-showcase.png"), fullPage: true });
+      await comparisonToggle.click();
+
+      await showcasePage.getByRole("tab", { name: "Tokens", exact: true }).click();
+      const mode = showcasePage.getByLabel("Active token mode");
+      await mode.selectOption("evening");
+      if (await mode.inputValue() !== "evening") throw new Error("Aster evening token mode did not activate");
+      await showcasePage.getByRole("tab", { name: "Components", exact: true }).click();
+      const componentLibrary = showcasePage.getByTestId("component-library-panel");
+      await componentLibrary.getByText("Playback action", { exact: true }).waitFor();
+      await componentLibrary.getByText("Release surface", { exact: true }).waitFor();
+
+      await showcasePage.getByRole("tab", { name: "Layers", exact: true }).click();
+      await showcasePage.getByRole("button", { name: /^Discovery player/ }).first().click();
+      const playerAction = showcasePage.getByTestId("canvas-node-player.play");
+      await playerAction.waitFor();
+      await showcasePage.getByRole("button", { name: "Add comment" }).first().click();
+      const reviewPanel = showcasePage.getByTestId("review-panel");
+      await reviewPanel.getByText(/Keep the primary playback action reachable/i).click();
+      await reviewPanel.getByText(/fingerprint-bound persistent placement change/i).waitFor();
+      await reviewPanel.getByText("transaction transaction.aster-player-placement", { exact: true }).waitFor();
+      await showcasePage.getByLabel("Close review comments").click();
+
+      await showcasePage.getByRole("button", { name: /^Library/ }).first().click();
+      await showcasePage.getByRole("button", { name: "Toggle preview mode" }).click();
+      await showcasePage.getByTestId("canvas-node-library.tidal.play").click();
+      await showcasePage.waitForFunction(() => document.querySelector('[data-testid="device-frame"][data-screen-id="player"]') !== null);
+      await showcasePage.getByRole("button", { name: "Toggle preview mode" }).click();
+
+      await showcasePage.getByRole("button", { name: "Native outputs" }).click();
+      const outputTargets = showcasePage.getByRole("group", { name: "Output target" });
+      if (await outputTargets.getByRole("button", { name: "web" }).getAttribute("aria-pressed") !== "true") {
+        throw new Error("Aster did not open its responsive Web output by default");
+      }
+      const webPreview = showcasePage.getByTestId("responsive-web-preview").locator("iframe").contentFrame();
+      await webPreview.locator("main[data-screen-id='player']").waitFor();
+      await showcasePage.getByRole("button", { name: "Verification" }).click();
+      await showcasePage.getByRole("heading", { name: /Verification ·/ }).waitFor();
+    },
+  });
+
+  await runSmokeScenario(browser, {
     name: "deterministic Judge Mode and submission readiness",
     run: async (judgePage) => {
       await judgePage.route("**/api/readiness", (route) => route.fulfill({
