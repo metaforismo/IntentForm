@@ -467,7 +467,11 @@ try {
       if (await outputTargets.getByRole("button", { name: "web" }).getAttribute("aria-pressed") !== "true") {
         throw new Error("Aster did not open its responsive Web output by default");
       }
-      const webPreview = showcasePage.getByTestId("responsive-web-preview").locator("iframe").contentFrame();
+      const showcaseWebFrame = showcasePage.getByTestId("responsive-web-preview").locator("iframe");
+      if (await showcaseWebFrame.getAttribute("sandbox") !== "allow-scripts") {
+        throw new Error("Aster Web preview received an unsafe or non-functional sandbox policy");
+      }
+      const webPreview = showcaseWebFrame.contentFrame();
       await webPreview.locator("main[data-screen-id='player']").waitFor();
       await showcasePage.getByRole("button", { name: "Verification" }).click();
       await showcasePage.getByRole("heading", { name: /Verification ·/ }).waitFor();
@@ -1075,7 +1079,11 @@ try {
         throw new Error("Responsive-web projects did not open their dedicated output target");
       }
       await page.getByTestId("responsive-web-preview").waitFor();
-      const compiledFrame = page.getByTestId("responsive-web-preview").locator("iframe").contentFrame();
+      const responsiveWebFrame = page.getByTestId("responsive-web-preview").locator("iframe");
+      if (await responsiveWebFrame.getAttribute("sandbox") !== "allow-scripts") {
+        throw new Error("Responsive Web preview received an unsafe or non-functional sandbox policy");
+      }
+      const compiledFrame = responsiveWebFrame.contentFrame();
       await compiledFrame.locator("main[data-screen-id='home']").waitFor();
       await page.getByRole("treeitem", { name: "src/styles.css", exact: true }).click();
       const generatedSource = page.getByRole("region", { name: "Generated source" });
