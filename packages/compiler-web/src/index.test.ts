@@ -173,6 +173,28 @@ describe("responsive web compiler", () => {
     expect(css).not.toContain("font-size: clamp(2.5rem");
   });
 
+  it("lowers portable authored appearance into exact Web declarations", () => {
+    const graph = structuredClone(responsiveGraph());
+    const target = graph.screens[0]!.nodes[0]!;
+    target.layout.rotation = 9;
+    target.style.appearance = {
+      fills: [{ id: "gradient-1", type: "linear-gradient", visible: true, angle: 135, stops: [{ position: 0, color: { token: "color.accent" } }, { position: 1, color: { color: "#112233" } }], opacity: 1, blendMode: "normal" }],
+      stroke: { visible: true, color: { color: "#abcdef" }, width: 2, style: "dashed", alignment: "outside" },
+      radius: { linked: false, topLeft: 4, topRight: 8, bottomRight: 12, bottomLeft: 16 },
+      effects: [{ id: "shadow-1", type: "inner-shadow", visible: true, color: { color: "rgba(0, 0, 0, 0.25)" }, x: 1, y: 2, blur: 8, spread: 0 }],
+      opacity: 0.8,
+      blendMode: "multiply",
+      typography: { family: '"Geist", sans-serif', style: "italic", weight: 640, size: 19, lineHeight: 27, letterSpacing: -0.3, align: "center", transform: "uppercase", wrapping: "balance", truncation: "none", features: ["liga"] },
+    };
+    const css = compileWeb(parseGraph(graph)).files.find((file) => file.path === "src/styles.css")!.content;
+    expect(css).toContain("linear-gradient(135deg");
+    expect(css).toContain("outline: 2px dashed #abcdef");
+    expect(css).toContain("border-radius: 4px 8px 12px 16px");
+    expect(css).toContain("box-shadow: inset 1px 2px 8px 0px rgba(0, 0, 0, 0.25)");
+    expect(css).toContain("transform: rotate(9deg)");
+    expect(css).toContain("font-feature-settings: \"liga\" 1");
+  });
+
   it("emits exact signed package imports and mapped props for registered Web code components", () => {
     const graph = structuredClone(responsiveGraph());
     const definition = graph.components[0]!;

@@ -131,7 +131,7 @@ export function createStarterGraph(input: StarterProjectInput): SemanticInterfac
     .slice(0, 80) || "intentform-project";
 
   return parseGraph({
-    schemaVersion: "0.9.0",
+    schemaVersion: "0.10.0",
     dependencies: [],
     product: {
       name,

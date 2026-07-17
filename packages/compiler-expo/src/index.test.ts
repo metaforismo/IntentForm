@@ -148,4 +148,24 @@ describe("Expo Adaptive compiler", () => {
     expect(runtime).toContain('baseline: "baseline"');
     expect(output.diagnostics).toContainEqual(expect.objectContaining({ message: expect.stringContaining("CSS-grid track placement") }));
   });
+
+  it("reports portable appearance effects that need an Expo adapter", () => {
+    const graph = structuredClone(demoGraph);
+    graph.screens[0]!.nodes[0]!.style.appearance = {
+      fills: [
+        { id: "fill-1", type: "solid", visible: true, color: { color: "#123456" }, opacity: 1, blendMode: "normal" },
+        { id: "fill-2", type: "solid", visible: true, color: { color: "#abcdef" }, opacity: 1, blendMode: "screen" },
+      ],
+      stroke: { visible: true, color: { color: "#ffffff" }, width: 2, style: "solid", alignment: "outside" },
+      effects: [{ id: "backdrop-1", type: "backdrop-blur", visible: true, radius: 12 }],
+      opacity: 1,
+      blendMode: "normal",
+    };
+    const messages = compileExpo(parseGraph(graph)).diagnostics.map((item) => item.message);
+    expect(messages).toEqual(expect.arrayContaining([
+      expect.stringContaining("cannot lower backdrop-blur"),
+      expect.stringContaining("layered fills"),
+      expect.stringContaining("outside stroke alignment"),
+    ]));
+  });
 });

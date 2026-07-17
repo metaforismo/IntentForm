@@ -106,6 +106,22 @@ describe("browser project recovery", () => {
     });
   });
 
+  it("migrates a previous-schema recovery envelope before validating the current project", () => {
+    const storage = new MemoryStorage();
+    const legacyGraph = structuredClone(demoGraph) as unknown as Record<string, unknown>;
+    legacyGraph.schemaVersion = "0.9.0";
+    storage.setItem(BROWSER_PROJECT_KEY, JSON.stringify({
+      version: 1,
+      graph: legacyGraph,
+      savedAt: "2026-07-16T10:00:00.000Z",
+      projectType: "application",
+      source: "recovery",
+    }));
+    const loaded = loadBrowserProject(storage);
+    expect(loaded.status).toBe("ready");
+    if (loaded.status === "ready") expect(loaded.project.graph.schemaVersion).toBe("0.10.0");
+  });
+
   it("migrates the legacy raw graph without mutating it", () => {
     const storage = new MemoryStorage();
     const source = JSON.stringify(demoGraph);

@@ -1,4 +1,5 @@
 import { parseGraph, semanticInterfaceGraphSchema, type SemanticInterfaceGraph } from "@intentform/semantic-schema";
+import { previewGraphMigration } from "@intentform/semantic-schema/migrations";
 import { z } from "zod";
 import {
   clearBrowserProject,
@@ -265,8 +266,15 @@ async function readProject(store: IDBObjectStore, id: string): Promise<BrowserCa
   return normalizeCatalogProjectRecord(value);
 }
 
-function normalizeCatalogProjectRecord(value: unknown): BrowserCatalogProject {
-  const project = catalogProjectSchema.parse(value);
+export function normalizeCatalogProjectRecord(value: unknown): BrowserCatalogProject {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Catalog project must be an object");
+  const record = structuredClone(value) as Record<string, unknown>;
+  record.graph = previewGraphMigration(record.graph).graph;
+  if (record.lastKnownGood && typeof record.lastKnownGood === "object" && !Array.isArray(record.lastKnownGood)) {
+    const lastKnownGood = record.lastKnownGood as Record<string, unknown>;
+    lastKnownGood.graph = previewGraphMigration(lastKnownGood.graph).graph;
+  }
+  const project = catalogProjectSchema.parse(record);
   return project.searchIndex.length > 0 && project.thumbnail.graphFingerprint
     ? project
     : catalogProjectSchema.parse({ ...project, searchIndex: projectSearchIndex(project.graph, project.tags, project.folder), thumbnail: projectThumbnail(project.graph) });

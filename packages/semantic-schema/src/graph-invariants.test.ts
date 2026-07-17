@@ -24,7 +24,7 @@ function makeValidGraph() {
   };
 
   return {
-    schemaVersion: "0.9.0",
+    schemaVersion: "0.10.0",
     dependencies: [],
     product: {
       name: "Invariant test",
@@ -177,7 +177,7 @@ describe("semantic graph invariants", () => {
 
   it("migrates flat roots into recursive nodes with deterministic layout defaults", () => {
     const parsed = parseGraph(makeValidGraph());
-    expect(parsed.schemaVersion).toBe("0.9.0");
+    expect(parsed.schemaVersion).toBe("0.10.0");
     expect(parsed.screens[0]?.nodes[0]).toMatchObject({
       children: [],
       layout: {

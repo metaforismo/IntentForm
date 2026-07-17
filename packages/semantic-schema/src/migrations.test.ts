@@ -12,7 +12,7 @@ function fixture(version: "0.0.1" | "0.1.0" | "0.2.0" | "0.3.0" | "0.4.0" | "0.5
 }
 
 describe("Semantic Interface Graph migrations", () => {
-  it("converts the 0.0.1 golden fixture through every step to byte-stable canonical 0.9.0 output", () => {
+  it("converts the 0.0.1 golden fixture through every step to byte-stable canonical output", () => {
     const preview = previewGraphMigration(fixture("0.0.1"));
     const expected = previewGraphMigration(fixture("0.9.0"));
 
@@ -30,6 +30,7 @@ describe("Semantic Interface Graph migrations", () => {
         { severity: "info", code: "schema.migrated.0.6.0.to.0.7.0", path: "schemaVersion" },
         { severity: "info", code: "schema.migrated.0.7.0.to.0.8.0", path: "schemaVersion" },
         { severity: "info", code: "schema.migrated.0.8.0.to.0.9.0", path: "schemaVersion" },
+        { severity: "info", code: "schema.migrated.0.9.0.to.0.10.0", path: "schemaVersion" },
       ],
     });
     expect(preview.graph).toEqual(expected.graph);
@@ -39,7 +40,7 @@ describe("Semantic Interface Graph migrations", () => {
 
   it("converts a flat 0.1.0 graph into recursive roots with explicit layout defaults", () => {
     const preview = previewGraphMigration(fixture("0.1.0"));
-    expect(preview).toMatchObject({ fromVersion: "0.1.0", toVersion: "0.9.0", changed: true });
+    expect(preview).toMatchObject({ fromVersion: "0.1.0", toVersion: "0.10.0", changed: true });
     expect(preview.graph.screens[0]?.nodes[0]).toMatchObject({
       children: [],
       layout: {
@@ -100,7 +101,7 @@ describe("Semantic Interface Graph migrations", () => {
   });
 
   it("treats the current version as an identity conversion", () => {
-    const input = fixture("0.9.0");
+    const input = previewGraphMigration(fixture("0.9.0")).graph;
     const preview = previewGraphMigration(input);
     expect(preview.changed).toBe(false);
     expect(preview.graph).toEqual(input);
@@ -110,7 +111,7 @@ describe("Semantic Interface Graph migrations", () => {
   it.each([
     [{ product: {} }, "schema.version.missing"],
     [{ schemaVersion: "0.0.0" }, "schema.version.unsupported"],
-    [{ schemaVersion: "0.10.0" }, "schema.version.future"],
+    [{ schemaVersion: "0.11.0" }, "schema.version.future"],
     [{ schemaVersion: "not-semver" }, "schema.version.unsupported"],
   ])("fails closed for unsupported version input %#", (input, code) => {
     expect(() => previewGraphMigration(input)).toThrow(GraphMigrationError);

@@ -14,7 +14,7 @@ import {
 } from "@phosphor-icons/react";
 import { findSemanticNode, type SemanticInterfaceGraph, type SemanticNode } from "@intentform/semantic-schema";
 import { createHorizontalFrameIndex, queryHorizontalFrames } from "@intentform/graph-runtime";
-import { motion } from "motion/react";
+import { motion, type MotionStyle } from "motion/react";
 import {
   useCallback,
   useEffect,
@@ -731,8 +731,8 @@ export function CanvasStage({
                             onSelectNode(node.id);
                           }
                         }}
-                        className={`canvas-node relative rounded-[18px] outline-none ${persistent ? "mt-auto" : ""} ${flowStep ? "cursor-pointer" : "cursor-default"}`}
-                        style={semanticNodeBoxStyle(node, graph, profile)}
+                        className={`canvas-node relative outline-none ${persistent ? "mt-auto" : ""} ${flowStep ? "cursor-pointer" : "cursor-default"}`}
+                        style={semanticNodeBoxStyle(node, graph, profile) as MotionStyle}
                       >
                         <NodePreview
                           node={node}

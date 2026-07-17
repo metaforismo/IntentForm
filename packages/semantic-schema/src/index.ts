@@ -537,6 +537,100 @@ export const webVisualStyleSchema = z.strictObject({
   textAlign: z.enum(["start", "end", "left", "right", "center", "justify"]).optional(),
 });
 
+const appearanceBlendModeSchema = z.enum([
+  "normal", "multiply", "screen", "overlay", "darken", "lighten",
+]);
+
+const appearanceColorBindingSchema = z.strictObject({
+  color: computedCssColorSchema.optional(),
+  token: colorTokenKeySchema.optional(),
+}).refine((value) => value.color !== undefined || value.token !== undefined, {
+  message: "Appearance colors require a literal color or color token",
+});
+
+const appearanceFillSchema = z.discriminatedUnion("type", [
+  z.strictObject({
+    id: idSchema,
+    type: z.literal("solid"),
+    visible: z.boolean().default(true),
+    color: appearanceColorBindingSchema,
+    opacity: z.number().finite().min(0).max(1).default(1),
+    blendMode: appearanceBlendModeSchema.default("normal"),
+  }),
+  z.strictObject({
+    id: idSchema,
+    type: z.literal("linear-gradient"),
+    visible: z.boolean().default(true),
+    angle: z.number().finite().min(-360).max(360).default(180),
+    stops: z.array(z.strictObject({
+      position: z.number().finite().min(0).max(1),
+      color: appearanceColorBindingSchema,
+    })).min(2).max(16),
+    opacity: z.number().finite().min(0).max(1).default(1),
+    blendMode: appearanceBlendModeSchema.default("normal"),
+  }),
+]);
+
+const appearanceEffectSchema = z.discriminatedUnion("type", [
+  z.strictObject({
+    id: idSchema,
+    type: z.enum(["shadow", "inner-shadow"]),
+    visible: z.boolean().default(true),
+    color: appearanceColorBindingSchema,
+    x: z.number().finite().min(-2_000).max(2_000).default(0),
+    y: z.number().finite().min(-2_000).max(2_000).default(4),
+    blur: z.number().finite().min(0).max(2_000).default(12),
+    spread: z.number().finite().min(-2_000).max(2_000).default(0),
+  }),
+  z.strictObject({
+    id: idSchema,
+    type: z.enum(["blur", "backdrop-blur"]),
+    visible: z.boolean().default(true),
+    radius: z.number().finite().min(0).max(256).default(8),
+  }),
+]);
+
+export const nodeAppearanceSchema = z.strictObject({
+  fills: z.array(appearanceFillSchema).max(8).default([]),
+  stroke: z.strictObject({
+    visible: z.boolean().default(true),
+    color: appearanceColorBindingSchema,
+    width: z.number().finite().min(0).max(256).default(1),
+    style: z.enum(["solid", "dashed", "dotted", "double"]).default("solid"),
+    alignment: z.enum(["inside", "center", "outside"]).default("inside"),
+  }).optional(),
+  radius: z.strictObject({
+    linked: z.boolean().default(true),
+    topLeft: z.number().finite().min(0).max(10_000).default(0),
+    topRight: z.number().finite().min(0).max(10_000).default(0),
+    bottomRight: z.number().finite().min(0).max(10_000).default(0),
+    bottomLeft: z.number().finite().min(0).max(10_000).default(0),
+    token: radiusTokenKeySchema.optional(),
+  }).optional(),
+  effects: z.array(appearanceEffectSchema).max(8).default([]),
+  opacity: z.number().finite().min(0).max(1).default(1),
+  blendMode: appearanceBlendModeSchema.default("normal"),
+  typography: z.strictObject({
+    family: z.string().min(1).max(200).regex(/^[a-z0-9 ,"'_\-]+$/i).optional(),
+    familyToken: tokenKeySchema.optional(),
+    style: z.enum(["normal", "italic"]).default("normal"),
+    weight: z.number().int().min(1).max(1_000).optional(),
+    weightToken: tokenKeySchema.optional(),
+    size: z.number().finite().min(1).max(1_000).optional(),
+    sizeToken: tokenKeySchema.optional(),
+    lineHeight: z.number().finite().min(1).max(2_000).optional(),
+    lineHeightToken: tokenKeySchema.optional(),
+    letterSpacing: z.number().finite().min(-100).max(1_000).optional(),
+    letterSpacingToken: tokenKeySchema.optional(),
+    align: z.enum(["start", "end", "left", "right", "center", "justify"]).default("start"),
+    transform: z.enum(["none", "uppercase", "lowercase", "capitalize"]).default("none"),
+    wrapping: z.enum(["wrap", "nowrap", "balance"]).default("wrap"),
+    truncation: z.enum(["none", "clip", "ellipsis"]).default("none"),
+    maxLines: z.number().int().min(1).max(100).optional(),
+    features: z.array(z.string().regex(/^[a-z0-9]{4}$/i)).max(32).default([]),
+  }).optional(),
+});
+
 export const webNodeStyleOverrideSchema = z.strictObject(Object.fromEntries(
   Object.entries(webNodeStyleFields).map(([key, schema]) => [key, schema.optional()]),
 ) as { [Key in keyof typeof webNodeStyleFields]: z.ZodOptional<(typeof webNodeStyleFields)[Key]> }).superRefine((override, context) => {
@@ -612,6 +706,12 @@ export const semanticLayoutSchema = z.strictObject({
     x: z.number().finite().min(-10_000).max(10_000),
     y: z.number().finite().min(-10_000).max(10_000),
     z: z.number().int().min(-1_000).max(1_000).default(0),
+  }).optional(),
+  rotation: z.number().finite().min(-360).max(360).optional(),
+  constraints: z.strictObject({
+    horizontal: z.enum(["left", "center", "right", "stretch"]).default("left"),
+    vertical: z.enum(["top", "middle", "bottom", "stretch"]).default("top"),
+    fixedOnScroll: z.boolean().default(false),
   }).optional(),
   gapToken: tokenKeySchema.default("space.16"),
   gap: z.number().finite().min(-128).max(512).optional(),
@@ -693,6 +793,7 @@ const semanticNodeBaseSchema = z.strictObject({
   style: z.strictObject({
     role: tokenKeySchema.default("surface"),
     emphasis: z.enum(["quiet", "normal", "strong"]).default("normal"),
+    appearance: nodeAppearanceSchema.optional(),
   }),
   editor: z.strictObject({
     locked: z.boolean().default(false),
@@ -1059,7 +1160,7 @@ export function isTransactionalScreen(
 
 export const semanticInterfaceGraphSchema = z
   .strictObject({
-    schemaVersion: z.literal("0.9.0"),
+    schemaVersion: z.literal("0.10.0"),
     product: z.strictObject({
       name: safeTextSchema(120),
       audience: z.array(safeTextSchema(240)).min(1).max(20),

@@ -11,6 +11,7 @@ import {
 import type { CSSProperties } from "react";
 import { isNodeVisible, tokenColor, tokenRadius, type VisualState } from "./support";
 import type { SelectionIntent } from "./direct-manipulation";
+import { nodeAppearanceStyle } from "./appearance";
 
 function formatMoney(value: unknown, fallback: string): string {
   const amount = typeof value === "number"
@@ -93,6 +94,7 @@ export function semanticNodeBoxStyle(node: SemanticNode, graph?: SemanticInterfa
     gridRow: node.layout.gridRow ? `${node.layout.gridRow.start} / span ${node.layout.gridRow.span}` : undefined,
     overflow: node.layout.overflow === "clip" ? "hidden" : node.layout.overflow === "scroll" ? "auto" : "visible",
     ...previewWebStyle(node, graph, viewport),
+    ...(graph ? nodeAppearanceStyle(node, graph) : {}),
   };
 }
 
@@ -186,9 +188,6 @@ export function NodePreview({
       alignItems: node.layout.align === "start" ? "flex-start" : node.layout.align === "end" ? "flex-end" : node.layout.align,
       justifyContent: node.layout.justify === "space-between" ? "space-between" : node.layout.justify,
       overflow: mode === "scroll" ? "auto" : semanticNodeBoxStyle(node).overflow,
-      borderRadius: 14,
-      outline: "1px dashed color-mix(in oklab, currentColor 14%, transparent)",
-      outlineOffset: -1,
     };
     const selected = new Set([...selectedNodeIds, ...(selectedNodeId ? [selectedNodeId] : [])]);
     const visibleChildren = node.children.filter((child) => isNodeVisible(child, state));
@@ -209,8 +208,8 @@ export function NodePreview({
               flex: index === 0 ? node.layout.splitRatio : 1 - node.layout.splitRatio,
             } : {}),
             ...(mode === "wrap" ? { flex: `1 1 calc(${100 / node.layout.columns}% - ${gap}px)` } : {}),
-            ...(selected.has(child.id) ? { outline: "2px solid var(--select)", outlineOffset: 2, borderRadius: 12 } : {}),
-            ...(child.id === hoveredNodeId && !selected.has(child.id) ? { outline: "1px solid var(--select)", outlineOffset: 2, borderRadius: 12 } : {}),
+            ...(selected.has(child.id) ? { outline: "1px solid var(--select)", outlineOffset: 2 } : {}),
+            ...(child.id === hoveredNodeId && !selected.has(child.id) ? { outline: "1px solid var(--select)", outlineOffset: 2 } : {}),
           };
           return (
             <div
