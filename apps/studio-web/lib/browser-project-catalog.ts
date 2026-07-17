@@ -13,6 +13,15 @@ import { graphFingerprint } from "./project-save-state";
 export const BROWSER_CATALOG_DB = "intentform-project-catalog";
 export const BROWSER_CATALOG_VERSION = 1;
 export const ACTIVE_BROWSER_PROJECT_KEY = "intentform-active-project-id";
+export const BROWSER_CATALOG_CHANNEL = "intentform-project-catalog-v1";
+
+export type CatalogChangeKind = "create" | "save" | "touch" | "rename" | "archive" | "organize" | "missing" | "delete";
+
+export interface CatalogChangeEvent {
+  version: 1;
+  projectId: string;
+  kind: CatalogChangeKind;
+}
 
 const documentTabSchema = z.discriminatedUnion("kind", [
   z.strictObject({
@@ -239,11 +248,36 @@ function transactionDone(transaction: IDBTransaction): Promise<void> {
 }
 
 export function catalogWriteFailure(error: unknown): CatalogWriteResult {
-  const name = error instanceof DOMException ? error.name : "";
-  if (name === "QuotaExceededError") {
+  const name = error && typeof error === "object" && "name" in error ? String((error as { name?: unknown }).name) : "";
+  if (name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED") {
     return { ok: false, code: "quota", message: "Browser storage is full. Archive or delete a project, then try again." };
   }
   return { ok: false, code: "unavailable", message: "The browser project catalog is unavailable in this context." };
+}
+
+function notifyCatalogChange(projectId: string, kind: CatalogChangeKind): void {
+  if (typeof BroadcastChannel === "undefined") return;
+  const channel = new BroadcastChannel(BROWSER_CATALOG_CHANNEL);
+  channel.postMessage({ version: 1, projectId, kind } satisfies CatalogChangeEvent);
+  channel.close();
+}
+
+export function subscribeCatalogChanges(listener: (event: CatalogChangeEvent) => void): () => void {
+  if (typeof BroadcastChannel === "undefined") return () => undefined;
+  const channel = new BroadcastChannel(BROWSER_CATALOG_CHANNEL);
+  const onMessage = (message: MessageEvent<unknown>) => {
+    const event = message.data;
+    if (!event || typeof event !== "object" || Array.isArray(event)) return;
+    const candidate = event as Partial<CatalogChangeEvent>;
+    if (candidate.version !== 1 || typeof candidate.projectId !== "string") return;
+    if (!candidate.kind || !["create", "save", "touch", "rename", "archive", "organize", "missing", "delete"].includes(candidate.kind)) return;
+    listener(candidate as CatalogChangeEvent);
+  };
+  channel.addEventListener("message", onMessage);
+  return () => {
+    channel.removeEventListener("message", onMessage);
+    channel.close();
+  };
 }
 
 async function openDatabase(): Promise<IDBDatabase> {
@@ -324,6 +358,7 @@ export function browserProjectCatalog(): BrowserProjectCatalogDatabase {
           const transaction = database.transaction("projects", "readwrite");
           transaction.objectStore("projects").add(project);
           await transactionDone(transaction);
+          notifyCatalogChange(project.id, "create");
           return { ok: true, project };
         } finally {
           database.close();
@@ -351,6 +386,7 @@ export function browserProjectCatalog(): BrowserProjectCatalogDatabase {
             const project = nextCatalogProject(current, graph, workspace, now, metadata);
             store.put(project);
             await transactionDone(transaction);
+            notifyCatalogChange(project.id, "save");
             return { ok: true, project };
           } finally {
             database.close();
@@ -374,6 +410,7 @@ export function browserProjectCatalog(): BrowserProjectCatalogDatabase {
           const project = catalogProjectSchema.parse({ ...current, lastOpenedAt: now });
           store.put(project);
           await transactionDone(transaction);
+          notifyCatalogChange(project.id, "touch");
           return { ok: true, project };
         } finally {
           database.close();
@@ -400,6 +437,7 @@ export function browserProjectCatalog(): BrowserProjectCatalogDatabase {
           const project = nextCatalogProject(current, graph, current.workspace, now);
           store.put(project);
           await transactionDone(transaction);
+          notifyCatalogChange(project.id, "rename");
           return { ok: true, project };
         } finally {
           database.close();
@@ -427,6 +465,7 @@ export function browserProjectCatalog(): BrowserProjectCatalogDatabase {
           });
           store.put(project);
           await transactionDone(transaction);
+          notifyCatalogChange(project.id, "archive");
           return { ok: true, project };
         } finally {
           database.close();
@@ -458,6 +497,7 @@ export function browserProjectCatalog(): BrowserProjectCatalogDatabase {
           });
           store.put(project);
           await transactionDone(transaction);
+          notifyCatalogChange(project.id, "organize");
           return { ok: true, project };
         } finally {
           database.close();
@@ -485,6 +525,7 @@ export function browserProjectCatalog(): BrowserProjectCatalogDatabase {
           });
           store.put(project);
           await transactionDone(transaction);
+          notifyCatalogChange(project.id, "missing");
           return { ok: true, project };
         } finally {
           database.close();
@@ -499,6 +540,7 @@ export function browserProjectCatalog(): BrowserProjectCatalogDatabase {
         const transaction = database.transaction("projects", "readwrite");
         transaction.objectStore("projects").delete(id);
         await transactionDone(transaction);
+        notifyCatalogChange(id, "delete");
         return true;
       } finally {
         database.close();
