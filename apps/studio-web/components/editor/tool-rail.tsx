@@ -7,6 +7,7 @@ import {
   Cursor,
   FrameCorners,
   Hand,
+  ChatCircle,
   Plus,
   Selection,
   TreeStructure,
@@ -72,6 +73,7 @@ export function ToolRail({
       <div className="flex flex-col items-center gap-1">
         {toolButton("select", "Select", Cursor)}
         {toolButton("hand", "Pan", Hand)}
+        {toolButton("comment", "Add comment", ChatCircle)}
         <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
           <button type="button" title="Insert semantic component" aria-label="Insert component" aria-expanded={insertOpen} onClick={onInsert} className={`${quietButton} ${insertOpen ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : ""}`}>
             <Plus size={15} weight="bold" />

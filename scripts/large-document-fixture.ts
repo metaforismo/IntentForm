@@ -38,5 +38,7 @@ export function createLargeDocumentGraph(
       }),
     };
   });
+  graph.prototype.startScreenId = graph.screens[0]!.id;
+  graph.reviewThreads = [];
   return graph;
 }

@@ -50,6 +50,8 @@ function largeGraph() {
       })),
     };
   });
+  graph.prototype.startScreenId = graph.screens[0]!.id;
+  graph.reviewThreads = [];
   return graph;
 }
 
@@ -119,7 +121,7 @@ describe("browser project recovery", () => {
     }));
     const loaded = loadBrowserProject(storage);
     expect(loaded.status).toBe("ready");
-    if (loaded.status === "ready") expect(loaded.project.graph.schemaVersion).toBe("0.10.0");
+    if (loaded.status === "ready") expect(loaded.project.graph.schemaVersion).toBe("0.11.0");
   });
 
   it("migrates the legacy raw graph without mutating it", () => {

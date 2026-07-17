@@ -187,12 +187,12 @@ try {
             status: 409,
             contentType: "application/json",
             body: JSON.stringify({
-              error: "Project schema 0.0.1 must be migrated to 0.10.0 before it can be opened.",
+              error: "Project schema 0.0.1 must be migrated to 0.11.0 before it can be opened.",
               migration: {
                 status: "migration-required",
                 sourceFingerprint: "a".repeat(64),
                 fromVersion: "0.0.1",
-                toVersion: "0.10.0",
+                toVersion: "0.11.0",
                 diagnostics: [{
                   severity: "info",
                   code: "schema.migrated.0.0.1.to.0.1.0",
@@ -243,6 +243,11 @@ try {
                   code: "schema.migrated.0.9.0.to.0.10.0",
                   path: "schemaVersion",
                   message: "Converted schema 0.9.0 to 0.10.0.",
+                }, {
+                  severity: "info",
+                  code: "schema.migrated.0.10.0.to.0.11.0",
+                  path: "schemaVersion",
+                  message: "Converted schema 0.10.0 to 0.11.0.",
                 }],
               },
             }),
@@ -1920,6 +1925,33 @@ try {
       await toggle.click();
       await board.waitFor({ state: "detached" });
       await comparisonPage.getByTestId("canvas-viewport").waitFor();
+    },
+  });
+
+  await runSmokeScenario(browser, {
+    name: "semantic prototype and anchored review comments",
+    run: async (page) => {
+      await gotoStudio(page, origin);
+      const action = page.getByTestId("canvas-node-payment-request.confirm");
+      await action.click();
+      await page.getByTestId("inspector-mode-prototype").click();
+      await page.getByTestId("prototype-trigger").selectOption("click");
+      await page.getByTestId("prototype-action-type").selectOption("navigate");
+      await page.getByTestId("prototype-destination").selectOption("receipt");
+      await page.getByTestId("prototype-start-screen").selectOption("payment-request");
+
+      await page.getByRole("button", { name: "Add comment" }).first().click();
+      await action.click();
+      await page.getByTestId("review-comment-body").fill("Verify the confirmation transition and recovery behavior.");
+      await page.getByTestId("review-comment-submit").click();
+      await page.locator('[data-testid^="review-pin-"]').first().waitFor();
+      await page.getByText("Verify the confirmation transition and recovery behavior.", { exact: true }).waitFor();
+
+      await page.getByLabel("Close review comments").click();
+      await page.getByRole("button", { name: "Toggle preview mode" }).click();
+      await action.click();
+      await page.waitForFunction(() => document.querySelector('[data-testid="device-frame"][data-screen-id="receipt"]') !== null);
+      await page.getByRole("button", { name: "Toggle preview mode" }).click();
     },
   });
 

@@ -246,6 +246,7 @@ export function describeProject(dir: string) {
     expo: node.expo ?? null,
     states: node.states.map((state) => state.name),
     events: node.interactions.map((interaction) => interaction.event),
+    prototypeActions: node.prototypeActions,
     children: node.children.map((child) => describeNode(child, node.id, depth + 1)),
   });
   return {
@@ -318,6 +319,8 @@ export function describeProject(dir: string) {
       nodes: screen.nodes.map((node) => describeNode(node, null, 1)),
     })),
     flows: graph.flows,
+    prototype: graph.prototype,
+    reviewThreads: graph.reviewThreads,
     contracts: graph.contracts.map((contract) => ({
       screenId: contract.screenId,
       data: contract.data,

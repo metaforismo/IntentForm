@@ -249,6 +249,7 @@ export function projectComputedDom(
       },
       states: [],
       interactions: [],
+      prototypeActions: [],
       provenance: { author: "human", revision: 0 },
       children,
     };

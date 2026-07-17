@@ -15,6 +15,7 @@ function actionNode(): SemanticNode {
     accessibility: { label: "Submit", live: "off" },
     states: [],
     interactions: [{ event: "submit", requires: [] }],
+    prototypeActions: [],
     provenance: { author: "human", revision: 0 },
     children: [],
   };

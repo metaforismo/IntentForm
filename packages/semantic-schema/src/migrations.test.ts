@@ -31,6 +31,7 @@ describe("Semantic Interface Graph migrations", () => {
         { severity: "info", code: "schema.migrated.0.7.0.to.0.8.0", path: "schemaVersion" },
         { severity: "info", code: "schema.migrated.0.8.0.to.0.9.0", path: "schemaVersion" },
         { severity: "info", code: "schema.migrated.0.9.0.to.0.10.0", path: "schemaVersion" },
+        { severity: "info", code: "schema.migrated.0.10.0.to.0.11.0", path: "schemaVersion" },
       ],
     });
     expect(preview.graph).toEqual(expected.graph);
@@ -40,7 +41,7 @@ describe("Semantic Interface Graph migrations", () => {
 
   it("converts a flat 0.1.0 graph into recursive roots with explicit layout defaults", () => {
     const preview = previewGraphMigration(fixture("0.1.0"));
-    expect(preview).toMatchObject({ fromVersion: "0.1.0", toVersion: "0.10.0", changed: true });
+    expect(preview).toMatchObject({ fromVersion: "0.1.0", toVersion: "0.11.0", changed: true });
     expect(preview.graph.screens[0]?.nodes[0]).toMatchObject({
       children: [],
       layout: {
@@ -53,6 +54,16 @@ describe("Semantic Interface Graph migrations", () => {
       },
     });
     expect(preview.graph).toEqual(previewGraphMigration(fixture("0.9.0")).graph);
+  });
+
+  it("adds local prototype and review roots when upgrading 0.10.0 graphs", () => {
+    const legacy = { ...(fixture("0.9.0") as Record<string, unknown>), schemaVersion: "0.10.0" };
+    const preview = previewGraphMigration(legacy);
+    expect(preview.graph).toMatchObject({
+      schemaVersion: "0.11.0",
+      prototype: { startScreenId: "home" },
+      reviewThreads: [],
+    });
   });
 
   it("upgrades legacy component catalog metadata into executable local definitions", () => {
@@ -111,7 +122,7 @@ describe("Semantic Interface Graph migrations", () => {
   it.each([
     [{ product: {} }, "schema.version.missing"],
     [{ schemaVersion: "0.0.0" }, "schema.version.unsupported"],
-    [{ schemaVersion: "0.11.0" }, "schema.version.future"],
+    [{ schemaVersion: "0.12.0" }, "schema.version.future"],
     [{ schemaVersion: "not-semver" }, "schema.version.unsupported"],
   ])("fails closed for unsupported version input %#", (input, code) => {
     expect(() => previewGraphMigration(input)).toThrow(GraphMigrationError);
