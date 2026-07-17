@@ -51,6 +51,19 @@ import {
   type ProjectType,
 } from "../lib/browser-project-catalog";
 import { hasUnsavedLocalChanges, serializedGraphFingerprint } from "../lib/project-save-state";
+import {
+  JUDGE_SESSION_KEY,
+  advanceJudgeSession,
+  createJudgeSession,
+  judgeDeepLink,
+  judgeStep,
+  judgeSteps,
+  parseJudgeDeepLink,
+  parseJudgeSession,
+  selectJudgeStep,
+  type JudgeSession,
+  type JudgeStepId,
+} from "../lib/judge-mode";
 import { ManualEditor, type WorkflowStage } from "./manual-editor";
 import { reconcileGraphSelection } from "./editor/direct-manipulation";
 import { editorProfiles, type DeviceId, type VisualState } from "./editor/support";
@@ -72,6 +85,7 @@ import { EcosystemControl } from "./ecosystem-control";
 import { AgentActivityPanel, type AgentReviewChange } from "./agent-activity-panel";
 import { BrandMark } from "./brand-mark";
 import { adaptiveAutosaveDelay } from "./reliability-model";
+import { JudgeModePanel } from "./judge-mode";
 
 type Stage = "canvas" | WorkflowStage;
 export type OutputTarget = "react" | "swiftui" | "expo" | "web";
@@ -177,6 +191,7 @@ export function Studio() {
   const [catalogSavedSnapshot, setCatalogSavedSnapshot] = useState<string | null>(null);
   const [catalogSaveState, setCatalogSaveState] = useState<"saved" | "dirty" | "saving" | "error">("saved");
   const [workspace, setWorkspace] = useState<BrowserWorkspaceState>(() => defaultWorkspaceState(demoGraph));
+  const [judgeSession, setJudgeSession] = useState<JudgeSession | null>(null);
   const [pendingTabClose, setPendingTabClose] = useState<BrowserDocumentTab | null>(null);
   const lastCommit = useRef({ at: 0, notice: "" });
   const graphRef = useRef(graph);
@@ -208,10 +223,20 @@ export function Studio() {
   const themeTrigger = useRef<HTMLButtonElement>(null);
   const agentTrigger = useRef<HTMLButtonElement>(null);
   const agentCloseButton = useRef<HTMLButtonElement>(null);
+  const judgeMode = judgeSession !== null;
 
   useEffect(() => {
     if (document.documentElement.dataset.theme === "dark") setThemeState("dark");
   }, []);
+
+  useEffect(() => {
+    if (!judgeSession) return;
+    try {
+      window.sessionStorage.setItem(JUDGE_SESSION_KEY, JSON.stringify(judgeSession));
+    } catch {
+      // A private browsing quota must not block the deterministic walkthrough.
+    }
+  }, [judgeSession]);
 
   useEffect(() => {
     if (!agentDrawerOpen) return;
@@ -432,6 +457,36 @@ export function Studio() {
     };
     void (async () => {
       try {
+        const judgeLink = parseJudgeDeepLink(window.location.search);
+        if (judgeLink.enabled) {
+          let restoredSession = createJudgeSession(judgeLink.step);
+          try {
+            restoredSession = parseJudgeSession(window.sessionStorage.getItem(JUDGE_SESSION_KEY), judgeLink.step);
+          } catch {
+            // Session storage is optional; the deep link remains authoritative.
+          }
+          const sample = structuredClone(demoGraph);
+          const walkthroughStep = judgeStep(restoredSession.activeStep);
+          setJudgeSession(restoredSession);
+          setStage(walkthroughStep.stage);
+          setGraph(sample);
+          setBaseline(sample);
+          setCatalogProject(null);
+          catalogProjectRef.current = null;
+          setCatalogSavedGraph(null);
+          setCatalogSavedSnapshot(null);
+          setWorkspace(defaultWorkspaceState(sample));
+          setProjectType("application");
+          setProjectSource("example");
+          setLocalProjectFingerprint(null);
+          setSelectedScreen("payment-request");
+          setSelectedNodeId("payment-request.amount");
+          setMode("replay");
+          setModel("deterministic-sample");
+          setNotice("Judge Mode opened an isolated verified sample. Catalog projects will not be changed.");
+          setDraftReady(true);
+          return;
+        }
         const migration = await migrateLegacyBrowserProject(window.localStorage);
         if (migration.warning) throw new Error(migration.warning);
         const requestedId = new URLSearchParams(window.location.search).get("project");
@@ -776,6 +831,46 @@ export function Studio() {
   const confirmProjectReset = () => {
     setResetConfirmOpen(false);
     resetProject();
+  };
+
+  const openJudgeStep = (stepId: JudgeStepId) => {
+    const step = judgeStep(stepId);
+    setJudgeSession((current) => current ? selectJudgeStep(current, stepId) : createJudgeSession(stepId));
+    setStage(step.stage);
+    window.history.replaceState(null, "", judgeDeepLink(stepId));
+    document.getElementById("studio-workspace")?.focus();
+  };
+
+  const advanceJudgeMode = () => {
+    if (!judgeSession) return;
+    if (judgeSession.completed.length === judgeSteps.length) {
+      resetJudgeMode();
+      return;
+    }
+    const next = advanceJudgeSession(judgeSession);
+    setJudgeSession(next);
+    setStage(judgeStep(next.activeStep).stage);
+    window.history.replaceState(null, "", judgeDeepLink(next.activeStep));
+  };
+
+  const resetJudgeMode = () => {
+    resetProject();
+    const next = createJudgeSession();
+    setJudgeSession(next);
+    setStage("canvas");
+    setMode("replay");
+    setModel("deterministic-sample");
+    window.history.replaceState(null, "", judgeDeepLink("design"));
+    setNotice("Judge Mode reset to a clean isolated sample.");
+  };
+
+  const exitJudgeMode = () => {
+    try {
+      window.sessionStorage.removeItem(JUDGE_SESSION_KEY);
+    } catch {
+      // Session storage is best-effort.
+    }
+    window.location.assign("/");
   };
 
   const exportGraph = () => {
@@ -1220,6 +1315,7 @@ export function Studio() {
           </nav>
 
           <div className="flex items-center justify-end gap-1">
+            {judgeMode ? <span className="hidden h-6 items-center rounded-[5px] border border-[var(--if-blue)]/35 bg-[var(--if-blue-soft)] px-2 font-mono text-[8.5px] font-semibold uppercase tracking-[.1em] text-[var(--if-blue-text)] md:inline-flex">Judge replay</span> : null}
             <button
               ref={themeTrigger}
               type="button"
@@ -1424,6 +1520,15 @@ export function Studio() {
           </AnimatePresence>
         </section>
       </div>
+      {judgeSession ? (
+        <JudgeModePanel
+          session={judgeSession}
+          onSelectStep={openJudgeStep}
+          onAdvance={advanceJudgeMode}
+          onReset={resetJudgeMode}
+          onExit={exitJudgeMode}
+        />
+      ) : null}
       {agentDrawerOpen ? (
         <div className="fixed inset-0 z-40 flex justify-end">
           <button type="button" aria-label="Close agent drawer" onClick={closeAgentDrawer} className="absolute inset-0 bg-[var(--backdrop)]/45" />
