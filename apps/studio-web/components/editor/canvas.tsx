@@ -824,9 +824,12 @@ export function CanvasStage({
                     const selected = selectedNodeIds.includes(node.id) && isSelectedScreen;
                     const agentPreviewed = agentPreviewNodeIds.includes(node.id) && isSelectedScreen;
                     const persistent = node.kind === "primary-action" && node.layout.placement?.[profile.breakpoint] === "persistent-bottom";
-                    const prototypeAction = previewMode ? node.prototypeActions[0] : undefined;
-                    const flowStep = previewMode && !prototypeAction && node.interactions[0]
-                      ? graph.flows.flatMap((flow) => flow.steps).find((step) => step.from === screen.id && step.event === node.interactions[0]?.event)
+                    const previewNode = previewMode
+                      ? flattenSemanticNodes([node]).find((candidate) => candidate.prototypeActions.length > 0 || candidate.interactions.length > 0)
+                      : undefined;
+                    const prototypeAction = previewNode?.prototypeActions[0];
+                    const flowStep = previewMode && !prototypeAction && previewNode?.interactions[0]
+                      ? graph.flows.flatMap((flow) => flow.steps).find((step) => step.from === screen.id && step.event === previewNode.interactions[0]?.event)
                       : undefined;
                     const previewAction = Boolean(prototypeAction || flowStep);
                     const nodeThreads = graph.reviewThreads.filter((thread) => thread.anchor.nodeId === node.id);
@@ -846,16 +849,25 @@ export function CanvasStage({
                         onClick={selected && !previewMode && tool !== "comment" ? undefined : (event) => {
                           event.stopPropagation();
                           if (panActive) return;
+                          const layer = event.target instanceof Element
+                            ? event.target.closest<HTMLElement>('[data-testid^="canvas-node-"]')
+                            : null;
+                          const nestedId = layer?.dataset.testid?.slice("canvas-node-".length);
+                          const target = nestedId ? findSemanticNode(screen.nodes, nestedId) ?? node : node;
                           if (previewMode) {
-                            if (prototypeAction && ["click", "tap", "press"].includes(prototypeAction.trigger)) onPrototypeAction(prototypeAction, screen.id);
-                            else if (flowStep) {
-                              onSelectScreen(flowStep.to);
-                              fitScreen(flowStep.to, true);
+                            const targetAction = target.prototypeActions[0];
+                            const targetFlow = !targetAction && target.interactions[0]
+                              ? graph.flows.flatMap((flow) => flow.steps).find((step) => step.from === screen.id && step.event === target.interactions[0]?.event)
+                              : undefined;
+                            if (targetAction && ["click", "tap", "press"].includes(targetAction.trigger)) onPrototypeAction(targetAction, screen.id);
+                            else if (targetFlow) {
+                              onSelectScreen(targetFlow.to);
+                              fitScreen(targetFlow.to, true);
                             }
                             return;
                           }
                           if (tool === "comment") {
-                            onReviewAnchor(screen.id, node.id);
+                            onReviewAnchor(screen.id, target.id);
                             return;
                           }
                           onSelectScreen(screen.id);

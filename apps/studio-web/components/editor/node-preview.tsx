@@ -181,8 +181,12 @@ export function NodePreview({
       display: mode === "grid" || mode === "overlay" || mode === "freeform" ? "grid" : "flex",
       flexDirection: horizontal ? "row" : "column",
       flexWrap: mode === "wrap" ? "wrap" : "nowrap",
-      gridTemplateColumns: mode === "grid" ? (node.layout.gridTracks?.map((track) => `${track}fr`).join(" ") ?? `repeat(${node.layout.columns}, minmax(0, 1fr))`) : undefined,
-      gridTemplateRows: mode === "grid" && node.layout.gridRows ? node.layout.gridRows.map((track) => `${track}fr`).join(" ") : undefined,
+      gridTemplateColumns: mode === "grid"
+        ? (node.layout.gridTracks?.map((track) => `${track}fr`).join(" ") ?? `repeat(${node.layout.columns}, minmax(0, 1fr))`)
+        : mode === "overlay" ? "minmax(0, 1fr)" : undefined,
+      gridTemplateRows: mode === "grid" && node.layout.gridRows
+        ? node.layout.gridRows.map((track) => `${track}fr`).join(" ")
+        : mode === "overlay" ? "minmax(0, 1fr)" : undefined,
       position: mode === "freeform" ? "relative" : undefined,
       gap,
       ...(mode === "safe-area" && !node.layout.paddingTokens
@@ -255,7 +259,7 @@ export function NodePreview({
     case "image":
       return <div className="grid min-h-28 place-items-center rounded-xl border border-dashed text-[12px] text-zinc-500" style={{ borderColor: hairline }}>Image · <span data-editable-text>{node.intent.label}</span></div>;
     case "shape":
-      return <div aria-hidden="true" className="min-h-16 rounded-xl" style={{ background: soft }} />;
+      return <div aria-hidden="true" className="h-full min-h-16 w-full" style={{ background: node.style.appearance?.fills.length ? "transparent" : soft, borderRadius: "inherit" }} />;
     case "action":
       return <div data-editable-text className="rounded-lg border px-4 py-3 text-center text-[14px] font-semibold" style={{ borderColor: accent, color: deep }}>{node.intent.label}</div>;
     case "input":

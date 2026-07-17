@@ -181,7 +181,7 @@ export function OutputsStage({
     if (outputTarget === "web" && graph.web && webScreen && webPreviewSource) return (
       <div className="flex h-full justify-center overflow-auto bg-[var(--canvas)] p-3">
         <div data-testid="responsive-web-preview" className="h-full overflow-hidden border border-[var(--line)] bg-white" style={{ width: `${previewWidth}%` }}>
-          <iframe title={`Generated Web preview: ${webScreen.title}`} sandbox="" srcDoc={webPreviewSource} className="h-full w-full border-0 bg-white" />
+          <iframe title={`Generated Web preview: ${webScreen.title}`} sandbox="allow-scripts" srcDoc={webPreviewSource} className="h-full w-full border-0 bg-white" />
         </div>
       </div>
     );

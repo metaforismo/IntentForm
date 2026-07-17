@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseGraph } from "@intentform/semantic-schema";
+import { flattenSemanticNodes, parseGraph } from "@intentform/semantic-schema";
+import { verifyGraph } from "@intentform/verifier";
 import {
   createStarterGraph,
   createLumenShowcaseGraph,
@@ -133,8 +134,32 @@ describe("project starters", () => {
     expect(graph.screens.map((screen) => screen.id)).toEqual(["library", "collection", "player"]);
     expect(Object.keys(graph.tokens.modes)).toEqual(expect.arrayContaining(["default", "evening", "compact"]));
     expect(graph.components.length).toBeGreaterThan(0);
+    expect(graph.components.map((component) => component.id)).toEqual(["aster.playback-action", "aster.release-surface"]);
     expect(graph.platforms.filter((platform) => platform.enabled).map((platform) => platform.target))
       .toEqual(expect.arrayContaining(["react", "swiftui", "expo", "web"]));
+    const nodes = graph.screens.flatMap((screen) => flattenSemanticNodes(screen.nodes));
+    const originalArtwork = nodes.filter((node) => node.style.role === "original-vector-art");
+    expect(originalArtwork.length).toBeGreaterThanOrEqual(12);
+    expect(originalArtwork.every((node) => node.web === undefined && node.style.appearance?.fills.length)).toBe(true);
+    expect(nodes.find((node) => node.id === "library.tidal.play")?.prototypeActions)
+      .toContainEqual(expect.objectContaining({ type: "navigate", targetScreenId: "player" }));
+    expect(nodes.find((node) => node.id === "player.play")?.prototypeActions)
+      .toContainEqual(expect.objectContaining({ type: "change-state", state: "completed" }));
+    expect(graph.reviewThreads).toContainEqual(expect.objectContaining({
+      id: "review.aster-player-action",
+      messages: expect.arrayContaining([expect.objectContaining({ transactionId: "transaction.aster-player-placement" })]),
+    }));
+    expect(graph.contracts.flatMap((contract) => contract.visualStates))
+      .toEqual(expect.arrayContaining(["idle", "loading", "empty", "failed", "completed"]));
+    const verification = verifyGraph(graph, {
+      target: "web",
+      viewport: { width: 1440, height: 1000 },
+      buildStatus: "passed",
+      deviceProfile: "device:desktop",
+      visualState: "idle",
+    });
+    expect(verification.findings.filter((finding) => finding.category === "design-quality"))
+      .toEqual([]);
     expect(JSON.stringify(graph)).not.toMatch(/lorem ipsum|spotify|apple music/i);
   });
 
