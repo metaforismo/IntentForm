@@ -175,6 +175,7 @@ export function Studio() {
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [agentDrawerOpen, setAgentDrawerOpen] = useState(false);
   const [agentPreview, setAgentPreview] = useState<{ transactionId: string; nodeIds: string[]; changes: number } | null>(null);
+  const [agentReviewTarget, setAgentReviewTarget] = useState<{ key: number; threadId: string } | null>(null);
   const [draftReady, setDraftReady] = useState(false);
   const [theme, setThemeState] = useState<"light" | "dark">("light");
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
@@ -744,6 +745,16 @@ export function Studio() {
     setPendingAction(null);
   };
 
+  const cancelPendingRequest = () => {
+    if (!activeRequest.current || !pendingAction || pendingAction === "project-save") return;
+    activeRequest.current.controller.abort();
+    activeRequest.current = null;
+    retryRequest.current = null;
+    setPendingAction(null);
+    setRequestFailure(null);
+    setNotice(`${pendingAction === "repair" ? "Repair planning" : pendingAction === "interpret" ? "Intent generation" : "Project opening"} cancelled. No project changes were applied.`);
+  };
+
   const failRequest = (message: string, retryLabel: string, retry: () => void) => {
     setNotice(message);
     retryRequest.current = retry;
@@ -1148,6 +1159,25 @@ export function Studio() {
     setNotice(`Previewing ${reviewChanges.length} proposed project-level agent changes. The canonical graph is unchanged until you commit.`);
   };
 
+  const openAgentLinkedComment = (commentId: string, reviewChanges: AgentReviewChange[], transactionId: string) => {
+    const thread = graph.reviewThreads.find((candidate) => candidate.id === commentId);
+    if (!thread) {
+      setNotice(`The linked review comment ${commentId} no longer exists in the current graph. No project changes were applied.`);
+      return;
+    }
+    setAgentPreview({
+      transactionId,
+      changes: reviewChanges.length,
+      nodeIds: thread.anchor.nodeId ? [thread.anchor.nodeId] : [],
+    });
+    setSelectedScreen(thread.anchor.screenId);
+    setSelectedNodeId(thread.anchor.nodeId ?? null);
+    setAgentReviewTarget({ key: Date.now(), threadId: thread.id });
+    setStage("canvas");
+    setAgentDrawerOpen(false);
+    setNotice(`Opened review comment ${thread.id} with its linked agent transaction preview. The canonical graph is unchanged.`);
+  };
+
   const inspectGeneratedNode = (nodeId: string) => {
     const screen = graph.screens.find((item) => flattenSemanticNodes(item.nodes).some((node) => node.id === nodeId));
     if (!screen) {
@@ -1316,6 +1346,7 @@ export function Studio() {
 
           <div className="flex items-center justify-end gap-1">
             {judgeMode ? <span className="hidden h-6 items-center rounded-[5px] border border-[var(--if-blue)]/35 bg-[var(--if-blue-soft)] px-2 font-mono text-[8.5px] font-semibold uppercase tracking-[.1em] text-[var(--if-blue-text)] md:inline-flex">Judge replay</span> : null}
+            {pendingAction && pendingAction !== "project-save" ? <button type="button" onClick={cancelPendingRequest} className="h-7 rounded-[5px] border border-[var(--warn)]/35 px-2 text-[9.5px] font-medium text-[var(--warn)]">Cancel {pendingAction === "repair" ? "repair" : pendingAction === "interpret" ? "generation" : "open"}</button> : null}
             <button
               ref={themeTrigger}
               type="button"
@@ -1418,6 +1449,7 @@ export function Studio() {
                   localProjectSaved={localProjectFingerprint !== null && !localChangesAreUnsaved}
                   verificationFocus={verificationFocus}
                   agentPreview={agentPreview}
+                  agentReviewTarget={agentReviewTarget}
                   onClearAgentPreview={() => setAgentPreview(null)}
                   onSelectScreen={setSelectedScreen}
                   onDeviceId={setScenarioId}
@@ -1544,8 +1576,11 @@ export function Studio() {
               workspaceLabel={stage}
               targetLabel={stage === "outputs" ? outputTarget : null}
               fileLabel={stage === "outputs" ? selectedCode?.path ?? null : null}
-              currentFingerprint={localProjectFingerprint ?? currentGraphFingerprint}
+              deviceLabel={scenarioId}
+              visualState={verification.scenario.visualState ?? "idle"}
+              currentFingerprint={currentGraphFingerprint}
               onPreviewChanges={previewAgentChanges}
+              onOpenLinkedComment={openAgentLinkedComment}
               onProjectChanged={() => { setAgentPreview(null); openLocalProject(); }}
             />
           </aside>

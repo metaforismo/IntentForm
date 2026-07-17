@@ -29,6 +29,15 @@ export interface RepairPreview {
   repairedGraph: SemanticInterfaceGraph;
 }
 
+export type BuildPresentationState = "disabled" | "not-run" | "running" | "current" | "stale" | "failed" | "cancelled" | "unavailable";
+
+export interface BuildPresentation {
+  state: BuildPresentationState;
+  label: string;
+  canStart: boolean;
+  canCancel: boolean;
+}
+
 export const COMPARISON_PROFILE_LIMIT = 3;
 
 function comparisonCategory(profile: DeviceProfile): "phone" | "tablet" | "desktop" {
@@ -93,6 +102,26 @@ export function localPreviewTarget(target: OutputTarget): LocalPreviewTarget {
 
 export function usableLocalPreview(entry: LocalPreviewEntry | undefined) {
   return entry && !("unavailable" in entry) ? entry : null;
+}
+
+export function buildPresentation(
+  enabled: boolean,
+  entry: LocalPreviewEntry | undefined,
+  requestPending: boolean,
+): BuildPresentation {
+  if (!enabled) return { state: "disabled", label: "Desktop bridge required", canStart: false, canCancel: false };
+  if (requestPending) return { state: "running", label: "Requesting build", canStart: false, canCancel: false };
+  if (!entry) return { state: "not-run", label: "Build not run", canStart: true, canCancel: false };
+  if ("unavailable" in entry) return { state: "unavailable", label: "Toolchain unavailable", canStart: false, canCancel: false };
+  if (["queued", "generating", "building"].includes(entry.phase)) {
+    const label = entry.phase === "queued" ? "Build queued" : entry.phase === "generating" ? "Generating" : "Building";
+    return { state: "running", label, canStart: false, canCancel: true };
+  }
+  if (entry.buildState === "failed" || entry.phase === "failed") return { state: "failed", label: "Build failed", canStart: true, canCancel: false };
+  if (entry.buildState === "cancelled" || entry.phase === "cancelled") return { state: "cancelled", label: "Build cancelled", canStart: true, canCancel: false };
+  if (entry.freshness === "stale" || entry.buildState === "stale") return { state: "stale", label: "Evidence stale", canStart: true, canCancel: false };
+  if (entry.freshness === "fresh" && entry.buildStatus === "passed") return { state: "current", label: "Evidence current", canStart: true, canCancel: false };
+  return { state: "not-run", label: entry.evidence === "generated" ? "Generated, not built" : "Build not run", canStart: true, canCancel: false };
 }
 
 export function verificationNavigationTarget(
