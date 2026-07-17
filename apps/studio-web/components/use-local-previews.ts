@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { BuildEvidenceState, PriorValidPreviewEvidence } from "@intentform/preview-daemon";
 
 export const LOCAL_PREVIEW_TARGETS = ["browser", "expo-ios", "expo-android", "swiftui"] as const;
 export type LocalPreviewTarget = typeof LOCAL_PREVIEW_TARGETS[number];
@@ -25,6 +26,7 @@ export interface LocalPreviewStatus {
   evidence: LocalPreviewManifest["evidence"];
   freshness: "fresh" | "stale" | "not-run";
   buildStatus: "passed" | "failed" | "not-run";
+  buildState: BuildEvidenceState;
   expectedBinding: {
     revisionFingerprint: string;
     graphDigest: string;
@@ -36,6 +38,7 @@ export interface LocalPreviewStatus {
     bindingKey: string;
   };
   manifest: LocalPreviewManifest | null;
+  priorValidEvidence: PriorValidPreviewEvidence | null;
 }
 
 export interface UnavailableLocalPreview {

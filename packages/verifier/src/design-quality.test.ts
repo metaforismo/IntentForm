@@ -142,7 +142,14 @@ describe("deterministic design-quality audit", () => {
   });
 
   it("surfaces deterministic findings through the shared verifier contract", () => {
-    const result = verifyGraph(inconsistentGraph(), { target: "react", viewport: scenario.viewport, buildStatus: "passed" });
+    const result = verifyGraph(inconsistentGraph(), {
+      target: "react",
+      viewport: scenario.viewport,
+      buildStatus: "passed",
+      deviceProfile: "device:phone",
+      visualState: "idle",
+      sourceFingerprint: "1234abcd",
+    });
     const finding = result.findings.find((item) => item.rule?.id === "responsiveness.viewport-overflow");
     expect(finding).toMatchObject({
       category: "design-quality",
@@ -150,6 +157,9 @@ describe("deterministic design-quality audit", () => {
       nodeId: "quality.primary",
       propertyPath: "quality.primary.layout.fixedWidth",
       subjective: false,
+      deviceProfile: "device:phone",
+      visualState: "idle",
+      sourceFingerprint: "1234abcd",
       rule: { standard: "IntentForm Design Quality", version: "1.0.0", profileId: "design-quality" },
     });
     expect(finding?.evidence.some((item) => item.kind === "design-quality")).toBe(true);

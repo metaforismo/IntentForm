@@ -142,6 +142,7 @@ interface ManualEditorProps {
   localProjectEnabled: boolean;
   localProjectFingerprint: string | null;
   localProjectSaved: boolean;
+  verificationFocus: { key: number; screenId: string; nodeId: string | null; visualState: VisualState } | null;
   onSelectScreen(screenId: string): void;
   onDeviceId(deviceId: DeviceId): void;
   onSelectNode(nodeId: string | null): void;
@@ -272,6 +273,7 @@ export function ManualEditor({
   localProjectEnabled,
   localProjectFingerprint,
   localProjectSaved,
+  verificationFocus,
   onSelectScreen,
   onDeviceId,
   onSelectNode,
@@ -350,6 +352,16 @@ export function ManualEditor({
       // Persisting panel sizes is best-effort.
     }
   }, [panelWidths]);
+
+  useEffect(() => {
+    if (!verificationFocus || verificationFocus.screenId !== selectedScreen) return;
+    setVisualStateByScreen((current) => ({ ...current, [verificationFocus.screenId]: verificationFocus.visualState }));
+    const frame = requestAnimationFrame(() => {
+      if (verificationFocus.nodeId && canvasApi.current?.focusNode(verificationFocus.nodeId)) return;
+      canvasApi.current?.fitScreen(verificationFocus.screenId, true);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [selectedScreen, verificationFocus]);
 
   useEffect(() => {
     document.documentElement.toggleAttribute("data-intentform-minimal-ui", minimalUi);

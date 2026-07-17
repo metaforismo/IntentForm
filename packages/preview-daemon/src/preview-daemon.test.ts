@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -11,6 +11,7 @@ import {
   PreviewBindingCache,
   PreviewSupervisor,
   PreviewToolchainMissingError,
+  buildEvidenceState,
   createPreviewBinding,
   createQueuedManifest,
   evidenceManifestPath,
@@ -148,6 +149,22 @@ describe("preview evidence bindings", () => {
     expect(resolvePreviewEvidence(projectDir, expected, createQueuedManifest(expected)).buildStatus).toBe("not-run");
     expect(resolvePreviewEvidence(projectDir, expected, null)).toMatchObject({ phase: "idle", freshness: "not-run" });
   });
+
+  it("maps the complete typed build lifecycle without treating generation as a pass", () => {
+    const expected = binding("browser");
+    const queued = createQueuedManifest(expected);
+    expect(buildEvidenceState(expected, null)).toBe("not-generated");
+    expect(buildEvidenceState(expected, queued)).toBe("queued");
+    expect(buildEvidenceState(expected, { ...queued, phase: "generating" })).toBe("running");
+    expect(buildEvidenceState(expected, { ...queued, phase: "building", evidence: "generated" })).toBe("generated");
+    expect(buildEvidenceState(expected, terminalManifest("browser"))).toBe("passed");
+    expect(buildEvidenceState(expected, { ...queued, phase: "ready", evidence: "validated" })).toBe("generated");
+    expect(buildEvidenceState(expected, { ...queued, phase: "failed", evidence: "failed" })).toBe("failed");
+    expect(buildEvidenceState(expected, { ...queued, phase: "cancelled" })).toBe("cancelled");
+    expect(buildEvidenceState(expected, { ...queued, phase: "toolchain-missing" })).toBe("unavailable");
+    expect(buildEvidenceState(expected, { ...queued, phase: "idle" })).toBe("not-run");
+    expect(buildEvidenceState(createPreviewBinding(demoGraph, "feedc0de", "browser"), queued)).toBe("stale");
+  });
 });
 
 describe("preview evidence storage", () => {
@@ -236,7 +253,11 @@ describe("preview supervisor", () => {
   it("cancels running and queued jobs and never lets them publish ready evidence", async () => {
     const projectDir = temporaryProject();
     const supervisor = new PreviewSupervisor(1);
+    let runningBuildRoot = "";
     const blocking: PreviewRunner = (context) => new Promise((_resolve, reject) => {
+      runningBuildRoot = context.buildRoot;
+      mkdirSync(context.buildRoot, { recursive: true });
+      writeFileSync(join(context.buildRoot, "partial-output"), "incomplete");
       context.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
     });
     supervisor.start({ projectDir, graph: demoGraph, binding: binding("browser"), runner: blocking });
@@ -246,6 +267,25 @@ describe("preview supervisor", () => {
     expect(supervisor.cancel(projectDir, "browser")?.phase).toBe("cancelled");
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(supervisor.current(projectDir, "browser")?.phase).toBe("cancelled");
+    expect(runningBuildRoot).not.toBe("");
+    expect(existsSync(runningBuildRoot)).toBe(false);
+  });
+
+  it("retains prior valid evidence separately across a cancelled replacement run", async () => {
+    const projectDir = temporaryProject();
+    const supervisor = new PreviewSupervisor();
+    supervisor.start({ projectDir, graph: demoGraph, binding: binding("browser"), runner: async () => ({ evidence: "built", artifacts: [{ kind: "bundle", path: "preview-builds/browser/verified" }] }) });
+    const verified = await waitFor(supervisor, projectDir, "browser", "ready");
+    supervisor.start({ projectDir, graph: demoGraph, binding: binding("browser"), runner: (context) => new Promise((_resolve, reject) => {
+      context.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+    }) });
+    expect(supervisor.current(projectDir, "browser")?.priorValidEvidence).toMatchObject({
+      binding: verified.binding,
+      evidence: "built",
+      completedAt: verified.completedAt,
+    });
+    supervisor.cancel(projectDir, "browser");
+    expect(supervisor.current(projectDir, "browser")?.priorValidEvidence?.artifacts).toEqual(verified.artifacts);
   });
 
   it("restarts against a new run id and ignores completion from the cancelled run", async () => {

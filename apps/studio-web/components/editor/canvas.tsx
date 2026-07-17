@@ -50,6 +50,7 @@ import {
 export interface CanvasApi {
   fitAll(smooth?: boolean): void;
   fitScreen(screenId: string, smooth?: boolean): void;
+  focusNode(nodeId: string, smooth?: boolean): boolean;
   zoomBy(factor: number): void;
   zoomTo(scale: number): void;
   alignSelection(action: SelectionAlignment): boolean;
@@ -281,6 +282,22 @@ export function CanvasStage({
     zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, scale, true);
   }, [zoomAt]);
 
+  const focusNode = useCallback((nodeId: string, smooth = true) => {
+    const viewport = viewportRef.current;
+    const element = viewport?.querySelector<HTMLElement>(`[data-testid="canvas-node-${CSS.escape(nodeId)}"]`);
+    if (!viewport || !element) return false;
+    const viewportBounds = viewport.getBoundingClientRect();
+    const nodeBounds = element.getBoundingClientRect();
+    const view = viewRef.current;
+    applyView({
+      ...view,
+      x: view.x + viewportBounds.left + viewportBounds.width / 2 - (nodeBounds.left + nodeBounds.width / 2),
+      y: view.y + viewportBounds.top + viewportBounds.height / 2 - (nodeBounds.top + nodeBounds.height / 2),
+    }, smooth);
+    element.focus({ preventScroll: true });
+    return true;
+  }, [applyView]);
+
   const alignSelection = useCallback((action: SelectionAlignment) => {
     const viewport = viewportRef.current;
     const screen = graph.screens.find((item) => item.id === selectedScreen);
@@ -305,8 +322,8 @@ export function CanvasStage({
   }, [graph.screens, onMoveFreeform, selectedNodeIds, selectedScreen]);
 
   useEffect(() => {
-    apiRef.current = { fitAll, fitScreen, zoomBy, zoomTo, alignSelection };
-  }, [alignSelection, apiRef, fitAll, fitScreen, zoomBy, zoomTo]);
+    apiRef.current = { fitAll, fitScreen, focusNode, zoomBy, zoomTo, alignSelection };
+  }, [alignSelection, apiRef, fitAll, fitScreen, focusNode, zoomBy, zoomTo]);
 
   useEffect(() => () => {
     if (visibilityFrame.current !== null) cancelAnimationFrame(visibilityFrame.current);

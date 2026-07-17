@@ -7,6 +7,7 @@ import {
   MagnifyingGlass,
   Warning,
   XCircle,
+  ArrowsClockwise,
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -16,12 +17,15 @@ import {
   type VerificationResult,
 } from "@intentform/verifier";
 import type { SemanticInterfaceGraph } from "@intentform/semantic-schema";
+import type { BuildEvidenceState } from "@intentform/preview-daemon";
 import type { ScenarioId } from "../studio";
 import {
   countVerificationFindings,
   filterVerificationFindings,
   type VerificationCategory,
   type VerificationSeverity,
+  type RepairPreview,
+  verificationNavigationTarget,
 } from "./workspace-model";
 
 interface VerifyStageProps {
@@ -31,9 +35,15 @@ interface VerifyStageProps {
   scenarioId: ScenarioId;
   setScenarioId: (id: ScenarioId) => void;
   scenarios: Record<string, { label: string; viewport: { width: number; height: number } }>;
-  repairFinding: (finding: VerificationFinding) => void;
+  repairPreview: RepairPreview | null;
+  previewRepair: (finding: VerificationFinding) => void;
+  applyRepair: () => void;
+  dismissRepair: () => void;
+  rerunVerification: () => void;
   inspectFinding: (finding: VerificationFinding) => void;
   sourceFingerprint: string;
+  buildEvidenceState: BuildEvidenceState;
+  verificationRunId: number;
   isPending: boolean;
 }
 
@@ -50,9 +60,15 @@ export function VerifyStage({
   scenarioId,
   setScenarioId,
   scenarios,
-  repairFinding,
+  repairPreview,
+  previewRepair,
+  applyRepair,
+  dismissRepair,
+  rerunVerification,
   inspectFinding,
   sourceFingerprint,
+  buildEvidenceState,
+  verificationRunId,
   isPending,
 }: VerifyStageProps) {
   const [query, setQuery] = useState("");
@@ -70,6 +86,9 @@ export function VerifyStage({
     category,
   }), [category, profileId, query, severities, showSuppressed, verification.findings]);
   const selected = verification.findings.find((finding) => finding.id === selectedId) ?? visible[0];
+  const selectedNavigationTarget = selected
+    ? verificationNavigationTarget(graph, selected, new Set(Object.keys(scenarios)), sourceFingerprint)
+    : null;
 
   useEffect(() => {
     if (selectedId && verification.findings.some((finding) => finding.id === selectedId)) return;
@@ -93,7 +112,7 @@ export function VerifyStage({
       <header className="border-b border-[var(--line)] px-3 py-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0"><h2 className="text-sm font-semibold text-[var(--ink)]">Verification · {graph.product.name}</h2><p className="mt-0.5 truncate text-[10px] text-[var(--muted)]">{verification.scenario.target} · {scenario.label} · {sourceFingerprint}</p></div>
-          <span className={`rounded px-2 py-1 text-[10px] font-semibold ${verification.passed ? "bg-[var(--success-soft)] text-[var(--success)]" : counts.error ? "bg-[var(--danger-soft)] text-[var(--danger)]" : "bg-[var(--warn-soft)] text-[var(--warn)]"}`}>{statusLabel}</span>
+          <div className="flex items-center gap-1.5"><button type="button" onClick={rerunVerification} disabled={isPending} className="inline-flex h-7 items-center gap-1 rounded border border-[var(--line)] px-2 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)] disabled:opacity-40"><ArrowsClockwise size={11} /> Re-run</button><span className={`rounded px-2 py-1 text-[10px] font-semibold ${verification.passed ? "bg-[var(--success-soft)] text-[var(--success)]" : counts.error ? "bg-[var(--danger-soft)] text-[var(--danger)]" : "bg-[var(--warn-soft)] text-[var(--warn)]"}`}>{statusLabel}</span></div>
         </div>
         <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5" aria-label="Verification filters">
           <Funnel size={12} className="shrink-0 text-[var(--faint)]" />
@@ -120,13 +139,13 @@ export function VerifyStage({
         <section className="min-h-0 overflow-auto bg-[var(--canvas)] p-5" aria-label="Selected verification evidence">
           {selected ? (
             <div className="mx-auto max-w-4xl">
-              <div className="flex items-start justify-between gap-4 border-b border-[var(--line)] pb-4"><div><div className="flex items-center gap-2"><SeverityIcon severity={selected.severity} /><span className="font-mono text-[9px] uppercase text-[var(--faint)]">{selected.severity} · {selected.status}</span></div><h3 className="mt-2 max-w-3xl text-xl font-semibold leading-tight tracking-[-.025em] text-[var(--ink)]">{selected.violatedIntent}</h3></div><button type="button" onClick={() => inspectFinding(selected)} className="inline-flex min-h-8 shrink-0 items-center gap-1 rounded border border-[var(--line)] bg-[var(--panel)] px-3 text-[10px] font-semibold text-[var(--muted)] hover:text-[var(--ink)]"><ArrowSquareOut size={11} /> Show on canvas</button></div>
+              <div className="flex items-start justify-between gap-4 border-b border-[var(--line)] pb-4"><div><div className="flex items-center gap-2"><SeverityIcon severity={selected.severity} /><span className="font-mono text-[9px] uppercase text-[var(--faint)]">{selected.severity} · {selected.status}</span></div><h3 className="mt-2 max-w-3xl text-xl font-semibold leading-tight tracking-[-.025em] text-[var(--ink)]">{selected.violatedIntent}</h3></div><button type="button" onClick={() => inspectFinding(selected)} disabled={!selectedNavigationTarget} title={selectedNavigationTarget ? "Open the exact evidence target" : "This finding has no current canvas target"} className="inline-flex min-h-8 shrink-0 items-center gap-1 rounded border border-[var(--line)] bg-[var(--panel)] px-3 text-[10px] font-semibold text-[var(--muted)] hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-40"><ArrowSquareOut size={11} /> Show on canvas</button></div>
 
               <dl className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded border border-[var(--line)] bg-[var(--line)] text-[10px] md:grid-cols-4">
-                <div className="bg-[var(--panel)] p-3"><dt className="text-[var(--faint)]">Target / device</dt><dd className="mt-1 font-mono text-[var(--ink)]">{selected.target} · {scenario.viewport.width}×{scenario.viewport.height}</dd></div>
+                <div className="bg-[var(--panel)] p-3"><dt className="text-[var(--faint)]">Target / device</dt><dd className="mt-1 font-mono text-[var(--ink)]">{selected.target} · {selected.deviceProfile ?? scenarioId}<span className="mt-1 block text-[var(--faint)]">{scenario.viewport.width}×{scenario.viewport.height} · {selected.visualState ?? "idle"}</span></dd></div>
                 <div className="bg-[var(--panel)] p-3"><dt className="text-[var(--faint)]">Responsible layer</dt><dd className="mt-1 font-mono text-[var(--ink)]">{selected.responsibleLayer}</dd></div>
                 <div className="bg-[var(--panel)] p-3"><dt className="text-[var(--faint)]">Rule / category</dt><dd className="mt-1 font-mono text-[var(--ink)]">{selected.rule ? `${selected.rule.standard} ${selected.rule.version}` : "intentform/0.1"}<span className="mt-1 block text-[var(--faint)]">{selected.designQualityCategory ?? selected.category ?? "semantic"}</span></dd></div>
-                <div className="bg-[var(--panel)] p-3"><dt className="text-[var(--faint)]">Source fingerprint</dt><dd className="mt-1 font-mono text-[var(--ink)]">{sourceFingerprint}</dd></div>
+                <div className="bg-[var(--panel)] p-3"><dt className="text-[var(--faint)]">Evidence identity</dt><dd className="mt-1 font-mono text-[var(--ink)]">{selected.sourceFingerprint ?? sourceFingerprint}<span className="mt-1 block text-[var(--faint)]">run {verificationRunId} · build {buildEvidenceState}</span></dd></div>
               </dl>
 
               <section className="mt-5 border border-[var(--line)] bg-[var(--panel)]" aria-labelledby="exact-evidence-heading"><h4 id="exact-evidence-heading" className="border-b border-[var(--line)] px-3 py-2 text-[10px] font-semibold text-[var(--muted)]">Exact evidence</h4><dl className="divide-y divide-[var(--line)]">{selected.evidence.map((evidence) => <div key={`${evidence.kind}:${evidence.label}`} className="grid grid-cols-[minmax(160px,.4fr)_minmax(0,1fr)] gap-3 px-3 py-2.5"><dt className="text-[10px] text-[var(--muted)]">{evidence.label}<span className="ml-2 font-mono text-[8px] text-[var(--faint)]">{evidence.kind}</span></dt><dd className="break-all text-right font-mono text-[10px] text-[var(--ink)]">{String(evidence.value)}</dd></div>)}</dl></section>
@@ -136,7 +155,16 @@ export function VerifyStage({
               {selected.category === "design-quality" ? <p className="mt-4 rounded border border-[var(--line)] bg-[var(--panel)] p-3 text-[10px] text-[var(--muted)]"><strong className="text-[var(--ink)]">Deterministic rule.</strong> This finding is based on measurable authored values. Subjective critique is never labeled as verified.</p> : null}
 
               {selected.suppressionReason ? <p className="mt-4 rounded border border-[var(--warn)]/30 bg-[var(--warn-soft)] p-3 text-[10px] text-[var(--warn)]">Suppression: {selected.suppressionReason}</p> : null}
-              <section className="mt-5 flex items-center justify-between gap-4 rounded border border-[var(--line)] bg-[var(--panel)] p-4"><div><h4 className="text-[11px] font-semibold text-[var(--ink)]">Proposed repair</h4><p className="mt-1 text-[10px] leading-relaxed text-[var(--muted)]">{selected.suggestedRepair?.description ?? "Plan the smallest semantic change, validate it against graph invariants, and retain an evidence-backed diff."}</p></div><button type="button" onClick={() => repairFinding(selected)} disabled={isPending || selected.status === "suppressed"} className="min-h-9 shrink-0 rounded bg-[var(--accent-deep)] px-4 text-[10px] font-semibold text-white disabled:opacity-40">Plan and apply repair</button></section>
+              <section className="mt-5 rounded border border-[var(--line)] bg-[var(--panel)] p-4">
+                <div className="flex items-center justify-between gap-4"><div><h4 className="text-[11px] font-semibold text-[var(--ink)]">Safe repair workflow</h4><p className="mt-1 text-[10px] leading-relaxed text-[var(--muted)]">{selected.suggestedRepair?.description ?? "Plan the smallest semantic change, validate it against graph invariants, and retain an evidence-backed diff."}</p></div><button type="button" onClick={() => previewRepair(selected)} disabled={isPending || selected.status === "suppressed"} className="min-h-9 shrink-0 rounded bg-[var(--accent-deep)] px-4 text-[10px] font-semibold text-white disabled:opacity-40">Preview repair</button></div>
+                {repairPreview?.findingId === selected.id ? (
+                  <div className="mt-4 border-t border-[var(--line)] pt-4" aria-label="Repair preview">
+                    <div className="flex items-start justify-between gap-3"><div><strong className="text-[10px] text-[var(--ink)]">{repairPreview.proposal.summary}</strong><p className="mt-1 font-mono text-[8px] text-[var(--faint)]">Source {repairPreview.sourceFingerprint} · {repairPreview.proposal.patch.operations.length} operation(s) · {repairPreview.changes.length} semantic change(s)</p></div><div className="flex gap-1.5"><button type="button" onClick={dismissRepair} className="h-8 rounded border border-[var(--line)] px-3 text-[9px] font-semibold text-[var(--muted)]">Dismiss</button><button type="button" onClick={applyRepair} disabled={repairPreview.sourceFingerprint !== sourceFingerprint} className="h-8 rounded bg-[var(--accent-deep)] px-3 text-[9px] font-semibold text-white disabled:opacity-40">Apply repair</button></div></div>
+                    <div className="mt-3 grid gap-px border border-[var(--line)] bg-[var(--line)] text-[9px] md:grid-cols-2"><div className="bg-[var(--panel)] p-2.5"><strong className="text-[var(--muted)]">Validated operations</strong><ul className="mt-1.5 space-y-1 font-mono text-[var(--ink)]">{repairPreview.proposal.patch.operations.map((operation, index) => <li key={`${operation.op}-${index}`} className="break-all">{index + 1}. {JSON.stringify(operation)}</li>)}</ul></div><div className="bg-[var(--panel)] p-2.5"><strong className="text-[var(--muted)]">Expected result</strong><p className="mt-1.5 text-[var(--ink)]">Graph invariants accepted. Re-run {selected.rule?.id ?? selected.id} after apply to confirm the finding is resolved.</p></div></div>
+                    <dl className="mt-3 max-h-44 divide-y divide-[var(--line)] overflow-auto border border-[var(--line)]">{repairPreview.changes.map((change) => <div key={change.path} className="grid grid-cols-[minmax(120px,.4fr)_minmax(0,1fr)] gap-3 px-2.5 py-2 text-[9px]"><dt className="break-all font-mono text-[var(--muted)]">{change.path}</dt><dd className="min-w-0 text-right font-mono text-[var(--ink)]"><span className="block truncate text-[var(--danger)]">− {JSON.stringify(change.before)}</span><span className="block truncate text-[var(--success)]">+ {JSON.stringify(change.after)}</span></dd></div>)}</dl>
+                  </div>
+                ) : null}
+              </section>
             </div>
           ) : (
             <div className="mx-auto grid h-full max-w-xl place-items-center text-center"><div><CheckCircle size={42} weight="fill" className="mx-auto text-[var(--success)]" /><h3 className="mt-3 text-lg font-semibold text-[var(--ink)]">No open verification issues</h3><p className="mt-2 text-xs leading-relaxed text-[var(--muted)]">{verification.scenario.buildStatus === "passed" ? `The current ${verification.scenario.target} build and ${ACCESSIBILITY_RULESET.standard} rules pass for ${scenario.label}.` : "Semantic rules pass, but truthful completion still requires current build evidence."}</p></div></div>

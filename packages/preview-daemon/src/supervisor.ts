@@ -1,8 +1,10 @@
-import { join, resolve } from "node:path";
+import { existsSync, rmSync } from "node:fs";
+import { join, relative, resolve, sep } from "node:path";
 import type { SemanticInterfaceGraph } from "@intentform/semantic-schema";
 import {
   MAX_PREVIEW_LOGS,
   createQueuedManifest,
+  readPreviewEvidence,
   previewEvidenceManifestSchema,
   type PreviewArtifact,
   type PreviewBinding,
@@ -114,6 +116,7 @@ export class PreviewSupervisor {
     if (prior && !terminal(prior.manifest.phase)) throw new PreviewAlreadyRunningError(input.binding.target);
 
     const controller = new AbortController();
+    const previous = prior?.manifest ?? readPreviewEvidence(input.projectDir, input.binding.target);
     const job: PreviewJob = {
       key,
       projectDir: resolve(input.projectDir),
@@ -121,7 +124,7 @@ export class PreviewSupervisor {
       binding: input.binding,
       runner: input.runner,
       controller,
-      manifest: createQueuedManifest(input.binding),
+      manifest: createQueuedManifest(input.binding, new Date().toISOString(), previous),
       timeoutMs: input.timeoutMs ?? this.defaultTimeoutMs,
       timeout: null,
       state: "queued",
@@ -176,6 +179,7 @@ export class PreviewSupervisor {
       this.#running += 1;
       job.state = "running";
       void this.#execute(job).finally(() => {
+        if (job.manifest.phase === "cancelled") this.#cleanupBuildRoot(job);
         job.state = "settled";
         this.#running -= 1;
         if (job.timeout) clearTimeout(job.timeout);
@@ -229,7 +233,7 @@ export class PreviewSupervisor {
         projectDir: job.projectDir,
         graph: job.graph,
         binding: job.binding,
-        buildRoot: join(job.projectDir, "preview-builds", job.binding.target, job.binding.bindingKey),
+        buildRoot: join(job.projectDir, "preview-builds", job.binding.target, job.binding.bindingKey, job.manifest.runId),
         signal: job.controller.signal,
         log,
         update,
@@ -264,6 +268,14 @@ export class PreviewSupervisor {
       });
       persist();
     }
+  }
+
+  #cleanupBuildRoot(job: PreviewJob): void {
+    const root = resolve(job.projectDir);
+    const buildRoot = resolve(job.projectDir, "preview-builds", job.binding.target, job.binding.bindingKey, job.manifest.runId);
+    const path = relative(root, buildRoot);
+    if (path === "" || path === ".." || path.startsWith(`..${sep}`) || path.startsWith(sep)) return;
+    if (existsSync(buildRoot)) rmSync(buildRoot, { recursive: true, force: true });
   }
 
   #nextManifest(

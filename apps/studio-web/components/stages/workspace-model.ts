@@ -1,10 +1,33 @@
 import type { VerificationFinding } from "@intentform/verifier";
+import { applyRepair, type RepairProposal } from "@intentform/repair-planner";
+import {
+  flattenSemanticNodes,
+  semanticDiff,
+  stableSerialize,
+  type SemanticChange,
+  type SemanticInterfaceGraph,
+} from "@intentform/semantic-schema";
 import type { OutputTarget } from "../studio";
 import type { LocalPreviewEntry, LocalPreviewTarget } from "../use-local-previews";
 import type { DeviceProfile } from "../editor/support";
 
 export type VerificationSeverity = VerificationFinding["severity"];
 export type VerificationCategory = NonNullable<VerificationFinding["category"]> | "semantic";
+
+export interface VerificationNavigationTarget {
+  screenId: string;
+  nodeId: string | null;
+  deviceProfile: string | null;
+  visualState: string;
+}
+
+export interface RepairPreview {
+  findingId: string;
+  sourceFingerprint: string;
+  proposal: RepairProposal;
+  changes: SemanticChange[];
+  repairedGraph: SemanticInterfaceGraph;
+}
 
 export const COMPARISON_PROFILE_LIMIT = 3;
 
@@ -70,6 +93,51 @@ export function localPreviewTarget(target: OutputTarget): LocalPreviewTarget {
 
 export function usableLocalPreview(entry: LocalPreviewEntry | undefined) {
   return entry && !("unavailable" in entry) ? entry : null;
+}
+
+export function verificationNavigationTarget(
+  graph: SemanticInterfaceGraph,
+  finding: VerificationFinding,
+  availableDeviceProfiles: ReadonlySet<string>,
+  currentSourceFingerprint: string,
+): VerificationNavigationTarget | null {
+  if (finding.sourceFingerprint && finding.sourceFingerprint !== currentSourceFingerprint) return null;
+  const screen = graph.screens.find((candidate) => candidate.id === finding.screenId);
+  if (!screen) return null;
+  const requestedNodeId = finding.nodeId ?? finding.nodeIds?.[0] ?? null;
+  const exactNode = requestedNodeId
+    ? flattenSemanticNodes(screen.nodes).find((candidate) => candidate.id === requestedNodeId)
+    : null;
+  if (requestedNodeId && !exactNode) return null;
+  if (finding.deviceProfile && !availableDeviceProfiles.has(finding.deviceProfile)) return null;
+  const availableStates = graph.contracts.find((contract) => contract.screenId === screen.id)?.visualStates ?? ["idle"];
+  if (finding.visualState && !availableStates.includes(finding.visualState as typeof availableStates[number])) return null;
+  return {
+    screenId: screen.id,
+    nodeId: exactNode?.id ?? null,
+    deviceProfile: finding.deviceProfile ?? null,
+    visualState: finding.visualState ?? "idle",
+  };
+}
+
+export function createRepairPreview(
+  graph: SemanticInterfaceGraph,
+  finding: VerificationFinding,
+  proposal: RepairProposal,
+  sourceFingerprint: string,
+): RepairPreview {
+  const before = stableSerialize(graph);
+  const repairedGraph = applyRepair(graph, proposal);
+  if (stableSerialize(graph) !== before) throw new Error("Repair preview mutated the source graph.");
+  const changes = semanticDiff(graph, repairedGraph);
+  if (changes.length === 0) throw new Error("The proposed repair does not change the current graph.");
+  return {
+    findingId: finding.id,
+    sourceFingerprint,
+    proposal,
+    changes,
+    repairedGraph,
+  };
 }
 
 export function matchingCodeLineNumbers(lines: readonly string[], query: string): Set<number> {

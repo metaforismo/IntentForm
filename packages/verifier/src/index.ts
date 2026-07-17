@@ -3,6 +3,7 @@ import {
   flattenSemanticNodes,
   isTransactionalScreen,
   resolveTokenMode,
+  stableSerialize,
   type PlatformTarget,
   type SemanticInterfaceGraph,
 } from "@intentform/semantic-schema";
@@ -153,6 +154,7 @@ export interface VerificationFinding {
     description: string;
   };
   subjective?: false;
+  sourceFingerprint?: string;
 }
 
 export interface VerificationScenario {
@@ -163,6 +165,9 @@ export interface VerificationScenario {
     profiles?: readonly AccessibilityProfile[];
     suppressions?: readonly AccessibilitySuppression[];
   };
+  deviceProfile?: string;
+  visualState?: string;
+  sourceFingerprint?: string;
 }
 
 export interface VerificationResult {
@@ -287,6 +292,10 @@ export function verifyGraph(
     responsibleLayer: item.responsibleLayer,
     status: item.status,
     category: "accessibility",
+    nodeId: item.nodeId,
+    nodeIds: [item.nodeId],
+    propertyPath: item.repair.kind === "adjust-layout" ? `${item.nodeId}.layout` : `${item.nodeId}.accessibility`,
+    propertyPaths: [item.repair.kind === "adjust-layout" ? `${item.nodeId}.layout` : `${item.nodeId}.accessibility`],
     rule: {
       id: item.ruleId,
       version: item.ruleVersion,
@@ -299,7 +308,7 @@ export function verifyGraph(
   findings.push(...auditDesignQuality(graph, {
     target: scenario.target,
     viewport: scenario.viewport,
-    visualState: "idle",
+    visualState: scenario.visualState ?? "idle",
   }).map((item): VerificationFinding => ({
     id: item.id,
     target: item.target,
@@ -326,7 +335,7 @@ export function verifyGraph(
     propertyPaths: item.propertyPaths,
     ...(item.nodeIds[0] ? { nodeId: item.nodeIds[0] } : {}),
     ...(item.propertyPaths[0] ? { propertyPath: item.propertyPaths[0] } : {}),
-    deviceProfile: `${scenario.viewport.width}x${scenario.viewport.height}`,
+    deviceProfile: scenario.deviceProfile ?? `${scenario.viewport.width}x${scenario.viewport.height}`,
     visualState: item.visualState,
     suggestedRepair: { description: item.suggestedRepair.description },
     subjective: false,
@@ -401,6 +410,10 @@ export function verifyGraph(
         ],
         responsibleLayer: "graph",
         status: "open",
+        nodeId: primaryAction.id,
+        nodeIds: [primaryAction.id],
+        propertyPath: `${primaryAction.id}.layout.placement.compact`,
+        propertyPaths: [`${primaryAction.id}.layout.placement.compact`],
       });
     }
 
@@ -421,11 +434,27 @@ export function verifyGraph(
     }
   }
 
+  const sourceFingerprint = scenario.sourceFingerprint ?? (() => {
+    let hash = 0x811c9dc5;
+    const source = stableSerialize(graph);
+    for (let index = 0; index < source.length; index += 1) {
+      hash ^= source.charCodeAt(index);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return (hash >>> 0).toString(16).padStart(8, "0");
+  })();
+  const identifiedFindings = findings.map((finding): VerificationFinding => ({
+    ...finding,
+    sourceFingerprint,
+    deviceProfile: finding.deviceProfile ?? scenario.deviceProfile ?? `${scenario.viewport.width}x${scenario.viewport.height}`,
+    visualState: finding.visualState ?? scenario.visualState ?? "idle",
+  }));
+
   return {
     passed: scenario.buildStatus === "passed"
-      && findings.every((finding) => finding.severity !== "error" || finding.status === "suppressed"),
+      && identifiedFindings.every((finding) => finding.severity !== "error" || finding.status === "suppressed"),
     scenario,
-    findings,
+    findings: identifiedFindings,
   };
 }
 

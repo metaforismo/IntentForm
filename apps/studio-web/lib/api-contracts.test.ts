@@ -6,6 +6,7 @@ import {
   isLocalProjectRequestAllowed,
   parseRequestBody,
   transactionReviewMutationSchema,
+  verificationFindingSchema,
 } from "./api-contracts";
 
 describe("local history API contracts", () => {
@@ -53,6 +54,26 @@ describe("local history API contracts", () => {
     expect(transactionReviewMutationSchema.parse(valid)).toEqual(valid);
     expect(transactionReviewMutationSchema.safeParse({ ...valid, expectedPreviewFingerprint: "stale" }).success).toBe(false);
     expect(transactionReviewMutationSchema.safeParse({ ...valid, action: "approve", shell: "git commit" }).success).toBe(false);
+  });
+
+  it("accepts exact verification evidence identity and rejects malformed source fingerprints", () => {
+    const finding = {
+      id: "react.checkout.primary",
+      target: "react",
+      screenId: "checkout",
+      severity: "error",
+      violatedIntent: "Keep the action reachable.",
+      evidence: [],
+      responsibleLayer: "graph",
+      status: "open",
+      nodeId: "checkout.confirm",
+      propertyPath: "checkout.confirm.layout.placement.compact",
+      deviceProfile: "device:phone",
+      visualState: "idle",
+      sourceFingerprint: "1234abcd",
+    } as const;
+    expect(verificationFindingSchema.parse(finding)).toEqual(finding);
+    expect(verificationFindingSchema.safeParse({ ...finding, sourceFingerprint: "stale" }).success).toBe(false);
   });
 
   it("keeps the public body limit while allowing an explicit bounded local-project envelope", async () => {
