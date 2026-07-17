@@ -3,7 +3,7 @@
 import { Eye, EyeSlash, LinkSimple, Plus, Trash } from "@phosphor-icons/react";
 import { resolveTokenMode, type SemanticInterfaceGraph, type SemanticNode } from "@intentform/semantic-schema";
 import { CompositionSafeField, DisclosureSection, NumericScrubField, PropertyRow, SearchablePicker } from "../ui/editor-controls";
-import { selectionColors } from "./appearance";
+import { replaceSelectionColor, selectionColors, setSelectionColorOpacity } from "./appearance";
 
 type Appearance = NonNullable<SemanticNode["style"]["appearance"]>;
 
@@ -117,7 +117,22 @@ export function AppearanceInspector({ graph, nodes, onUpdate }: { graph: Semanti
     </DisclosureSection>
 
     {colors.length > 0 ? <DisclosureSection title={`Selection colors · ${colors.length}`} defaultOpen={false}>
-      {colors.map((color) => <div key={`${color.token ?? "literal"}:${color.color}`} className="grid grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-2"><span className="size-4 rounded-[4px] border border-[var(--if-border)]" style={{ background: color.color }} /><span className="min-w-0 truncate font-mono text-[9.5px]">{color.token ?? color.color}</span><span className="text-[9px] text-[var(--if-text-tertiary)]">{color.usages} · {color.origins.join("+")}</span></div>)}
+      {colors.map((color) => <div key={color.key} className="grid gap-2 rounded-[6px] border border-[var(--if-border-subtle)] p-2" data-testid="selection-color-row">
+        <div className="grid grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-2">
+          <input
+            type="color"
+            aria-label={`Change selection color ${color.token ?? color.color}`}
+            value={/^#[0-9a-f]{6}$/i.test(color.color) ? color.color : "#4f8ff7"}
+            onChange={(event) => onUpdate((node) => replaceSelectionColor(node, graph, color.key, { color: event.target.value }), "Updated the selection color across matching fills and strokes.")}
+            className="size-5 cursor-pointer rounded-[4px] border border-[var(--if-border)] bg-transparent p-0"
+          />
+          <span className="min-w-0 truncate font-mono text-[9.5px]">{color.token ?? color.color}</span>
+          <span className="text-[9px] text-[var(--if-text-tertiary)]">{color.usages} {color.usages === 1 ? "use" : "uses"} · {color.nodes} {color.nodes === 1 ? "layer" : "layers"}</span>
+        </div>
+        <label className="grid grid-cols-[64px_minmax(0,1fr)] items-center gap-2 text-[9.5px] text-[var(--if-text-secondary)]"><span>Token</span><select aria-label={`Map ${color.token ?? color.color} to token`} value={color.token ?? ""} onChange={(event) => onUpdate((node) => replaceSelectionColor(node, graph, color.key, event.target.value ? { token: event.target.value } : { color: color.color }), event.target.value ? "Mapped the selection color to a design token." : "Detached the selection color token.")} className={selectClass}><option value="">Literal · {color.color}</option>{Object.keys(tokens.colors).map((token) => <option key={token} value={token}>{token} · {tokens.colors[token]}</option>)}</select></label>
+        {color.origins.includes("fill") ? <label className="grid grid-cols-[64px_minmax(0,1fr)_36px] items-center gap-2 text-[9.5px] text-[var(--if-text-secondary)]"><span>Alpha</span><input aria-label={`Alpha for ${color.token ?? color.color}`} type="range" min={0} max={1} step={0.01} value={color.opacity ?? 1} onChange={(event) => onUpdate((node) => setSelectionColorOpacity(node, graph, color.key, Number(event.target.value)), "Updated matching fill alpha.")} className="accent-[var(--if-blue)]" /><span className="text-right font-mono">{color.mixedOpacity ? "Mixed" : `${Math.round((color.opacity ?? 1) * 100)}%`}</span></label> : null}
+        <span className="text-[8.5px] text-[var(--if-text-tertiary)]">{color.origins.join(" + ")}</span>
+      </div>)}
       {colors.some((color) => color.token) ? <p className="flex gap-1.5 text-[9.5px] leading-4 text-[var(--if-text-tertiary)]"><LinkSimple size={11} className="mt-0.5 shrink-0" />Token-bound colors update with the active design-system mode.</p> : null}
     </DisclosureSection> : null}
   </>;

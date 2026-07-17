@@ -17,6 +17,7 @@ import {
   type ResizeHandle,
 } from "./direct-manipulation";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { visibleGuidePositions, type EditorGuide } from "./guides";
 
 interface Box {
   left: number;
@@ -37,6 +38,8 @@ interface SelectionOverlayProps {
   worldRef: RefObject<HTMLDivElement | null>;
   enabled: boolean;
   breakpoint: "compact" | "regular";
+  guides: readonly EditorGuide[];
+  snapToGuides: boolean;
   getScale(): number;
   onReorder(screenId: string, parentId: string | null, orderedIds: string[]): void;
   onMoveFreeform(positions: Readonly<Record<string, Point>>): void;
@@ -96,6 +99,8 @@ export function SelectionOverlay({
   worldRef,
   enabled,
   breakpoint,
+  guides,
+  snapToGuides,
   getScale,
   onReorder,
   onMoveFreeform,
@@ -274,6 +279,7 @@ export function SelectionOverlay({
     const unselectedPositions = siblings
       .filter((sibling) => !normalizedIds.includes(sibling.id))
       .flatMap((sibling) => sibling.layout.position ? [sibling.layout.position] : []);
+    const userGuides = visibleGuidePositions(guides, snapToGuides);
     dragSession.current = {
       pointerId: event.pointerId,
       startClient: { x: event.clientX, y: event.clientY },
@@ -285,8 +291,8 @@ export function SelectionOverlay({
       items,
       initialPositions,
       guides: {
-        x: unselectedPositions.map((position) => position.x),
-        y: unselectedPositions.map((position) => position.y),
+        x: [...unselectedPositions.map((position) => position.x), ...userGuides.x],
+        y: [...unselectedPositions.map((position) => position.y), ...userGuides.y],
       },
       initialPlacement: rootPrimary ? locations[0]!.node.layout.placement?.[breakpoint] : undefined,
       placementCandidate: undefined,

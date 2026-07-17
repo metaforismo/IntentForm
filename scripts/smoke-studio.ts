@@ -1637,6 +1637,50 @@ try {
   });
 
   await runSmokeScenario(browser, {
+    name: "professional guides and selection color workflows",
+    context: { viewport: { width: 1536, height: 1024 } },
+    run: async (guidePage) => {
+      await gotoStudio(guidePage, origin);
+      await guidePage.getByRole("button", { name: "Guide settings" }).click();
+      const guideDialog = guidePage.getByRole("dialog", { name: "Rulers and guides" });
+      await guideDialog.getByRole("button", { name: "+ Vertical" }).click();
+      await guideDialog.getByRole("button", { name: "+ Horizontal" }).click();
+      await guidePage.getByTestId("canvas-ruler-x").waitFor();
+      await guidePage.getByTestId("canvas-ruler-y").waitFor();
+      await guidePage.getByTestId("canvas-guide-guide-v-1").waitFor();
+      await guidePage.getByTestId("canvas-guide-guide-h-1").waitFor();
+
+      const verticalPosition = guideDialog.getByLabel("guide-v-1 position");
+      await verticalPosition.fill("96");
+      await guideDialog.getByRole("button", { name: "Lock guide-v-1" }).click();
+      await guideDialog.getByRole("button", { name: "Hide guide-h-1" }).click();
+      if (await guidePage.getByTestId("canvas-guide-guide-v-1").getAttribute("data-locked") !== "true") throw new Error("Locked guide state was not projected onto the canvas");
+      if (await guidePage.getByTestId("canvas-guide-guide-v-1").evaluate((element) => getComputedStyle(element).left) !== "96px") throw new Error("Guide position did not update from editor metadata");
+      if (await guidePage.getByTestId("canvas-guide-guide-h-1").count() !== 0) throw new Error("Hidden guide remained visible on the canvas");
+      await guidePage.getByRole("button", { name: "Close guide settings" }).click();
+      await guidePage.reload({ waitUntil: "networkidle" });
+      if (await guidePage.getByTestId("canvas-guide-guide-v-1").getAttribute("data-locked") !== "true") throw new Error("Guide metadata did not persist across reload");
+
+      await guidePage.getByTestId("layer-payment-request.confirm").click();
+      await guidePage.getByRole("button", { name: "Solid", exact: true }).click();
+      const selectionColors = guidePage.getByRole("button", { name: /^Selection colors/ });
+      await selectionColors.click();
+      const colorRow = guidePage.getByTestId("selection-color-row").first();
+      const colorInput = colorRow.locator('input[type="color"]');
+      await colorInput.fill("#ff3366");
+      await guidePage.waitForFunction(() => getComputedStyle(document.querySelector<HTMLElement>('[data-testid="canvas-node-payment-request.confirm"]')!).backgroundColor === "rgb(255, 51, 102)");
+      const tokenPicker = colorRow.getByRole("combobox");
+      await tokenPicker.selectOption("color.accent");
+      if (await tokenPicker.inputValue() !== "color.accent") throw new Error("Selection color did not map to a typed color token");
+
+      await guidePage.getByRole("button", { name: "Guide settings" }).click();
+      const persistedDialog = guidePage.getByRole("dialog", { name: "Rulers and guides" });
+      await persistedDialog.getByRole("button", { name: /Clear/ }).click();
+      if (await guidePage.locator('[data-testid^="canvas-guide-"]').count() !== 0) throw new Error("Clear guides did not remove screen-local guide metadata");
+    },
+  });
+
+  await runSmokeScenario(browser, {
     name: "professional inspector appearance authoring",
     run: async (page) => {
       await gotoStudio(page, origin);

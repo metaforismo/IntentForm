@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { demoGraph } from "@intentform/proof-report/demo";
-import { nodeAppearanceStyle, selectionColors } from "./appearance";
+import { nodeAppearanceStyle, replaceSelectionColor, selectionColors, setSelectionColorOpacity } from "./appearance";
 
 describe("portable node appearance", () => {
   it("resolves literal and token-bound fills, typography, corners, effects, and rotation", () => {
@@ -31,6 +31,21 @@ describe("portable node appearance", () => {
     const second = graph.screens[0]!.nodes[1]!;
     first.style.appearance = { fills: [{ id: "fill-1", type: "solid", visible: true, color: { token: "color.accent" }, opacity: 1, blendMode: "normal" }], effects: [], opacity: 1, blendMode: "normal" };
     second.style.appearance = { fills: [{ id: "fill-2", type: "solid", visible: true, color: { token: "color.accent" }, opacity: 1, blendMode: "normal" }], stroke: { visible: true, color: { token: "color.accent" }, width: 1, style: "solid", alignment: "inside" }, effects: [], opacity: 1, blendMode: "normal" };
-    expect(selectionColors([first, second], graph)).toEqual([expect.objectContaining({ token: "color.accent", usages: 3, origins: ["fill", "stroke"] })]);
+    expect(selectionColors([first, second], graph)).toEqual([expect.objectContaining({ token: "color.accent", usages: 3, nodes: 2, opacity: 1, mixedOpacity: false, origins: ["fill", "stroke"] })]);
+  });
+
+  it("rebinds and changes alpha for every matching typed selection color", () => {
+    const graph = structuredClone(demoGraph);
+    const node = structuredClone(graph.screens[0]!.nodes[0]!);
+    node.style.appearance = {
+      fills: [{ id: "fill-1", type: "solid", visible: true, color: { token: "color.accent" }, opacity: 1, blendMode: "normal" }],
+      stroke: { visible: true, color: { token: "color.accent" }, width: 1, style: "solid", alignment: "inside" },
+      effects: [], opacity: 1, blendMode: "normal",
+    };
+    const key = selectionColors([node], graph)[0]!.key;
+    replaceSelectionColor(node, graph, key, { color: "#ff3366" });
+    setSelectionColorOpacity(node, graph, "literal:#ff3366", 0.42);
+    expect(node.style.appearance.fills[0]).toMatchObject({ color: { color: "#ff3366" }, opacity: 0.42 });
+    expect(node.style.appearance.stroke?.color).toEqual({ color: "#ff3366" });
   });
 });

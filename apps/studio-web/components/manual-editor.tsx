@@ -19,13 +19,17 @@ import {
   FileText,
   FrameCorners,
   Hand,
+  Eye,
+  EyeSlash,
   Keyboard,
   ListDashes,
+  Magnet,
   MagnifyingGlass,
   Minus,
   MonitorPlay,
   PaintBrush,
   Plus,
+  Ruler,
   Selection,
   ShieldCheck,
   Sparkle,
@@ -36,6 +40,8 @@ import {
   UserCircle,
   Wallet,
   WarningCircle,
+  Lock,
+  LockOpen,
   type Icon,
 } from "@phosphor-icons/react";
 import {
@@ -74,6 +80,14 @@ import { Inspector } from "./editor/inspector";
 import { LayersPanel } from "./editor/layers-panel";
 import { ToolRail } from "./editor/tool-rail";
 import { ReviewPanel } from "./editor/review-panel";
+import {
+  nextGuideId,
+  MAX_GUIDES_PER_SCREEN,
+  readGuidePreferences,
+  writeGuidePreferences,
+  type EditorGuide,
+  type GuideAxis,
+} from "./editor/guides";
 import { CommandMenu, ShortcutsSheet, type EditorCommand } from "./editor/overlays";
 import { MultiDeviceComparison } from "./stages/multi-device-comparison";
 import { compareModeStorageKey, readBooleanPreference, writeBooleanPreference } from "./reliability-model";
@@ -304,6 +318,7 @@ export function ManualEditor({
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [zoomPct, setZoomPct] = useState(60);
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
+  const [guideMenuOpen, setGuideMenuOpen] = useState(false);
   const [insertOpen, setInsertOpen] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const [desktopPanels, setDesktopPanels] = useState({ structure: true, inspector: true });
@@ -333,9 +348,23 @@ export function ManualEditor({
     typeof window === "undefined" ? null : window.localStorage,
   ));
   const [desktopDocked, setDesktopDocked] = useState(false);
+  const [guidePreferences, setGuidePreferences] = useState(() => readGuidePreferences(
+    typeof window === "undefined" ? null : window.localStorage,
+    projectId,
+  ));
+  const guideProjectId = useRef(projectId);
   const canvasApi = useRef<CanvasApi>(null);
   const previewHistory = useRef<string[]>([]);
   const previewWasOpen = useRef(false);
+
+  useEffect(() => {
+    if (guideProjectId.current !== projectId) {
+      guideProjectId.current = projectId;
+      setGuidePreferences(readGuidePreferences(window.localStorage, projectId));
+      return;
+    }
+    writeGuidePreferences(window.localStorage, projectId, guidePreferences);
+  }, [guidePreferences, projectId]);
 
   useEffect(() => {
     writeBooleanPreference(window.localStorage, compareModeStorageKey(projectId), comparisonMode);
@@ -492,6 +521,18 @@ export function ManualEditor({
     : null;
   const profiles = useMemo(() => editorProfiles(graph), [graph]);
   const activeProfile = profiles.find((profile) => profile.id === deviceId) ?? profiles.find((profile) => profile.id === `web:${graph.web?.defaultFrame}`) ?? profiles[0]!;
+  const screenGuides = guidePreferences.byScreen[selectedScreen] ?? [];
+  const updateScreenGuides = (update: (guides: EditorGuide[]) => EditorGuide[]) => setGuidePreferences((current) => ({
+    ...current,
+    byScreen: { ...current.byScreen, [selectedScreen]: update(current.byScreen[selectedScreen] ?? []) },
+  }));
+  const addGuide = (axis: GuideAxis) => updateScreenGuides((guides) => guides.length >= MAX_GUIDES_PER_SCREEN ? guides : [...guides, {
+    id: nextGuideId(guides, axis),
+    axis,
+    position: Math.round((axis === "vertical" ? activeProfile.width : activeProfile.height) / 2),
+    locked: false,
+    hidden: false,
+  }]);
   useEffect(() => {
     setComparisonProfileIds((current) => reconcileComparisonProfileIds(current, profiles));
   }, [profiles]);
@@ -1848,6 +1889,9 @@ export function ManualEditor({
             bezelOverlay={bezelOverlay}
             profile={activeProfile}
             viewportInsets={viewportInsets}
+            guides={screenGuides}
+            guidesVisible={guidePreferences.visible}
+            snapToGuides={guidePreferences.snap}
             apiRef={canvasApi}
             visualStateFor={visualStateFor}
             frameStatus={(screenId) => statusByScreen.get(screenId) ?? { errors: 0, warnings: 0 }}
@@ -2065,6 +2109,25 @@ export function ManualEditor({
               </button>
             ) : null}
             {!comparisonMode ? <>
+            <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
+              <button type="button" aria-label="Guide settings" aria-expanded={guideMenuOpen} title="Rulers and guides" onClick={() => setGuideMenuOpen((open) => !open)} className={`grid size-7 place-items-center rounded-md ${guideMenuOpen || (guidePreferences.visible && screenGuides.length) ? "bg-[var(--if-blue-soft)] text-[var(--if-blue-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}><Ruler size={12} /></button>
+              {guideMenuOpen ? <>
+                <button type="button" aria-label="Close guide settings" onClick={() => setGuideMenuOpen(false)} className="fixed inset-0 z-[2] cursor-default" tabIndex={-1} />
+                <div role="dialog" aria-label="Rulers and guides" className="menu-pop absolute bottom-9 right-0 z-[3] w-72 p-2">
+                  <div className="flex items-center justify-between gap-2 border-b border-[var(--if-border)] px-1 pb-2"><div><strong className="block text-[11px]">Rulers and guides</strong><span className="text-[9px] text-[var(--if-text-tertiary)]">Private editor metadata · not compiled</span></div><Ruler size={14} /></div>
+                  <div className="grid grid-cols-2 gap-1.5 py-2"><button type="button" disabled={screenGuides.length >= MAX_GUIDES_PER_SCREEN} onClick={() => addGuide("vertical")} className="if-editor-control h-7 text-[10px] disabled:opacity-35">+ Vertical</button><button type="button" disabled={screenGuides.length >= MAX_GUIDES_PER_SCREEN} onClick={() => addGuide("horizontal")} className="if-editor-control h-7 text-[10px] disabled:opacity-35">+ Horizontal</button></div>
+                  <div className="flex items-center gap-1 border-y border-[var(--if-border-subtle)] py-1">
+                    <button type="button" aria-pressed={guidePreferences.visible} onClick={() => setGuidePreferences((current) => ({ ...current, visible: !current.visible }))} className="if-editor-icon inline-flex h-7 flex-1 items-center justify-center gap-1 text-[9.5px]">{guidePreferences.visible ? <Eye size={11} /> : <EyeSlash size={11} />} Visible</button>
+                    <button type="button" aria-pressed={guidePreferences.snap} onClick={() => setGuidePreferences((current) => ({ ...current, snap: !current.snap }))} className="if-editor-icon inline-flex h-7 flex-1 items-center justify-center gap-1 text-[9.5px]"><Magnet size={11} /> Snap</button>
+                    <button type="button" disabled={!screenGuides.length} onClick={() => updateScreenGuides(() => [])} className="if-editor-icon inline-flex h-7 flex-1 items-center justify-center gap-1 text-[9.5px] disabled:opacity-35"><Trash size={11} /> Clear</button>
+                  </div>
+                  <div className="max-h-52 overflow-auto pt-1">
+                    {screenGuides.map((guide) => <div key={guide.id} className="grid grid-cols-[18px_minmax(0,1fr)_28px_28px] items-center gap-1 border-b border-[var(--if-border-subtle)] py-1 last:border-0"><span className="text-center font-mono text-[9px] uppercase text-[var(--if-text-tertiary)]">{guide.axis[0]}</span><label className="flex items-center gap-1 text-[9px] text-[var(--if-text-secondary)]"><span className="sr-only">{guide.id} position</span><input aria-label={`${guide.id} position`} type="number" min={-2_000} max={10_000} value={guide.position} disabled={guide.locked} onChange={(event) => updateScreenGuides((guides) => guides.map((item) => item.id === guide.id ? { ...item, position: Math.min(10_000, Math.max(-2_000, Number(event.target.value))) } : item))} className="h-7 min-w-0 flex-1 rounded-[5px] border border-[var(--if-border)] bg-[var(--if-input)] px-2 font-mono text-[10px] disabled:opacity-50" />px</label><button type="button" aria-label={`${guide.hidden ? "Show" : "Hide"} ${guide.id}`} onClick={() => updateScreenGuides((guides) => guides.map((item) => item.id === guide.id ? { ...item, hidden: !item.hidden } : item))} className="if-editor-icon grid size-7 place-items-center">{guide.hidden ? <EyeSlash size={11} /> : <Eye size={11} />}</button><button type="button" aria-label={`${guide.locked ? "Unlock" : "Lock"} ${guide.id}`} onClick={() => updateScreenGuides((guides) => guides.map((item) => item.id === guide.id ? { ...item, locked: !item.locked } : item))} className="if-editor-icon grid size-7 place-items-center">{guide.locked ? <Lock size={11} /> : <LockOpen size={11} />}</button></div>)}
+                    {!screenGuides.length ? <p className="px-2 py-4 text-center text-[9.5px] text-[var(--if-text-tertiary)]">Add a guide for {graph.screens.find((screen) => screen.id === selectedScreen)?.title ?? selectedScreen}.</p> : null}
+                  </div>
+                </div>
+              </> : null}
+            </div>
             <button type="button" aria-label="Fit canvas" title="Fit board · 0" onClick={() => canvasApi.current?.fitAll(true)} className="hidden size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] sm:grid"><ArrowsOutSimple size={12} /></button>
             <button type="button" aria-label="Zoom out" onClick={() => canvasApi.current?.zoomBy(0.8)} className="hidden size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] sm:grid"><Minus size={11} /></button>
             <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
