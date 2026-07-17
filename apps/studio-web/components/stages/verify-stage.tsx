@@ -20,6 +20,7 @@ import type { ScenarioId } from "../studio";
 import {
   countVerificationFindings,
   filterVerificationFindings,
+  type VerificationCategory,
   type VerificationSeverity,
 } from "./workspace-model";
 
@@ -58,6 +59,7 @@ export function VerifyStage({
   const [severities, setSeverities] = useState<Set<VerificationSeverity>>(() => new Set(["error", "warning", "info"]));
   const [showSuppressed, setShowSuppressed] = useState(false);
   const [profileId, setProfileId] = useState("all");
+  const [category, setCategory] = useState<"all" | VerificationCategory>("all");
   const [selectedId, setSelectedId] = useState<string | null>(verification.findings[0]?.id ?? null);
   const counts = useMemo(() => countVerificationFindings(verification.findings), [verification.findings]);
   const visible = useMemo(() => filterVerificationFindings(verification.findings, {
@@ -65,7 +67,8 @@ export function VerifyStage({
     query,
     severities,
     showSuppressed,
-  }), [profileId, query, severities, showSuppressed, verification.findings]);
+    category,
+  }), [category, profileId, query, severities, showSuppressed, verification.findings]);
   const selected = verification.findings.find((finding) => finding.id === selectedId) ?? visible[0];
 
   useEffect(() => {
@@ -98,6 +101,7 @@ export function VerifyStage({
           <button type="button" aria-pressed={showSuppressed} onClick={() => setShowSuppressed((value) => !value)} className={`h-7 shrink-0 rounded border px-2 text-[9px] font-semibold ${showSuppressed ? "border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-text)]" : "border-[var(--line)] text-[var(--muted)]"}`}>Suppressed · {counts.suppressed}</button>
           <select aria-label="Verification device" value={scenarioId} onChange={(event) => setScenarioId(event.target.value as ScenarioId)} className="select-control h-7 min-h-0 max-w-full text-[9px] sm:max-w-48">{Object.entries(scenarios).map(([id, item]) => <option key={id} value={id}>{item.label}</option>)}</select>
           <select aria-label="Accessibility profile filter" value={profileId} onChange={(event) => setProfileId(event.target.value)} className="select-control h-7 min-h-0 max-w-full text-[9px] sm:max-w-48"><option value="all">All accessibility profiles</option>{ACCESSIBILITY_PROFILES.map((profile) => <option key={profile.id} value={profile.id}>{profile.id} · {profile.locale} · {Math.round(profile.textScale * 100)}%</option>)}</select>
+          <select aria-label="Verification category filter" value={category} onChange={(event) => setCategory(event.target.value as "all" | VerificationCategory)} className="select-control h-7 min-h-0 max-w-full text-[9px] sm:max-w-48"><option value="all">All categories</option><option value="design-quality">Design quality</option><option value="accessibility">Accessibility</option><option value="build">Build evidence</option><option value="semantic">Semantic intent</option></select>
         </div>
       </header>
 
@@ -107,7 +111,7 @@ export function VerifyStage({
           <div className="h-[calc(100%-48px)] overflow-auto border-t border-[var(--line)]">
             {visible.map((finding) => {
               const active = selected?.id === finding.id;
-              return <button key={finding.id} type="button" aria-pressed={active} onClick={() => setSelectedId(finding.id)} className={`grid w-full grid-cols-[18px_minmax(0,1fr)] gap-2 border-b border-[var(--line)] px-3 py-3 text-left ${active ? "bg-[var(--accent-soft)]" : "hover:bg-[var(--hover)]"}`}><SeverityIcon severity={finding.severity} /><span className="min-w-0"><strong className="line-clamp-2 text-[11px] font-medium leading-snug text-[var(--ink)]">{finding.violatedIntent}</strong><span className="mt-1 flex items-center gap-1 truncate font-mono text-[8px] text-[var(--faint)]"><span>{finding.target}</span><span>·</span><span>{scenario.label}</span><span>·</span><span>{finding.responsibleLayer}</span></span></span></button>;
+              return <button key={finding.id} type="button" aria-pressed={active} onClick={() => setSelectedId(finding.id)} className={`grid w-full grid-cols-[18px_minmax(0,1fr)] gap-2 border-b border-[var(--line)] px-3 py-3 text-left ${active ? "bg-[var(--accent-soft)]" : "hover:bg-[var(--hover)]"}`}><SeverityIcon severity={finding.severity} /><span className="min-w-0"><strong className="line-clamp-2 text-[11px] font-medium leading-snug text-[var(--ink)]">{finding.violatedIntent}</strong><span className="mt-1 flex items-center gap-1 truncate font-mono text-[8px] text-[var(--faint)]"><span>{finding.designQualityCategory ?? finding.category ?? "semantic"}</span><span>·</span><span>{finding.target}</span><span>·</span><span>{scenario.label}</span><span>·</span><span>{finding.responsibleLayer}</span></span></span></button>;
             })}
             {visible.length === 0 ? <div className="p-6 text-center text-[10px] leading-relaxed text-[var(--muted)]">{verification.findings.length === 0 ? "No issues. Current rules pass when build evidence is present." : "No issues match these filters."}</div> : null}
           </div>
@@ -121,14 +125,18 @@ export function VerifyStage({
               <dl className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded border border-[var(--line)] bg-[var(--line)] text-[10px] md:grid-cols-4">
                 <div className="bg-[var(--panel)] p-3"><dt className="text-[var(--faint)]">Target / device</dt><dd className="mt-1 font-mono text-[var(--ink)]">{selected.target} · {scenario.viewport.width}×{scenario.viewport.height}</dd></div>
                 <div className="bg-[var(--panel)] p-3"><dt className="text-[var(--faint)]">Responsible layer</dt><dd className="mt-1 font-mono text-[var(--ink)]">{selected.responsibleLayer}</dd></div>
-                <div className="bg-[var(--panel)] p-3"><dt className="text-[var(--faint)]">Rule version</dt><dd className="mt-1 font-mono text-[var(--ink)]">{selected.rule ? `${selected.rule.standard} ${selected.rule.version}` : "intentform/0.1"}</dd></div>
+                <div className="bg-[var(--panel)] p-3"><dt className="text-[var(--faint)]">Rule / category</dt><dd className="mt-1 font-mono text-[var(--ink)]">{selected.rule ? `${selected.rule.standard} ${selected.rule.version}` : "intentform/0.1"}<span className="mt-1 block text-[var(--faint)]">{selected.designQualityCategory ?? selected.category ?? "semantic"}</span></dd></div>
                 <div className="bg-[var(--panel)] p-3"><dt className="text-[var(--faint)]">Source fingerprint</dt><dd className="mt-1 font-mono text-[var(--ink)]">{sourceFingerprint}</dd></div>
               </dl>
 
               <section className="mt-5 border border-[var(--line)] bg-[var(--panel)]" aria-labelledby="exact-evidence-heading"><h4 id="exact-evidence-heading" className="border-b border-[var(--line)] px-3 py-2 text-[10px] font-semibold text-[var(--muted)]">Exact evidence</h4><dl className="divide-y divide-[var(--line)]">{selected.evidence.map((evidence) => <div key={`${evidence.kind}:${evidence.label}`} className="grid grid-cols-[minmax(160px,.4fr)_minmax(0,1fr)] gap-3 px-3 py-2.5"><dt className="text-[10px] text-[var(--muted)]">{evidence.label}<span className="ml-2 font-mono text-[8px] text-[var(--faint)]">{evidence.kind}</span></dt><dd className="break-all text-right font-mono text-[10px] text-[var(--ink)]">{String(evidence.value)}</dd></div>)}</dl></section>
 
+              {selected.nodeIds?.length || selected.propertyPaths?.length ? <section className="mt-5 border border-[var(--line)] bg-[var(--panel)]" aria-labelledby="affected-layers-heading"><h4 id="affected-layers-heading" className="border-b border-[var(--line)] px-3 py-2 text-[10px] font-semibold text-[var(--muted)]">Affected layers and properties</h4><dl className="divide-y divide-[var(--line)]"><div className="grid grid-cols-[140px_minmax(0,1fr)] gap-3 px-3 py-2.5"><dt className="text-[10px] text-[var(--muted)]">Node IDs</dt><dd className="break-all text-right font-mono text-[10px] text-[var(--ink)]">{selected.nodeIds?.join(", ") ?? selected.nodeId}</dd></div><div className="grid grid-cols-[140px_minmax(0,1fr)] gap-3 px-3 py-2.5"><dt className="text-[10px] text-[var(--muted)]">Property paths</dt><dd className="break-all text-right font-mono text-[10px] text-[var(--ink)]">{selected.propertyPaths?.join(", ") ?? selected.propertyPath}</dd></div></dl></section> : null}
+
+              {selected.category === "design-quality" ? <p className="mt-4 rounded border border-[var(--line)] bg-[var(--panel)] p-3 text-[10px] text-[var(--muted)]"><strong className="text-[var(--ink)]">Deterministic rule.</strong> This finding is based on measurable authored values. Subjective critique is never labeled as verified.</p> : null}
+
               {selected.suppressionReason ? <p className="mt-4 rounded border border-[var(--warn)]/30 bg-[var(--warn-soft)] p-3 text-[10px] text-[var(--warn)]">Suppression: {selected.suppressionReason}</p> : null}
-              <section className="mt-5 flex items-center justify-between gap-4 rounded border border-[var(--line)] bg-[var(--panel)] p-4"><div><h4 className="text-[11px] font-semibold text-[var(--ink)]">Proposed repair</h4><p className="mt-1 text-[10px] leading-relaxed text-[var(--muted)]">Plan the smallest semantic change, validate it against graph invariants, and retain an evidence-backed diff.</p></div><button type="button" onClick={() => repairFinding(selected)} disabled={isPending || selected.status === "suppressed"} className="min-h-9 shrink-0 rounded bg-[var(--accent-deep)] px-4 text-[10px] font-semibold text-white disabled:opacity-40">Plan and apply repair</button></section>
+              <section className="mt-5 flex items-center justify-between gap-4 rounded border border-[var(--line)] bg-[var(--panel)] p-4"><div><h4 className="text-[11px] font-semibold text-[var(--ink)]">Proposed repair</h4><p className="mt-1 text-[10px] leading-relaxed text-[var(--muted)]">{selected.suggestedRepair?.description ?? "Plan the smallest semantic change, validate it against graph invariants, and retain an evidence-backed diff."}</p></div><button type="button" onClick={() => repairFinding(selected)} disabled={isPending || selected.status === "suppressed"} className="min-h-9 shrink-0 rounded bg-[var(--accent-deep)] px-4 text-[10px] font-semibold text-white disabled:opacity-40">Plan and apply repair</button></section>
             </div>
           ) : (
             <div className="mx-auto grid h-full max-w-xl place-items-center text-center"><div><CheckCircle size={42} weight="fill" className="mx-auto text-[var(--success)]" /><h3 className="mt-3 text-lg font-semibold text-[var(--ink)]">No open verification issues</h3><p className="mt-2 text-xs leading-relaxed text-[var(--muted)]">{verification.scenario.buildStatus === "passed" ? `The current ${verification.scenario.target} build and ${ACCESSIBILITY_RULESET.standard} rules pass for ${scenario.label}.` : "Semantic rules pass, but truthful completion still requires current build evidence."}</p></div></div>

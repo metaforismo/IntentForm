@@ -102,14 +102,36 @@ describe("Code and Verify workspace model", () => {
       severities: new Set(["warning"]),
       showSuppressed: false,
       profileId: "low-vision",
+      category: "all",
     });
     expect(visible.map((item) => item.id)).toEqual(["swiftui.settings.contrast"]);
   });
 
   it("only reveals suppressed findings when explicitly requested", () => {
     const findings = [finding({ id: "suppressed", status: "suppressed" })];
-    const base = { query: "", severities: new Set(["error"] as const), profileId: "all" };
+    const base = { query: "", severities: new Set(["error"] as const), profileId: "all", category: "all" as const };
     expect(filterVerificationFindings(findings, { ...base, showSuppressed: false })).toEqual([]);
     expect(filterVerificationFindings(findings, { ...base, showSuppressed: true })).toEqual(findings);
+  });
+
+  it("filters deterministic design-quality findings by category and exact property path", () => {
+    const findings = [
+      finding({ category: "semantic" }),
+      finding({
+        id: "design-quality.spacing.off-scale.checkout.stack",
+        category: "design-quality",
+        designQualityCategory: "spacing",
+        nodeIds: ["checkout.stack"],
+        propertyPaths: ["checkout.stack.layout.gap"],
+      }),
+    ];
+    const visible = filterVerificationFindings(findings, {
+      query: "checkout.stack.layout.gap",
+      severities: new Set(["error"]),
+      showSuppressed: false,
+      profileId: "all",
+      category: "design-quality",
+    });
+    expect(visible.map((item) => item.id)).toEqual(["design-quality.spacing.off-scale.checkout.stack"]);
   });
 });

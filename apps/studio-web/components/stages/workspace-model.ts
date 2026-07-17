@@ -4,6 +4,7 @@ import type { LocalPreviewEntry, LocalPreviewTarget } from "../use-local-preview
 import type { DeviceProfile } from "../editor/support";
 
 export type VerificationSeverity = VerificationFinding["severity"];
+export type VerificationCategory = NonNullable<VerificationFinding["category"]> | "semantic";
 
 export const COMPARISON_PROFILE_LIMIT = 3;
 
@@ -93,6 +94,7 @@ export function filterVerificationFindings(
     severities: ReadonlySet<VerificationSeverity>;
     showSuppressed: boolean;
     profileId: string;
+    category: "all" | VerificationCategory;
   },
 ): VerificationFinding[] {
   const normalized = options.query.trim().toLowerCase();
@@ -100,6 +102,7 @@ export function filterVerificationFindings(
     options.severities.has(finding.severity)
     && (options.showSuppressed || finding.status !== "suppressed")
     && (options.profileId === "all" || finding.rule?.profileId === options.profileId)
-    && (!normalized || `${finding.violatedIntent} ${finding.id} ${finding.screenId} ${finding.responsibleLayer}`.toLowerCase().includes(normalized))
+    && (options.category === "all" || (finding.category ?? "semantic") === options.category)
+    && (!normalized || `${finding.violatedIntent} ${finding.id} ${finding.screenId} ${finding.responsibleLayer} ${finding.designQualityCategory ?? ""} ${(finding.nodeIds ?? []).join(" ")} ${(finding.propertyPaths ?? []).join(" ")}`.toLowerCase().includes(normalized))
   ));
 }
