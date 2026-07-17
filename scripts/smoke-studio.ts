@@ -633,12 +633,17 @@ try {
       const secondPage = await firstPage.context().newPage();
       await navigateToStudio(secondPage, origin, "/studio");
       await secondPage.getByTestId(`layer-${identity.nodeId}`).waitFor();
+      const catalogPage = await firstPage.context().newPage();
+      await navigateToStudio(catalogPage, origin, "/");
+      const concurrentCard = catalogPage.locator("article").filter({ hasText: "Concurrent Catalog" });
+      await concurrentCard.getByText("r1", { exact: true }).waitFor();
 
       await firstPage.getByTestId(`layer-${identity.nodeId}`).click();
       const firstLabel = firstPage.getByTestId("semantic-inspector").getByLabel("Label", { exact: true });
       await firstLabel.fill("Window one commit");
       await firstLabel.press("Enter");
       await firstPage.waitForTimeout(900);
+      await concurrentCard.getByText("r2", { exact: true }).waitFor();
 
       await secondPage.getByTestId(`layer-${identity.nodeId}`).click();
       const secondLabel = secondPage.getByTestId("semantic-inspector").getByLabel("Label", { exact: true });
@@ -663,7 +668,57 @@ try {
         return project.graph.screens.flatMap((screen) => screen.nodes).find((node) => node.id === nodeId)?.intent?.label;
       }, identity);
       if (storedLabel !== "Window one commit") throw new Error(`Stale window overwrote the catalog head: ${storedLabel}`);
+      await catalogPage.close();
       await secondPage.close();
+    },
+  });
+
+  if (!remoteOrigin) await runSmokeScenario(browser, {
+    name: "missing local path cached copy and relink recovery",
+    run: async (page) => {
+      await gotoStudio(page, origin, "/");
+      await page.locator("header").getByRole("button", { name: "Open project" }).click();
+      await page.waitForURL(`${origin}/studio`);
+      await page.getByRole("button", { name: "IntentForm project menu" }).click();
+      await page.getByRole("menuitem", { name: "Back to project launcher" }).click();
+      await page.waitForURL(`${origin}/`);
+
+      await page.route("**/api/project?capability=1", (route) => route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ available: false }),
+      }));
+      await page.reload({ waitUntil: "networkidle" });
+      await page.getByRole("button", { name: "Verdant Pay, open cached copy" }).waitFor();
+      await page.getByText("Local link unavailable", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Project actions for Verdant Pay" }).click();
+      const bridgeRequired = page.getByRole("menuitem", { name: "Desktop bridge required" });
+      if (!await bridgeRequired.isDisabled()) throw new Error("Missing local project offered relink without a desktop bridge");
+      await page.getByRole("menuitem", { name: "Open cached copy" }).waitFor();
+
+      await page.unroute("**/api/project?capability=1");
+      await page.reload({ waitUntil: "networkidle" });
+      await page.getByRole("button", { name: "Project actions for Verdant Pay" }).click();
+      await page.getByRole("menuitem", { name: "Relink local project" }).click();
+      await page.waitForURL(`${origin}/studio`);
+      const recovered = await page.evaluate(async () => {
+        const database = await new Promise<IDBDatabase>((resolve, reject) => {
+          const request = indexedDB.open("intentform-project-catalog", 1);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        const projects = await new Promise<Array<{ missingLocalPath: boolean; projectType: string; source: string; revision: number }>>((resolve, reject) => {
+          const request = database.transaction("projects", "readonly").objectStore("projects").getAll();
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        database.close();
+        return projects;
+      });
+      if (recovered.length !== 1) throw new Error(`Relink created ${recovered.length} catalog copies instead of updating one`);
+      if (recovered[0]?.missingLocalPath || recovered[0]?.source !== "local" || recovered[0]?.projectType !== "application" || recovered[0].revision < 3) {
+        throw new Error(`Relink did not preserve catalog identity: ${JSON.stringify(recovered[0])}`);
+      }
     },
   });
 

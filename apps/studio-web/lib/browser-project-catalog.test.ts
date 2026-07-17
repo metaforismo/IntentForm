@@ -1,5 +1,5 @@
 import { demoGraph } from "@intentform/proof-report/demo";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   catalogWriteFailure,
   createCatalogProject,
@@ -7,8 +7,11 @@ import {
   nextCatalogProject,
   normalizeCatalogProjectRecord,
   normalizeWorkspaceState,
+  subscribeCatalogChanges,
   withCatalogProjectLock,
 } from "./browser-project-catalog";
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("browser project catalog records", () => {
   it("creates a versioned project with stable document identity and thumbnail metadata", () => {
@@ -118,6 +121,35 @@ describe("browser project catalog records", () => {
       code: "quota",
       message: "Browser storage is full. Archive or delete a project, then try again.",
     });
+    expect(catalogWriteFailure({ name: "NS_ERROR_DOM_QUOTA_REACHED" })).toEqual({
+      ok: false,
+      code: "quota",
+      message: "Browser storage is full. Archive or delete a project, then try again.",
+    });
+  });
+
+  it("accepts only bounded cross-tab catalog invalidations and closes subscriptions", () => {
+    class FakeBroadcastChannel {
+      static current: FakeBroadcastChannel;
+      listener: ((event: MessageEvent<unknown>) => void) | null = null;
+      closed = false;
+      constructor(readonly name: string) { FakeBroadcastChannel.current = this; }
+      addEventListener(_type: string, listener: EventListenerOrEventListenerObject) { this.listener = listener as (event: MessageEvent<unknown>) => void; }
+      removeEventListener() { this.listener = null; }
+      postMessage() {}
+      close() { this.closed = true; }
+      emit(data: unknown) { this.listener?.({ data } as MessageEvent<unknown>); }
+    }
+    vi.stubGlobal("BroadcastChannel", FakeBroadcastChannel);
+    const events: string[] = [];
+    const unsubscribe = subscribeCatalogChanges((event) => events.push(`${event.kind}:${event.projectId}`));
+    expect(FakeBroadcastChannel.current.name).toBe("intentform-project-catalog-v1");
+    FakeBroadcastChannel.current.emit({ version: 1, projectId: "project-a", kind: "save" });
+    FakeBroadcastChannel.current.emit({ version: 1, projectId: "project-a", kind: "unknown" });
+    FakeBroadcastChannel.current.emit({ version: 2, projectId: "project-a", kind: "save" });
+    expect(events).toEqual(["save:project-a"]);
+    unsubscribe();
+    expect(FakeBroadcastChannel.current.closed).toBe(true);
   });
 
   it("serializes project writes through the browser lock manager when available", async () => {

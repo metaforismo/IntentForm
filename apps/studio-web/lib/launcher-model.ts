@@ -14,6 +14,27 @@ export interface CatalogFilters {
   missingOnly: boolean;
 }
 
+export interface ProjectPreviewNode {
+  id: string;
+  kind: string;
+  label: string;
+  emphasis: string;
+}
+
+export function projectPreviewNodes(graph: SemanticInterfaceGraph, limit = 5, scanLimit = 64): ProjectPreviewNode[] {
+  const pending = [...(graph.screens[0]?.nodes ?? [])].reverse();
+  const preview: ProjectPreviewNode[] = [];
+  let scanned = 0;
+  while (pending.length > 0 && preview.length < limit && scanned < scanLimit) {
+    const node = pending.pop()!;
+    scanned += 1;
+    const label = node.intent.label?.trim();
+    if (label) preview.push({ id: node.id, kind: node.kind, label, emphasis: node.style.emphasis });
+    for (let index = node.children.length - 1; index >= 0; index -= 1) pending.push(node.children[index]!);
+  }
+  return preview;
+}
+
 function normalizeSearch(value: string): string {
   return value.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").trim().toLocaleLowerCase();
 }

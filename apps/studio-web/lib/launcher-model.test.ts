@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createCatalogProject } from "./browser-project-catalog";
-import { filterAndSortProjects, filterProjectExamples, inferProjectType, projectMatchesQuery, projectSearchIndex } from "./launcher-model";
+import { filterAndSortProjects, filterProjectExamples, inferProjectType, projectMatchesQuery, projectPreviewNodes, projectSearchIndex } from "./launcher-model";
 import { projectExamples } from "./project-starters";
 
 describe("launcher model", () => {
@@ -34,5 +34,17 @@ describe("launcher model", () => {
     const projects = [first, { ...second, tags: ["Priority"], searchIndex: [...second.searchIndex, "Priority"] }];
     expect(filterAndSortProjects(projects, "priority", { type: "all", platform: "all", missingOnly: false }, "modified").map((project) => project.id)).toEqual(["second"]);
     expect(filterAndSortProjects(projects, "", { type: "all", platform: "all", missingOnly: false }, "name").map((project) => project.name)).toEqual([...projects.map((project) => project.name)].sort());
+  });
+
+  it("bounds thumbnail traversal independently of document depth", () => {
+    const graph = structuredClone(projectExamples[1]!.graph);
+    const seed = structuredClone(graph.screens[0]!.nodes[0]!);
+    let nested = seed;
+    for (let index = 0; index < 200; index += 1) {
+      nested = { ...structuredClone(seed), id: `preview.${index}`, intent: { ...seed.intent, label: `Preview ${index}` }, children: [nested] };
+    }
+    graph.screens[0]!.nodes = [nested];
+    expect(projectPreviewNodes(graph, 5, 8)).toHaveLength(5);
+    expect(projectPreviewNodes(graph, 5, 1)).toEqual([expect.objectContaining({ id: "preview.199", label: "Preview 199" })]);
   });
 });

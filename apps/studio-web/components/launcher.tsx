@@ -44,6 +44,7 @@ import {
   clearActiveBrowserProject,
   migrateLegacyBrowserProject,
   setActiveBrowserProject,
+  subscribeCatalogChanges,
   type BrowserCatalogProject,
 } from "../lib/browser-project-catalog";
 import { createStarterGraph, projectExamples } from "../lib/project-starters";
@@ -51,6 +52,7 @@ import {
   filterAndSortProjects,
   filterProjectExamples,
   inferProjectType,
+  projectPreviewNodes,
   type CatalogFilters,
   type CatalogSort,
   type LauncherSection,
@@ -121,14 +123,13 @@ function ProjectThumbnail({ graph }: { graph: SemanticInterfaceGraph }) {
   const canvas = colors["color.canvas"] ?? "#eeeeec";
   const surface = colors["color.surface"] ?? "#ffffff";
   const screen = graph.screens[0];
-  const collect = (nodes: SemanticInterfaceGraph["screens"][number]["nodes"]): SemanticInterfaceGraph["screens"][number]["nodes"] => nodes.flatMap((node) => [node, ...collect(node.children)]);
-  const nodes = screen ? collect(screen.nodes).filter((node) => node.intent.label?.trim()).slice(0, 5) : [];
+  const nodes = projectPreviewNodes(graph);
   return (
     <span className="relative block aspect-[16/10] overflow-hidden rounded-t-[8px] border-b border-[var(--if-border-subtle)] p-[8%]" style={{ color: ink, background: canvas }} aria-hidden="true">
       <span className="flex h-full flex-col overflow-hidden rounded-[6px] p-[8%] shadow-sm" style={{ background: surface }}>
         <span className="h-1 w-8 rounded-full opacity-55" style={{ background: accent }} />
         <span className="mt-1 truncate text-[12px] font-semibold leading-none">{screen?.title ?? "Project"}</span>
-        <span className="mt-3 grid min-h-0 flex-1 content-start gap-1.5 overflow-hidden">{nodes.map((node) => node.kind === "primary-action" || node.kind === "secondary-action" ? <span key={node.id} className="mt-1 w-fit max-w-full truncate rounded-[3px] px-2 py-1 text-[7px] font-semibold text-white" style={{ background: accent }}>{node.intent.label}</span> : <span key={node.id} className="truncate text-[7px] leading-tight" style={{ opacity: node.style.emphasis === "strong" ? .92 : .58 }}>{node.intent.label}</span>)}</span>
+        <span className="mt-3 grid min-h-0 flex-1 content-start gap-1.5 overflow-hidden">{nodes.map((node) => node.kind === "primary-action" || node.kind === "secondary-action" ? <span key={node.id} className="mt-1 w-fit max-w-full truncate rounded-[3px] px-2 py-1 text-[7px] font-semibold text-white" style={{ background: accent }}>{node.label}</span> : <span key={node.id} className="truncate text-[7px] leading-tight" style={{ opacity: node.emphasis === "strong" ? .92 : .58 }}>{node.label}</span>)}</span>
       </span>
     </span>
   );
@@ -147,6 +148,8 @@ function CatalogProjectCard({
   onExport,
   onArchive,
   onDelete,
+  bridge,
+  onRelink,
 }: {
   project: BrowserCatalogProject;
   catalogView: CatalogView;
@@ -160,11 +163,13 @@ function CatalogProjectCard({
   onExport(): void;
   onArchive(): void;
   onDelete(): void;
+  bridge: BridgeStatus;
+  onRelink(): void;
 }) {
   const activeAction = action?.id === project.id ? action : null;
   return (
     <article style={{ contentVisibility: "auto", containIntrinsicSize: catalogView === "grid" ? "260px" : "112px" }} className={`group relative overflow-hidden rounded-lg border border-[var(--if-border)] bg-[var(--if-panel)] ${project.archivedAt ? "opacity-65" : ""}`}>
-      <button type="button" disabled={opening !== null || Boolean(project.archivedAt)} onClick={onOpen} className={`w-full text-left disabled:cursor-not-allowed ${catalogView === "list" ? "grid grid-cols-[112px_minmax(0,1fr)]" : "block"}`}>
+      <button type="button" aria-label={project.missingLocalPath ? `${project.name}, open cached copy` : project.name} disabled={opening !== null || Boolean(project.archivedAt)} onClick={onOpen} className={`w-full text-left disabled:cursor-not-allowed ${catalogView === "list" ? "grid grid-cols-[112px_minmax(0,1fr)]" : "block"}`}>
         <ProjectThumbnail graph={project.graph} />
         <span className="flex min-w-0 items-start gap-3 p-3">
           <span className="min-w-0 flex-1">
@@ -194,7 +199,8 @@ function CatalogProjectCard({
       </button>
       {activeAction?.mode === "menu" ? (
         <div role="menu" aria-label={`Actions for ${project.name}`} className="absolute right-2 top-10 z-[2] w-40 rounded-lg border border-[var(--if-border)] bg-[var(--if-raised)] p-1 shadow-[var(--if-shadow-menu)]">
-          <button type="button" role="menuitem" onClick={onOpen} className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] hover:bg-[var(--if-hover)]"><FolderOpen size={12} /> Open</button>
+          <button type="button" role="menuitem" onClick={onOpen} className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] hover:bg-[var(--if-hover)]"><FolderOpen size={12} /> {project.missingLocalPath ? "Open cached copy" : "Open"}</button>
+          {project.source === "local" && project.missingLocalPath ? <button type="button" role="menuitem" disabled={bridge !== "available"} onClick={onRelink} className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] hover:bg-[var(--if-hover)] disabled:cursor-not-allowed disabled:opacity-45"><CirclesThreePlus size={12} /> {bridge === "available" ? "Relink local project" : "Desktop bridge required"}</button> : null}
           <button type="button" role="menuitem" onClick={() => onAction({ id: project.id, mode: "rename", value: project.name })} className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] hover:bg-[var(--if-hover)]"><PencilSimple size={12} /> Rename</button>
           <button type="button" role="menuitem" onClick={onDuplicate} className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] hover:bg-[var(--if-hover)]"><CirclesThreePlus size={12} /> Duplicate</button>
           <button type="button" role="menuitem" onClick={() => onAction({ id: project.id, mode: "organize", folder: project.folder ?? "", tags: project.tags.join(", ") })} className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] hover:bg-[var(--if-hover)]"><Tag size={12} /> Organize</button>
@@ -231,6 +237,7 @@ export function Launcher() {
   const router = useRouter();
   const importInput = useRef<HTMLInputElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
+  const catalogRefreshSequence = useRef(0);
   const [view, setView] = useState<LauncherView>("projects");
   const [preferences, setPreferences] = useState<LauncherPreferences>(defaultLauncherPreferences);
   const [preferencesReady, setPreferencesReady] = useState(false);
@@ -280,12 +287,16 @@ export function Launcher() {
   }, [projects]);
 
   const refreshCatalog = async () => {
+    const sequence = ++catalogRefreshSequence.current;
     try {
       const catalog = browserProjectCatalog();
-      setProjects(await catalog.list(true));
+      const entries = await catalog.list(true);
+      if (sequence === catalogRefreshSequence.current) setProjects(entries);
     } catch {
-      setProjects([]);
-      setError("The durable browser project catalog is unavailable in this context.");
+      if (sequence === catalogRefreshSequence.current) {
+        setProjects([]);
+        setError("The durable browser project catalog is unavailable in this context.");
+      }
     }
   };
 
@@ -317,6 +328,17 @@ export function Launcher() {
     return () => {
       cancelled = true;
       controller.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    const refresh = () => void refreshCatalog();
+    const unsubscribe = subscribeCatalogChanges(refresh);
+    const refreshWhenVisible = () => { if (document.visibilityState === "visible") refresh(); };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      unsubscribe();
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, []);
 
@@ -508,6 +530,35 @@ export function Launcher() {
     })();
   };
 
+  const relinkLocalProject = (project: BrowserCatalogProject) => {
+    setOpening(project.id);
+    setError(null);
+    setProjectAction(null);
+    void (async () => {
+      try {
+        const response = await fetch("/api/project", { cache: "no-store" });
+        const result = await response.json() as { error?: string; graph?: unknown; fingerprint?: string; migration?: LocalMigrationState };
+        if (response.status === 409 && result.migration) throw new Error("The local project must be migrated before this cached copy can be relinked.");
+        if (!response.ok || !result.graph || typeof result.fingerprint !== "string") {
+          throw new Error(result.error ?? "The local project could not be relinked.");
+        }
+        const graph = parseGraph(result.graph);
+        const saved = await browserProjectCatalog().save(project.id, graph, project.workspace, project.revision, {
+          projectType: project.projectType,
+          source: "local",
+          localFingerprint: result.fingerprint,
+          missingLocalPath: false,
+        });
+        if (!saved.ok) throw new Error(saved.message);
+        setActiveBrowserProject(window.localStorage, saved.project.id);
+        router.push("/studio");
+      } catch (cause) {
+        setOpening(null);
+        setError(validationMessage(cause));
+      }
+    })();
+  };
+
   const applyLocalMigration = () => {
     if (!localMigration) return;
     setOpening("migration");
@@ -680,6 +731,8 @@ export function Launcher() {
                   onExport={() => exportCatalogProject(project)}
                   onArchive={() => archiveCatalogProject(project)}
                   onDelete={() => deleteCatalogProject(project)}
+                  bridge={bridge}
+                  onRelink={() => relinkLocalProject(project)}
                 />)}
               </div>
             ) : <div className="max-w-[560px] rounded-lg border border-dashed border-[var(--if-border)] px-5 py-6"><strong className="text-[13px] font-medium">{projectQuery.trim() ? `No project matches “${projectQuery.trim()}”` : showArchived ? "No archived projects" : "No recent projects"}</strong><p className="mt-1 text-[11px] text-[var(--if-text-secondary)]">Create a project, open a local file, or start from a working example.</p><div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => setView("new")} className="h-8 rounded-md bg-[var(--if-blue)] px-3 text-[11px] font-medium text-white">New project</button><button type="button" onClick={() => importInput.current?.click()} className="h-8 rounded-md border border-[var(--if-border)] px-3 text-[11px] font-medium">Open project</button><button type="button" onClick={() => selectSection("examples")} className="h-8 rounded-md px-3 text-[11px] font-medium text-[var(--if-blue-text)] hover:bg-[var(--if-hover)]">Explore examples</button></div></div>}
