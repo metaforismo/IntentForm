@@ -126,6 +126,7 @@ function computedNode(element: Element, depth: number, state: { count: number })
 export function WebImportDialog({ open, graph, screenId, onClose, onApply }: WebImportDialogProps) {
   const frame = useRef<HTMLIFrameElement>(null);
   const htmlInput = useRef<HTMLTextAreaElement>(null);
+  const analyzingRef = useRef(false);
   const [html, setHtml] = useState('<main class="page"><h1>Imported interface</h1><p>Paste authored HTML and CSS, then review the semantic projection.</p><button>Continue</button></main>');
   const [css, setCss] = useState(".page { display: flex; flex-direction: column; gap: 16px; padding: 32px; max-width: 720px; margin: auto; }\nbutton { min-height: 44px; background: rgb(79, 143, 247); color: white; border: 0; border-radius: 7px; }");
   const [source, setSource] = useState("");
@@ -146,7 +147,10 @@ export function WebImportDialog({ open, graph, screenId, onClose, onApply }: Web
       onClose();
     };
     window.addEventListener("keydown", escape);
-    return () => window.removeEventListener("keydown", escape);
+    return () => {
+      analyzingRef.current = false;
+      window.removeEventListener("keydown", escape);
+    };
   }, [onClose, open]);
 
   if (!open) return null;
@@ -164,12 +168,13 @@ export function WebImportDialog({ open, graph, screenId, onClose, onApply }: Web
     }
     const sandbox = sandboxSource(html, css);
     setRemoved(sandbox.removed);
+    analyzingRef.current = true;
     setAnalyzing(true);
     setSource(sandbox.source);
   };
 
   const capture = () => {
-    if (!analyzing) return;
+    if (!analyzingRef.current) return;
     try {
       const document = frame.current?.contentDocument;
       if (!document) throw new Error("The isolated browser document is unavailable.");
@@ -182,6 +187,7 @@ export function WebImportDialog({ open, graph, screenId, onClose, onApply }: Web
     } catch (captureError) {
       setError(captureError instanceof Error ? captureError.message : "The browser could not analyze this HTML/CSS input.");
     } finally {
+      analyzingRef.current = false;
       setAnalyzing(false);
     }
   };

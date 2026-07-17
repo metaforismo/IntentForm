@@ -70,6 +70,7 @@ import { useBackgroundVerification } from "./use-background-verification";
 import { DesktopControl } from "./desktop-control";
 import { EcosystemControl } from "./ecosystem-control";
 import { AgentActivityPanel, type AgentReviewChange } from "./agent-activity-panel";
+import { adaptiveAutosaveDelay } from "./reliability-model";
 
 type Stage = "canvas" | WorkflowStage;
 export type OutputTarget = "react" | "swiftui" | "expo" | "web";
@@ -172,12 +173,17 @@ export function Studio() {
   const [projectSource, setProjectSource] = useState<ProjectSource>("example");
   const [catalogProject, setCatalogProject] = useState<BrowserCatalogProject | null>(null);
   const [catalogSavedGraph, setCatalogSavedGraph] = useState<SemanticInterfaceGraph | null>(null);
+  const [catalogSavedSnapshot, setCatalogSavedSnapshot] = useState<string | null>(null);
   const [catalogSaveState, setCatalogSaveState] = useState<"saved" | "dirty" | "saving" | "error">("saved");
   const [workspace, setWorkspace] = useState<BrowserWorkspaceState>(() => defaultWorkspaceState(demoGraph));
   const [pendingTabClose, setPendingTabClose] = useState<BrowserDocumentTab | null>(null);
   const lastCommit = useRef({ at: 0, notice: "" });
   const graphRef = useRef(graph);
   graphRef.current = graph;
+  const graphSnapshot = useMemo(() => stableSerialize(graph), [graph]);
+  const currentGraphFingerprint = useMemo(() => serializedGraphFingerprint(graphSnapshot), [graphSnapshot]);
+  const graphSnapshotRef = useRef(graphSnapshot);
+  graphSnapshotRef.current = graphSnapshot;
   const workspaceRef = useRef(workspace);
   workspaceRef.current = workspace;
   const catalogProjectRef = useRef<BrowserCatalogProject | null>(null);
@@ -344,6 +350,7 @@ export function Studio() {
       const current = catalogProjectRef.current;
       if (!current) return false;
       const graphSnapshot = structuredClone(graphRef.current);
+      const serializedSnapshot = graphSnapshotRef.current;
       const workspaceSnapshot = structuredClone(workspaceRef.current);
       setCatalogSaveState("saving");
       const saved = await browserProjectCatalog().save(
@@ -365,7 +372,8 @@ export function Studio() {
       catalogProjectRef.current = saved.project;
       setCatalogProject(saved.project);
       setCatalogSavedGraph(graphSnapshot);
-      const graphStillCurrent = stableSerialize(graphRef.current) === stableSerialize(graphSnapshot);
+      setCatalogSavedSnapshot(serializedSnapshot);
+      const graphStillCurrent = graphSnapshotRef.current === serializedSnapshot;
       const workspaceStillCurrent = JSON.stringify(workspaceRef.current) === JSON.stringify(workspaceSnapshot);
       setCatalogSaveState(graphStillCurrent && workspaceStillCurrent ? "saved" : "dirty");
       return true;
@@ -400,6 +408,7 @@ export function Studio() {
       setCatalogProject(project);
       catalogProjectRef.current = project;
       setCatalogSavedGraph(restored);
+      setCatalogSavedSnapshot(stableSerialize(restored));
       setCatalogSaveState("saved");
       setWorkspace(restoredWorkspace);
       setProjectType(project.projectType);
@@ -464,16 +473,32 @@ export function Studio() {
 
   useEffect(() => {
     if (!draftReady || !catalogProject || !catalogSavedGraph) return;
-    const graphChanged = stableSerialize(graph) !== stableSerialize(catalogSavedGraph);
+    const graphChanged = graphSnapshot !== catalogSavedSnapshot;
     const workspaceChanged = JSON.stringify(workspace) !== JSON.stringify(catalogProject.workspace);
     if (!graphChanged && !workspaceChanged) {
       setCatalogSaveState("saved");
       return;
     }
     setCatalogSaveState("dirty");
-    const timeout = window.setTimeout(() => void flushCatalogSave(), 350);
+    const timeout = window.setTimeout(() => void flushCatalogSave(), adaptiveAutosaveDelay(graphSnapshot.length));
     return () => window.clearTimeout(timeout);
-  }, [catalogProject, catalogSavedGraph, draftReady, graph, workspace]);
+  }, [catalogProject, catalogSavedGraph, catalogSavedSnapshot, draftReady, graphSnapshot, workspace]);
+
+  useEffect(() => {
+    if (!draftReady || !catalogProject) return;
+    const flushOnInterruption = () => {
+      if (graphSnapshotRef.current !== catalogSavedSnapshot || JSON.stringify(workspaceRef.current) !== JSON.stringify(catalogProjectRef.current?.workspace)) {
+        void flushCatalogSave();
+      }
+    };
+    const flushWhenHidden = () => { if (document.visibilityState === "hidden") flushOnInterruption(); };
+    window.addEventListener("pagehide", flushOnInterruption);
+    document.addEventListener("visibilitychange", flushWhenHidden);
+    return () => {
+      window.removeEventListener("pagehide", flushOnInterruption);
+      document.removeEventListener("visibilitychange", flushWhenHidden);
+    };
+  }, [catalogProject, catalogSavedSnapshot, draftReady]);
 
   useEffect(() => {
     if (/failed|could not|invalid|quota|unavailable|rejected|ignored|unsupported/i.test(notice)) setNoticeOpen(true);
@@ -582,8 +607,6 @@ export function Studio() {
     { label: profile.label, viewport: { width: profile.width, height: profile.height } },
   ])) as Record<string, { label: string; viewport: { width: number; height: number } }>, [previewProfiles]);
   const scenario = scenarios[scenarioId] ?? scenarios[previewProfiles[0]!.id]!;
-  const graphSnapshot = useMemo(() => stableSerialize(graph), [graph]);
-  const currentGraphFingerprint = useMemo(() => serializedGraphFingerprint(graphSnapshot), [graphSnapshot]);
   const localChangesAreUnsaved = useMemo(
     () => hasUnsavedLocalChanges(graph, localProjectFingerprint),
     [graph, localProjectFingerprint],
@@ -632,8 +655,6 @@ export function Studio() {
   const changes = useMemo(() => stage === "report" ? semanticDiff(baseline, graph) : [], [baseline, graph, stage]);
   const output = outputTarget === "react" ? reactOutput : outputTarget === "swiftui" ? swiftOutput : outputTarget === "expo" ? expoOutput : webOutput;
   const outputMessage = outputTarget === "react" ? reactCompilation.message : outputTarget === "swiftui" ? swiftCompilation.message : outputTarget === "expo" ? expoCompilation.message : webCompilation.message;
-  const graphSnapshotRef = useRef(graphSnapshot);
-  graphSnapshotRef.current = graphSnapshot;
   const isPending = pendingAction !== null;
   const selectedCode = output?.files.find((file) => file.path === outputFilePath)
     ?? output?.files.find((file) => file.path.includes(`screens/${selectedScreen}`))
@@ -641,14 +662,14 @@ export function Studio() {
     ?? output?.files[0];
 
   useEffect(() => {
-    if (!localChangesAreUnsaved) return;
+    if (!localChangesAreUnsaved && catalogSaveState === "saved") return;
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warnBeforeUnload);
     return () => window.removeEventListener("beforeunload", warnBeforeUnload);
-  }, [localChangesAreUnsaved]);
+  }, [catalogSaveState, localChangesAreUnsaved]);
 
   const beginRequest = (action: PendingAction) => {
     activeRequest.current?.controller.abort();
@@ -1285,6 +1306,8 @@ export function Studio() {
             >
               {stage === "canvas" ? (
                 <ManualEditor
+                  key={catalogProject?.id ?? graph.product.name}
+                  projectId={catalogProject?.id ?? graph.product.name}
                   graph={graph}
                   selectedScreen={selectedScreen}
                   selectedNodeId={selectedNodeId}

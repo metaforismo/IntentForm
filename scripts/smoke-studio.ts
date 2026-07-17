@@ -2031,6 +2031,7 @@ try {
     run: async (page) => {
       const graph: unknown = JSON.parse(JSON.stringify(createLargeDocumentGraph(1_000, 100)));
       await page.addInitScript((project: unknown) => {
+        if (sessionStorage.getItem("intentform-large-document-seeded") === "true") return;
         localStorage.setItem("intentform-browser-project-v1", JSON.stringify({
           version: 1,
           graph: project,
@@ -2038,6 +2039,7 @@ try {
           projectType: "application",
           source: "recovery",
         }));
+        sessionStorage.setItem("intentform-large-document-seeded", "true");
       }, graph);
       await gotoStudio(page, origin);
       const viewport = page.getByTestId("canvas-viewport");
@@ -2053,6 +2055,33 @@ try {
       const selectedRendered = Number(await viewport.getAttribute("data-rendered-screen-count"));
       if (!Number.isFinite(selectedRendered) || selectedRendered > 7) {
         throw new Error(`Pinned selection expanded the canvas window to ${selectedRendered} screens`);
+      }
+
+      const layerSearch = page.getByLabel("Search layers");
+      await layerSearch.fill("Indexed item");
+      const mountedFilteredLayers = await page.getByRole("tree", { name: "Filtered layers" }).getByRole("treeitem").count();
+      if (mountedFilteredLayers > 48) {
+        throw new Error(`Filtered layer search mounted ${mountedFilteredLayers} rows instead of a bounded virtual window`);
+      }
+      await layerSearch.fill("");
+
+      const comparison = page.getByRole("button", { name: "Toggle responsive comparison" });
+      await comparison.click();
+      await page.waitForTimeout(250);
+      const comparisonState = await page.evaluate(() => ({
+        region: Boolean(document.querySelector('[aria-label="Multi-device comparison"]')),
+        buttons: [...document.querySelectorAll<HTMLButtonElement>('button[aria-label="Toggle responsive comparison"]')].map((button) => button.getAttribute("aria-pressed")),
+        preferences: Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)).flatMap((key) => key?.startsWith("intentform-compare-mode:") ? [[key, localStorage.getItem(key)]] : []),
+      }));
+      if (!comparisonState.region || !comparisonState.preferences.some((entry) => entry[1] === "true")) throw new Error(`Compare mode did not persist after activation: ${JSON.stringify(comparisonState)}`);
+      await page.reload();
+      await page.getByTestId("canvas-viewport").waitFor();
+      await page.getByRole("button", { name: "Toggle responsive comparison" }).and(page.locator('[aria-pressed="true"]')).waitFor();
+      try {
+        await page.locator('[aria-label="Multi-device comparison"]').waitFor();
+      } catch {
+        const restoredStorage = await page.evaluate(() => ({ active: localStorage.getItem("intentform-active-project-id"), comparisons: Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)).flatMap((key) => key?.startsWith("intentform-compare-mode:") ? [[key, localStorage.getItem(key)]] : []) }));
+        throw new Error(`Compare workspace was not restored: ${JSON.stringify(restoredStorage)}`);
       }
 
       await page.getByRole("button", { name: "Verification" }).click();

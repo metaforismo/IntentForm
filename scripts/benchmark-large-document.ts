@@ -41,6 +41,8 @@ function measure<Value>(run: () => Value): { value: Value; ms: number } {
 }
 
 const sourceGraph = createLargeDocumentGraph();
+const SIMULATED_SESSION_MINUTES = 60;
+const SESSION_TICKS = SIMULATED_SESSION_MINUTES * 60;
 const source = stableSerialize(sourceGraph);
 const serializedBytes = new TextEncoder().encode(source).byteLength;
 if (serializedBytes > GRAPH_LIMITS.maxSerializedBytes) {
@@ -92,12 +94,16 @@ collect();
 const heapBefore = process.memoryUsage().heapUsed;
 const longSession = measure(() => {
   const cache = new BoundedLruCache<number, ReturnType<typeof createGraphIndex>>(4);
-  for (let iteration = 0; iteration < 24; iteration += 1) {
-    cache.set(iteration, createGraphIndex(opened.value, indexed.value));
+  let rebuiltIndexes = 0;
+  for (let iteration = 0; iteration < SESSION_TICKS; iteration += 1) {
+    if (iteration % 150 === 0) {
+      cache.set(rebuiltIndexes, createGraphIndex(opened.value, indexed.value));
+      rebuiltIndexes += 1;
+    }
     const left = (iteration * 1_337) % Math.max(1, frameIndex.worldWidth - 900);
     queryHorizontalFrames(frameIndex, { left, right: left + 900 }, { includeIds: ["scale-050"] });
   }
-  return cache.size;
+  return { retainedIndexes: cache.size, rebuiltIndexes, interactions: SESSION_TICKS };
 });
 collect();
 const retainedHeapBytes = Math.max(0, process.memoryUsage().heapUsed - heapBefore);
@@ -129,7 +135,10 @@ console.log(JSON.stringify({
     generatedFiles: codegen.value.output.files.length,
     generatedBytes: codegen.value.output.files.reduce((bytes, file) => bytes + Buffer.byteLength(file.content), 0),
     panZoomVisibleFrames: panZoom.value,
-    retainedIndexes: longSession.value,
+    retainedIndexes: longSession.value.retainedIndexes,
+    simulatedSessionMinutes: SIMULATED_SESSION_MINUTES,
+    longSessionInteractions: longSession.value.interactions,
+    rebuiltIndexes: longSession.value.rebuiltIndexes,
   },
   budgets,
   measurements: Object.fromEntries(Object.entries(measurements).map(([key, value]) => [key, Number(value.toFixed(2))])),
