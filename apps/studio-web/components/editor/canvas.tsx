@@ -67,6 +67,7 @@ interface CanvasStageProps {
   selectedScreen: string;
   selectedNodeId: string | null;
   selectedNodeIds: readonly string[];
+  agentPreviewNodeIds: readonly string[];
   hoveredNodeId: string | null;
   tool: EditorTool;
   spaceHeld: boolean;
@@ -116,6 +117,7 @@ export function CanvasStage({
   selectedScreen,
   selectedNodeId,
   selectedNodeIds,
+  agentPreviewNodeIds,
   hoveredNodeId,
   tool,
   spaceHeld,
@@ -699,6 +701,7 @@ export function CanvasStage({
                 <div data-testid={isSelectedScreen ? "device-content" : undefined} className="flex min-h-0 flex-1 flex-col" style={{ gap: 18 }}>
                   {visibleNodes.map((node) => {
                     const selected = selectedNodeIds.includes(node.id) && isSelectedScreen;
+                    const agentPreviewed = agentPreviewNodeIds.includes(node.id) && isSelectedScreen;
                     const persistent = node.kind === "primary-action" && node.layout.placement?.[profile.breakpoint] === "persistent-bottom";
                     const prototypeAction = previewMode ? node.prototypeActions[0] : undefined;
                     const flowStep = previewMode && !prototypeAction && node.interactions[0]
@@ -713,6 +716,7 @@ export function CanvasStage({
                         data-testid={`canvas-node-${node.id}`}
                         data-selected={selected}
                         data-cross-hover={hoveredNodeId === node.id}
+                        data-agent-preview={agentPreviewed || undefined}
                         role={selected && !previewMode ? undefined : "button"}
                         tabIndex={selected && !previewMode ? -1 : previewMode ? (previewAction ? 0 : -1) : 0}
                         aria-label={previewMode && (prototypeAction || flowStep)
@@ -781,7 +785,7 @@ export function CanvasStage({
                             onSelectNode(node.id);
                           }
                         }}
-                        className={`canvas-node relative outline-none ${persistent ? "mt-auto" : ""} ${previewAction || tool === "comment" ? "cursor-pointer" : "cursor-default"}`}
+                        className={`canvas-node relative outline-none ${persistent ? "mt-auto" : ""} ${previewAction || tool === "comment" ? "cursor-pointer" : "cursor-default"} ${agentPreviewed ? "rounded-[3px] shadow-[0_0_0_2px_var(--accent)]" : ""}`}
                         style={semanticNodeBoxStyle(node, graph, profile) as MotionStyle}
                       >
                         <NodePreview
@@ -793,6 +797,7 @@ export function CanvasStage({
                           selectedNodeId={isSelectedScreen ? selectedNodeId : null}
                           selectedNodeIds={isSelectedScreen ? selectedNodeIds : []}
                           hoveredNodeId={hoveredNodeId}
+                          agentPreviewNodeIds={agentPreviewNodeIds}
                           {...(!previewMode && isSelectedScreen ? { onSelectNode: (nodeId: string, intent: SelectionIntent) => onSelectNode(nodeId, intent) } : {})}
                         />
                         {nodeThreads.map((thread, index) => <button key={thread.id} type="button" data-testid={`review-pin-${thread.id}`} aria-label={`Open review comment ${index + 1}`} onClick={(event) => { event.stopPropagation(); onSelectReviewThread(thread.id); }} className={`absolute -right-2.5 -top-2.5 z-[6] grid size-5 place-items-center rounded-full border-2 border-[var(--if-app)] text-[9px] font-semibold text-white shadow-md ${thread.resolvedAt ? "bg-[var(--if-green)]" : "bg-[var(--if-blue)]"}`}>{index + 1}</button>)}

@@ -158,6 +158,7 @@ export function Studio() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [agentDrawerOpen, setAgentDrawerOpen] = useState(false);
+  const [agentPreview, setAgentPreview] = useState<{ transactionId: string; nodeIds: string[]; changes: number } | null>(null);
   const [draftReady, setDraftReady] = useState(false);
   const [theme, setThemeState] = useState<"light" | "dark">("light");
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
@@ -1009,7 +1010,11 @@ export function Studio() {
     setNotice(`Showing the exact evidence target for ${finding.id}.`);
   };
 
-  const previewAgentChanges = (reviewChanges: AgentReviewChange[]) => {
+  const previewAgentChanges = (reviewChanges: AgentReviewChange[], transactionId: string) => {
+    const nodeIds = graph.screens.flatMap((screen) => flattenSemanticNodes(screen.nodes))
+      .filter((node) => reviewChanges.some((change) => change.path === node.id || change.path.startsWith(`${node.id}.`)))
+      .map((node) => node.id);
+    setAgentPreview({ transactionId, nodeIds, changes: reviewChanges.length });
     for (const screen of graph.screens) {
       const nodes = flattenSemanticNodes(screen.nodes).sort((left, right) => right.id.length - left.id.length);
       const affected = nodes.find((node) => reviewChanges.some((change) => change.path === node.id || change.path.startsWith(`${node.id}.`)));
@@ -1024,6 +1029,18 @@ export function Studio() {
     setStage("graph");
     setAgentDrawerOpen(false);
     setNotice(`Previewing ${reviewChanges.length} proposed project-level agent changes. The canonical graph is unchanged until you commit.`);
+  };
+
+  const inspectGeneratedNode = (nodeId: string) => {
+    const screen = graph.screens.find((item) => flattenSemanticNodes(item.nodes).some((node) => node.id === nodeId));
+    if (!screen) {
+      setNotice(`The source link for ${nodeId} no longer exists in the current graph.`);
+      return;
+    }
+    setSelectedScreen(screen.id);
+    setSelectedNodeId(nodeId);
+    setStage("canvas");
+    setNotice(`Showing ${nodeId}, linked exactly from generated source.`);
   };
 
   const errorCount = verification.findings.filter((finding) => finding.severity === "error" && finding.status !== "suppressed").length;
@@ -1279,6 +1296,8 @@ export function Studio() {
                   localProjectFingerprint={localProjectFingerprint}
                   localProjectSaved={localProjectFingerprint !== null && !localChangesAreUnsaved}
                   verificationFocus={verificationFocus}
+                  agentPreview={agentPreview}
+                  onClearAgentPreview={() => setAgentPreview(null)}
                   onSelectScreen={setSelectedScreen}
                   onDeviceId={setScenarioId}
                   onSelectNode={setSelectedNodeId}
@@ -1335,6 +1354,7 @@ export function Studio() {
                   scenarioLabel={scenario.label}
                   onLocalProjectChanged={openLocalProject}
                   onApplyWebImport={applyWebImport}
+                  onInspectNode={inspectGeneratedNode}
                 />
               ) : null}
 
@@ -1391,8 +1411,12 @@ export function Studio() {
               documentId={workspace.activeTabId}
               screenLabel={graph.screens.find((screen) => screen.id === selectedScreen)?.title ?? selectedScreen}
               selectionLabel={selectedNodeId}
+              workspaceLabel={stage}
+              targetLabel={stage === "outputs" ? outputTarget : null}
+              fileLabel={stage === "outputs" ? selectedCode?.path ?? null : null}
+              currentFingerprint={localProjectFingerprint ?? currentGraphFingerprint}
               onPreviewChanges={previewAgentChanges}
-              onProjectChanged={openLocalProject}
+              onProjectChanged={() => { setAgentPreview(null); openLocalProject(); }}
             />
           </aside>
         </div>

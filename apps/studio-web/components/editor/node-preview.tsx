@@ -44,6 +44,7 @@ interface NodePreviewProps {
   selectedNodeId?: string | null;
   selectedNodeIds?: readonly string[];
   hoveredNodeId?: string | null;
+  agentPreviewNodeIds?: readonly string[];
   onSelectNode?(nodeId: string, intent: SelectionIntent): void;
 }
 
@@ -110,6 +111,7 @@ export function NodePreview({
   selectedNodeId = null,
   selectedNodeIds = [],
   hoveredNodeId = null,
+  agentPreviewNodeIds = [],
   onSelectNode,
 }: NodePreviewProps) {
   const accent = tokenColor(graph, "color.accent", "#397461");
@@ -155,6 +157,7 @@ export function NodePreview({
           selectedNodeId={selectedNodeId}
           selectedNodeIds={selectedNodeIds}
           hoveredNodeId={hoveredNodeId}
+          agentPreviewNodeIds={agentPreviewNodeIds}
           {...(onSelectNode ? { onSelectNode } : {})}
         />
       </div>
@@ -210,12 +213,14 @@ export function NodePreview({
             ...(mode === "wrap" ? { flex: `1 1 calc(${100 / node.layout.columns}% - ${gap}px)` } : {}),
             ...(selected.has(child.id) ? { outline: "1px solid var(--select)", outlineOffset: 2 } : {}),
             ...(child.id === hoveredNodeId && !selected.has(child.id) ? { outline: "1px solid var(--select)", outlineOffset: 2 } : {}),
+            ...(agentPreviewNodeIds.includes(child.id) ? { boxShadow: "0 0 0 2px var(--accent)" } : {}),
           };
           return (
             <div
               key={child.id}
               data-testid={`canvas-node-${child.id}`}
               data-node-selected={selected.has(child.id) || undefined}
+              data-agent-preview={agentPreviewNodeIds.includes(child.id) || undefined}
               style={childStyle}
               onPointerDown={onSelectNode ? (event) => {
                 event.stopPropagation();
@@ -232,6 +237,7 @@ export function NodePreview({
                 selectedNodeId={selectedNodeId}
                 selectedNodeIds={selectedNodeIds}
                 hoveredNodeId={hoveredNodeId}
+                agentPreviewNodeIds={agentPreviewNodeIds}
                 {...(onSelectNode ? { onSelectNode } : {})}
               />
             </div>

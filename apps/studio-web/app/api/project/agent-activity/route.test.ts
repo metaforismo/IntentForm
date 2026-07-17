@@ -69,6 +69,8 @@ describe("local agent transaction review route", () => {
       status: "previewed",
       baseFingerprint: before.fingerprint,
       previewFingerprint: previewed.preview.previewFingerprint,
+      commentId: null,
+      historyOperationId: null,
     });
     expect(payload.reviews[0]).not.toHaveProperty("patch");
 
@@ -78,7 +80,9 @@ describe("local agent transaction review route", () => {
       expectedPreviewFingerprint: previewed.preview.previewFingerprint,
     }));
     expect(committed.status).toBe(200);
-    expect(await committed.json()).toMatchObject({ review: { status: "committed" }, committed: { fingerprint: previewed.preview.previewFingerprint } });
+    const committedPayload = await committed.json();
+    expect(committedPayload).toMatchObject({ review: { status: "committed" }, committed: { fingerprint: previewed.preview.previewFingerprint } });
+    expect(committedPayload.review.historyOperationId).toBe(committedPayload.committed.operation.id);
     expect(loadProject(dir).fingerprint).toBe(previewed.preview.previewFingerprint);
   });
 

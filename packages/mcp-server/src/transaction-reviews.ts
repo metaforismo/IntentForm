@@ -42,6 +42,8 @@ interface StoredTransactionReview {
     buildStatus: "passed" | "failed" | "not-run";
     findings: VerificationFinding[];
   };
+  commentId?: string | null;
+  historyOperationId?: string | null;
 }
 
 interface ReviewFile {
@@ -75,6 +77,8 @@ function validReview(input: unknown): input is StoredTransactionReview {
     && (review.resolvedAt === null || typeof review.resolvedAt === "string")
     && typeof review.baseFingerprint === "string"
     && typeof review.previewFingerprint === "string"
+    && (review.commentId === undefined || review.commentId === null || typeof review.commentId === "string")
+    && (review.historyOperationId === undefined || review.historyOperationId === null || typeof review.historyOperationId === "string")
     && ["previewed", "committed", "rejected", "stale"].includes(review.status ?? "")
     && graphPatchSchema.safeParse(review.patch).success
     && Array.isArray(review.changes)
@@ -142,6 +146,8 @@ function publicReview(review: StoredTransactionReview): PublicTransactionReview 
   const { patch: _patch, status, ...rest } = review;
   return {
     ...rest,
+    commentId: review.commentId ?? null,
+    historyOperationId: review.historyOperationId ?? null,
     status: status === "previewed" && Date.parse(review.expiresAt) <= Date.now() ? "expired" : status,
   };
 }
@@ -152,7 +158,7 @@ export function readTransactionReviews(projectDir: string): { reviews: PublicTra
 
 export function recordTransactionReview(projectDir: string, review: Omit<StoredTransactionReview, "resolvedAt" | "status">): PublicTransactionReview {
   return withLock(projectDir, (entries) => {
-    const stored: StoredTransactionReview = { ...review, resolvedAt: null, status: "previewed" };
+    const stored: StoredTransactionReview = { ...review, commentId: review.commentId ?? null, historyOperationId: null, resolvedAt: null, status: "previewed" };
     writeStored(projectDir, [stored, ...entries.filter((entry) => entry.transactionId !== stored.transactionId)]);
     return publicReview(stored);
   });
@@ -178,6 +184,7 @@ export function commitTransactionReview(
       }
       review.status = "committed";
       review.resolvedAt = new Date().toISOString();
+      review.historyOperationId = committed.operation?.id ?? null;
       writeStored(projectDir, entries);
       return { review: publicReview(review), committed };
     } catch (error) {
