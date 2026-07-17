@@ -7,6 +7,7 @@ import {
   type ProjectSource,
   type ProjectType,
 } from "./browser-projects";
+import { graphFingerprint } from "./project-save-state";
 
 export const BROWSER_CATALOG_DB = "intentform-project-catalog";
 export const BROWSER_CATALOG_VERSION = 1;
@@ -38,6 +39,7 @@ const thumbnailSchema = z.strictObject({
   canvas: z.string().min(1).max(80),
   surface: z.string().min(1).max(80),
   screenCount: z.number().int().nonnegative(),
+  graphFingerprint: z.string().regex(/^[a-f0-9]{8}$/).optional(),
 });
 
 const catalogProjectSchema = z.strictObject({
@@ -54,6 +56,9 @@ const catalogProjectSchema = z.strictObject({
   archivedAt: z.string().datetime().optional(),
   missingLocalPath: z.boolean(),
   revision: z.number().int().positive(),
+  folder: z.string().min(1).max(120).optional(),
+  tags: z.array(z.string().min(1).max(48)).max(20).default([]),
+  searchIndex: z.array(z.string().min(1).max(240)).max(128).default([]),
   thumbnail: thumbnailSchema,
   workspace: workspaceStateSchema,
   lastKnownGood: z.strictObject({
@@ -91,6 +96,7 @@ interface BrowserProjectCatalogDatabase {
   touch(id: string, now?: string): Promise<CatalogWriteResult>;
   rename(id: string, name: string, now?: string): Promise<CatalogWriteResult>;
   archive(id: string, archived: boolean, now?: string): Promise<CatalogWriteResult>;
+  organize(id: string, folder: string | null, tags: string[], now?: string): Promise<CatalogWriteResult>;
   markMissing(id: string, missing: boolean, now?: string): Promise<CatalogWriteResult>;
   delete(id: string): Promise<boolean>;
 }
@@ -143,7 +149,18 @@ function projectThumbnail(graph: SemanticInterfaceGraph): BrowserCatalogProject[
     canvas: colors["color.canvas"] ?? "#eeeeec",
     surface: colors["color.surface"] ?? "#ffffff",
     screenCount: graph.screens.length,
+    graphFingerprint: graphFingerprint(graph),
   };
+}
+
+function projectSearchIndex(graph: SemanticInterfaceGraph, tags: string[] = [], folder?: string): string[] {
+  return [
+    graph.product.name,
+    ...graph.screens.map((screen) => screen.title),
+    ...graph.platforms.filter((platform) => platform.enabled).map((platform) => platform.target),
+    ...tags,
+    ...(folder ? [folder] : []),
+  ].slice(0, 128);
 }
 
 function projectId(graph: SemanticInterfaceGraph): string {
@@ -172,6 +189,8 @@ export function createCatalogProject(
     lastOpenedAt: now,
     missingLocalPath: false,
     revision: 1,
+    tags: [],
+    searchIndex: projectSearchIndex(graph),
     thumbnail: projectThumbnail(graph),
     workspace: defaultWorkspaceState(graph),
   });
@@ -193,6 +212,7 @@ export function nextCatalogProject(
     updatedAt: now,
     revision: current.revision + 1,
     thumbnail: projectThumbnail(graph),
+    searchIndex: projectSearchIndex(graph, current.tags, current.folder),
     workspace: normalizeWorkspaceState(graph, workspaceInput),
     lastKnownGood: {
       graph: current.graph,
@@ -242,7 +262,14 @@ async function openDatabase(): Promise<IDBDatabase> {
 async function readProject(store: IDBObjectStore, id: string): Promise<BrowserCatalogProject | null> {
   const value = await requestResult(store.get(id));
   if (value === undefined) return null;
-  return catalogProjectSchema.parse(value);
+  return normalizeCatalogProjectRecord(value);
+}
+
+function normalizeCatalogProjectRecord(value: unknown): BrowserCatalogProject {
+  const project = catalogProjectSchema.parse(value);
+  return project.searchIndex.length > 0 && project.thumbnail.graphFingerprint
+    ? project
+    : catalogProjectSchema.parse({ ...project, searchIndex: projectSearchIndex(project.graph, project.tags, project.folder), thumbnail: projectThumbnail(project.graph) });
 }
 
 export function browserProjectCatalog(): BrowserProjectCatalogDatabase {
@@ -254,7 +281,7 @@ export function browserProjectCatalog(): BrowserProjectCatalogDatabase {
         const values = await requestResult(transaction.objectStore("projects").getAll());
         await transactionDone(transaction);
         return values
-          .map((value) => catalogProjectSchema.parse(value))
+          .map(normalizeCatalogProjectRecord)
           .filter((project) => includeArchived || !project.archivedAt)
           .sort((left, right) => right.lastOpenedAt.localeCompare(left.lastOpenedAt));
       } finally {
@@ -378,6 +405,37 @@ export function browserProjectCatalog(): BrowserProjectCatalogDatabase {
             updatedAt: now,
             revision: current.revision + 1,
             ...(archived ? { archivedAt: now } : { archivedAt: undefined }),
+          });
+          store.put(project);
+          await transactionDone(transaction);
+          return { ok: true, project };
+        } finally {
+          database.close();
+        }
+      } catch (error) {
+        return catalogWriteFailure(error);
+      }
+    },
+    async organize(id, folder, tags, now = new Date().toISOString()) {
+      const normalizedFolder = folder?.trim() || undefined;
+      const normalizedTags = [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))].slice(0, 20);
+      try {
+        const database = await openDatabase();
+        try {
+          const transaction = database.transaction("projects", "readwrite");
+          const store = transaction.objectStore("projects");
+          const current = await readProject(store, id);
+          if (!current) {
+            transaction.abort();
+            return { ok: false, code: "missing", message: "This project no longer exists in the browser catalog." };
+          }
+          const project = catalogProjectSchema.parse({
+            ...current,
+            folder: normalizedFolder,
+            tags: normalizedTags,
+            searchIndex: projectSearchIndex(current.graph, normalizedTags, normalizedFolder),
+            updatedAt: now,
+            revision: current.revision + 1,
           });
           store.put(project);
           await transactionDone(transaction);
