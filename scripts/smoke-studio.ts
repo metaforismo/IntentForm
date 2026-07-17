@@ -1086,9 +1086,55 @@ try {
       await page.getByLabel("Fixed width").waitFor({ state: "detached" });
 
       await page.keyboard.press("Escape");
+      const editableGridLabel = page.getByTestId("canvas-node-layout-lab.grid-a").locator("[data-editable-text]");
+      const sourceTypography = await editableGridLabel.evaluate((element) => {
+        const style = getComputedStyle(element);
+        const transform = getComputedStyle(document.querySelector(".editor-world")!).transform;
+        const scale = transform === "none" ? 1 : new DOMMatrix(transform).a;
+        let surface = element as HTMLElement | null;
+        let backgroundColor = "";
+        while (surface) {
+          const candidate = getComputedStyle(surface).backgroundColor;
+          if (candidate !== "transparent" && candidate !== "rgba(0, 0, 0, 0)") { backgroundColor = candidate; break; }
+          surface = surface.parentElement;
+        }
+        return {
+          backgroundColor,
+          fontFamily: style.fontFamily,
+          fontWeight: style.fontWeight,
+          fontSize: Number.parseFloat(style.fontSize),
+          textAlign: style.textAlign,
+          scale,
+        };
+      });
+      const sourceTextBox = await editableGridLabel.boundingBox();
       await page.getByTestId("canvas-node-layout-lab.grid-a").dblclick();
       const textEditor = page.getByLabel("Edit layer text");
       await textEditor.waitFor();
+      const editorTypography = await textEditor.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          backgroundColor: style.backgroundColor,
+          fontFamily: style.fontFamily,
+          fontWeight: style.fontWeight,
+          fontSize: Number.parseFloat(style.fontSize),
+          textAlign: style.textAlign,
+        };
+      });
+      const editorTextBox = await textEditor.boundingBox();
+      if (!sourceTextBox || !editorTextBox
+        || Math.abs(sourceTextBox.x - editorTextBox.x) > 2
+        || Math.abs(sourceTextBox.y - editorTextBox.y) > 2) {
+        throw new Error(`Inline editor did not align to rendered text geometry: ${JSON.stringify({ sourceTextBox, editorTextBox })}`);
+      }
+      const expectedEditorFontSize = Math.max(11, sourceTypography.fontSize * sourceTypography.scale);
+      if (editorTypography.backgroundColor !== sourceTypography.backgroundColor
+        || editorTypography.fontFamily !== sourceTypography.fontFamily
+        || editorTypography.fontWeight !== sourceTypography.fontWeight
+        || editorTypography.textAlign !== sourceTypography.textAlign
+        || Math.abs(editorTypography.fontSize - expectedEditorFontSize) > 0.2) {
+        throw new Error(`Inline editor typography diverged from the rendered label: ${JSON.stringify({ sourceTypography, editorTypography })}`);
+      }
       await textEditor.dispatchEvent("compositionstart", { data: "مرحبا" });
       await textEditor.fill("مرحبا 👩🏽‍💻\ncafé");
       await textEditor.dispatchEvent("compositionend", { data: "مرحبا" });
