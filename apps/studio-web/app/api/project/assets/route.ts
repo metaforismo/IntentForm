@@ -33,6 +33,23 @@ function enumField<const T extends readonly string[]>(values: T, value: string, 
   return value as T[number];
 }
 
+export async function GET(request: Request) {
+  if (!isLocalProjectRequestAllowed(request)) return localOnlyError();
+  try {
+    const projectDir = resolveProjectDir();
+    const project = loadProject(projectDir);
+    return Response.json({
+      fingerprint: project.fingerprint,
+      diagnostics: inspectProjectAssets(projectDir, project.graph.assets),
+    }, { headers: noStoreHeaders });
+  } catch {
+    return Response.json(
+      { error: "The local asset store could not be inspected." },
+      { status: 409, headers: noStoreHeaders },
+    );
+  }
+}
+
 export async function POST(request: Request) {
   if (!isLocalProjectRequestAllowed(request)) return localOnlyError();
   const contentLength = Number(request.headers.get("content-length") ?? "0");

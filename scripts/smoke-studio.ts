@@ -1404,17 +1404,29 @@ try {
       const pasteOptions = page.getByRole("menu", { name: "Paste options" });
       await pasteOptions.waitFor();
       const firstPasteOption = pasteOptions.getByRole("menuitem").first();
-      if (await firstPasteOption.evaluate((element) => document.activeElement === element) !== true) {
-        throw new Error("Right arrow did not enter the Paste submenu");
-      }
+      await firstPasteOption.evaluate((element) => new Promise<void>((resolve, reject) => {
+        const deadline = performance.now() + 1_000;
+        const inspect = () => {
+          if (document.activeElement === element) resolve();
+          else if (performance.now() >= deadline) reject(new Error("Right arrow did not enter the Paste submenu"));
+          else requestAnimationFrame(inspect);
+        };
+        inspect();
+      }));
       await page.keyboard.press("End");
       if (await pasteOptions.getByRole("menuitem", { name: "Paste to replace" }).evaluate((element) => document.activeElement === element) !== true) {
         throw new Error("Paste submenu did not support End navigation");
       }
       await page.keyboard.press("ArrowLeft");
-      if (await pasteMenuItem.evaluate((element) => document.activeElement === element) !== true) {
-        throw new Error("Left arrow did not return to the Paste parent item");
-      }
+      await pasteMenuItem.evaluate((element) => new Promise<void>((resolve, reject) => {
+        const deadline = performance.now() + 1_000;
+        const inspect = () => {
+          if (document.activeElement === element) resolve();
+          else if (performance.now() >= deadline) reject(new Error("Left arrow did not return to the Paste parent item"));
+          else requestAnimationFrame(inspect);
+        };
+        inspect();
+      }));
       await page.keyboard.press("Escape");
       await layerActions.waitFor({ state: "detached" });
       if (await keyboardContextNode.evaluate((element) => document.activeElement === element) !== true) {
@@ -1869,6 +1881,9 @@ try {
         const assetPanel = tokenPage.getByTestId("asset-library-panel");
         await assetPanel.getByText("smoke-mark", { exact: true }).waitFor();
         await assetPanel.getByText("40 × 20px", { exact: true }).waitFor();
+        await assetPanel.getByTestId("asset-integrity-status").getByText("All stored asset bytes match their manifests.", { exact: true }).waitFor();
+        await assetPanel.getByTestId("asset-integrity-status").getByRole("button", { name: "Check", exact: true }).click();
+        await assetPanel.getByTestId("asset-integrity-status").getByText("All stored asset bytes match their manifests.", { exact: true }).waitFor();
         const fillPaint = assetPanel.getByLabel("Recolor #112233 in smoke-mark");
         await fillPaint.waitFor();
         await assetPanel.getByLabel("Recolor #445566 in smoke-mark").waitFor();

@@ -41,6 +41,12 @@ import { extractSvgPaints, replaceSvgPaint, type SvgPaint } from "@intentform/to
 import { Reorder } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IconButton } from "../ui/controls";
+import {
+  groupAssetIntegrityDiagnostics,
+  hasBlockingAssetIntegrityIssue,
+  parseAssetIntegritySnapshot,
+  type AssetIntegrityDiagnostic,
+} from "./asset-integrity";
 import { importLocalAsset } from "./asset-import";
 import { isNodeVisible, nodeNames, type NodeCommand, type RailTab, type VisualState } from "./support";
 import type { SelectionIntent } from "./direct-manipulation";
@@ -323,6 +329,12 @@ export function LayersPanel({
   const assetUploadController = useRef<AbortController | null>(null);
   const [tokenTransferStatus, setTokenTransferStatus] = useState<{ kind: "success" | "error"; message: string } | null>(null);
   const [assetTransferStatus, setAssetTransferStatus] = useState<{ kind: "working" | "success" | "error"; message: string } | null>(null);
+  const [assetIntegrityRefresh, setAssetIntegrityRefresh] = useState(0);
+  const [assetIntegrity, setAssetIntegrity] = useState<
+    | { kind: "idle" | "loading"; diagnostics: AssetIntegrityDiagnostic[] }
+    | { kind: "ready"; diagnostics: AssetIntegrityDiagnostic[] }
+    | { kind: "error"; diagnostics: AssetIntegrityDiagnostic[]; message: string }
+  >({ kind: "idle", diagnostics: [] });
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set());
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ nodeId: string; mode: "before" | "inside" } | null>(null);
@@ -355,7 +367,39 @@ export function LayersPanel({
     setLayerScroll((current) => ({ ...current, top: 0 }));
   }, [layerQuery]);
 
+  useEffect(() => {
+    if (railTab !== "assets" || !localProjectSaved || !localProjectFingerprint) {
+      setAssetIntegrity({ kind: "idle", diagnostics: [] });
+      return;
+    }
+    const controller = new AbortController();
+    setAssetIntegrity((current) => ({ kind: "loading", diagnostics: current.diagnostics }));
+    void fetch("/api/project/assets", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as unknown;
+        if (!response.ok) {
+          const message = payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
+            ? payload.error
+            : "Asset integrity inspection failed.";
+          throw new Error(message);
+        }
+        const snapshot = parseAssetIntegritySnapshot(payload);
+        if (snapshot.fingerprint !== localProjectFingerprint) throw new Error("The local project changed during asset inspection. Check again.");
+        setAssetIntegrity({ kind: "ready", diagnostics: snapshot.diagnostics });
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setAssetIntegrity((current) => ({
+          kind: "error",
+          diagnostics: current.diagnostics,
+          message: error instanceof Error ? error.message : "Asset integrity inspection failed.",
+        }));
+      });
+    return () => controller.abort();
+  }, [assetIntegrityRefresh, graph.assets, localProjectFingerprint, localProjectSaved, railTab]);
+
   const allNodes = useMemo(() => flattenSemanticNodes(screen.nodes), [screen.nodes]);
+  const assetDiagnostics = useMemo(() => groupAssetIntegrityDiagnostics(assetIntegrity.diagnostics), [assetIntegrity.diagnostics]);
   const containerIds = useMemo(() => allNodes.filter(isContainerNode).map((node) => node.id), [allNodes]);
   const allLayersCollapsed = containerIds.length > 0 && containerIds.every((id) => collapsedIds.has(id));
   const nodesById = useMemo(() => new Map(allNodes.map((node) => [node.id, node])), [allNodes]);
@@ -864,15 +908,26 @@ export function LayersPanel({
             />
             <input ref={assetFileRef} type="file" aria-label="Import project asset" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml,video/mp4,video/webm,audio/mpeg,audio/ogg,audio/wav,font/woff,font/woff2,font/ttf,font/otf" className="sr-only" onChange={(event) => void importAssetFile(event.target.files?.[0])} />
             <p className="mt-1 text-[11px] leading-relaxed text-[var(--faint)]">Digest-verified local files with explicit license and export policy. Drag visual assets onto the canvas.</p>
+            {localProjectFingerprint ? (
+              <div className={`mt-2 flex min-h-8 items-center justify-between gap-2 rounded-md px-2 text-[9.5px] ${assetIntegrity.kind === "error" || assetIntegrity.diagnostics.some((item) => item.severity === "error") ? "bg-[var(--danger-soft)] text-[var(--danger)]" : assetIntegrity.diagnostics.length > 0 ? "bg-[var(--warn-soft)] text-[var(--warn)]" : "bg-[var(--canvas)] text-[var(--muted)]"}`} data-testid="asset-integrity-status">
+                <span className="min-w-0 flex-1 leading-relaxed">
+                  {assetIntegrity.kind === "loading" ? "Checking stored bytes…" : assetIntegrity.kind === "error" ? assetIntegrity.message : assetIntegrity.kind === "ready" && assetIntegrity.diagnostics.length === 0 ? "All stored asset bytes match their manifests." : assetIntegrity.kind === "ready" ? `${assetIntegrity.diagnostics.length} integrity or policy finding${assetIntegrity.diagnostics.length === 1 ? "" : "s"}.` : "Save the project to check stored bytes."}
+                </span>
+                <button type="button" disabled={assetIntegrity.kind === "loading" || !localProjectSaved} onClick={() => setAssetIntegrityRefresh((value) => value + 1)} className="shrink-0 rounded border border-current/20 px-1.5 py-1 font-semibold disabled:opacity-40">Check</button>
+              </div>
+            ) : null}
             {assetTransferStatus ? <p role={assetTransferStatus.kind === "error" ? "alert" : "status"} className={`mt-2 flex items-start gap-1.5 rounded-lg px-2 py-1.5 text-[10px] leading-relaxed ${assetTransferStatus.kind === "error" ? "bg-[var(--danger-soft)] text-[var(--danger)]" : "bg-[var(--accent-soft)] text-[var(--accent-text)]"}`}>{assetTransferStatus.kind === "error" ? <WarningCircle className="mt-0.5 shrink-0" size={11} /> : null}<span className="min-w-0 flex-1">{assetTransferStatus.message}</span>{assetTransferStatus.kind === "working" ? <button type="button" onClick={() => assetUploadController.current?.abort()} className="shrink-0 font-semibold underline">Cancel</button> : assetTransferStatus.kind === "error" && localProjectSaved ? <button type="button" onClick={() => chooseAssetFile(retryReplacingAssetId.current ?? undefined)} className="shrink-0 font-semibold underline">Choose again</button> : null}</p> : null}
           </section>
           <div className="grid gap-2 p-2">
-            {graph.assets.map((asset) => (
+            {graph.assets.map((asset) => {
+              const diagnostics = assetDiagnostics.get(asset.id) ?? [];
+              const blocked = hasBlockingAssetIntegrityIssue(diagnostics);
+              return (
               <article
                 key={asset.id}
-                draggable={["raster", "svg", "icon"].includes(asset.kind)}
+                draggable={!blocked && ["raster", "svg", "icon"].includes(asset.kind)}
                 onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("application/x-intentform-asset", asset.id); }}
-                className="rounded-lg border border-[var(--line)] bg-[var(--field)] p-2.5"
+                className={`rounded-lg border bg-[var(--field)] p-2.5 ${blocked ? "border-[var(--danger)]/45" : "border-[var(--line)]"}`}
               >
                 <AssetThumbnail asset={asset} />
                 <div className="flex items-start justify-between gap-2">
@@ -886,16 +941,22 @@ export function LayersPanel({
                 <p className="mt-2 text-[10px] leading-relaxed text-[var(--muted)]">{asset.license.name} · redistribution {asset.license.redistribution}</p>
                 {asset.width && asset.height ? <p className="mt-1 font-mono text-[9px] text-[var(--faint)]">{asset.width} × {asset.height}px</p> : null}
                 {asset.variants.length > 0 ? <p className="mt-1 font-mono text-[9px] text-[var(--faint)]">{asset.variants.length} variant{asset.variants.length === 1 ? "" : "s"}</p> : null}
+                {diagnostics.length > 0 ? (
+                  <div className="mt-2 grid gap-1" aria-label={`Integrity findings for ${asset.name}`}>
+                    {diagnostics.map((diagnostic) => <p key={`${diagnostic.variantId ?? "default"}:${diagnostic.code}`} className={`flex gap-1.5 rounded-md px-2 py-1.5 text-[9.5px] leading-relaxed ${diagnostic.severity === "error" ? "bg-[var(--danger-soft)] text-[var(--danger)]" : "bg-[var(--warn-soft)] text-[var(--warn)]"}`}><WarningCircle className="mt-0.5 shrink-0" size={10} /><span>{diagnostic.message}{diagnostic.variantId ? ` · ${diagnostic.variantId}` : ""}</span></p>)}
+                  </div>
+                ) : null}
                 <div className="mt-2 grid grid-cols-4 gap-1">
-                  <button type="button" disabled={!(["raster", "svg", "icon"].includes(asset.kind))} onClick={() => onPlaceAsset(asset.id)} className="min-h-7 rounded-md border border-[var(--line)] px-1 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)] disabled:opacity-35">Place</button>
-                  <button type="button" disabled={!localProjectFingerprint || !localProjectSaved} onClick={() => chooseAssetFile(asset.id)} className="min-h-7 rounded-md border border-[var(--line)] px-1 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)] disabled:opacity-35">Replace</button>
+                  <button type="button" title={blocked ? "Replace the missing or modified bytes before placing this asset" : undefined} disabled={blocked || !(["raster", "svg", "icon"].includes(asset.kind))} onClick={() => onPlaceAsset(asset.id)} className="min-h-7 rounded-md border border-[var(--line)] px-1 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)] disabled:opacity-35">Place</button>
+                  <button type="button" disabled={!localProjectFingerprint || !localProjectSaved} onClick={() => chooseAssetFile(asset.id)} className="min-h-7 rounded-md border border-[var(--line)] px-1 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)] disabled:opacity-35">{blocked ? "Repair" : "Replace"}</button>
                   <button type="button" onClick={() => void navigator.clipboard.writeText(asset.id).then(() => setAssetTransferStatus({ kind: "success", message: `Copied ${asset.id}.` })).catch(() => setAssetTransferStatus({ kind: "error", message: "Clipboard access was denied." }))} className="min-h-7 rounded-md border border-[var(--line)] px-1 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)]">Copy ref</button>
-                  <button type="button" disabled={asset.kind === "font" || asset.exportPolicy === "blocked"} onClick={() => exportAsset(asset)} className="min-h-7 rounded-md border border-[var(--line)] px-1 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)] disabled:opacity-35">Export</button>
+                  <button type="button" disabled={blocked || asset.kind === "font" || asset.exportPolicy === "blocked"} onClick={() => exportAsset(asset)} className="min-h-7 rounded-md border border-[var(--line)] px-1 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)] disabled:opacity-35">Export</button>
                 </div>
                 {["svg", "icon"].includes(asset.kind) ? <SvgPaintEditor asset={asset} disabled={!localProjectFingerprint || !localProjectSaved || assetTransferStatus?.kind === "working"} onRecolor={(paint, color) => void recolorSvg(asset, paint, color)} /> : null}
                 <AssetPolicyEditor asset={asset} onChange={(mutate, notice) => onUpdateAssets((assets) => { const draft = assets.find((candidate) => candidate.id === asset.id); if (draft) mutate(draft); }, notice)} />
               </article>
-            ))}
+              );
+            })}
             {graph.assets.length === 0 ? (
               <div className="rounded-lg border border-dashed border-[var(--line-strong)] px-3 py-8 text-center text-[11px] leading-relaxed text-[var(--muted)]">{localProjectFingerprint ? "No project assets yet. Import an image, SVG, media file, or licensed font." : "Open a local project to import content-addressed assets."}</div>
             ) : null}
