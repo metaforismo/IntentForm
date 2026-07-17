@@ -46,6 +46,9 @@ export const GRAPH_LIMITS = {
   maxFieldsPerContract: 48,
   maxEventsPerContract: 48,
   maxInteractionsPerNode: 16,
+  maxPrototypeActionsPerNode: 16,
+  maxReviewThreads: 512,
+  maxReviewMessagesPerThread: 128,
   maxPatchOperations: 64,
   maxTokensPerGroup: 128,
   maxTokenModes: 16,
@@ -135,6 +138,64 @@ const fixtureValueSchema = z.union([
   z.number().finite(),
   z.boolean(),
 ]);
+
+const prototypeTransitionSchema = z.strictObject({
+  type: z.enum(["instant", "dissolve", "slide-left", "slide-right", "push", "move-in"]).default("instant"),
+  durationMs: z.number().int().min(0).max(10_000).default(0),
+  easing: z.enum(["linear", "ease", "ease-in", "ease-out", "ease-in-out"]).default("ease-out"),
+});
+
+const prototypeActionSchema = z.strictObject({
+  id: idSchema,
+  trigger: z.enum(["click", "tap", "hover", "press", "key", "after-delay"]),
+  type: z.enum(["navigate", "change-state", "open-overlay", "close-overlay", "back", "scroll-to", "external-link"]),
+  targetScreenId: idSchema.optional(),
+  targetNodeId: idSchema.optional(),
+  state: visualStateSchema.optional(),
+  url: z.string().url().max(2_048).optional(),
+  delayMs: z.number().int().min(0).max(60_000).optional(),
+  transition: prototypeTransitionSchema.default({ type: "instant", durationMs: 0, easing: "ease-out" }),
+}).superRefine((action, context) => {
+  const requireField = (field: "targetScreenId" | "targetNodeId" | "state" | "url", message: string) => {
+    if (!action[field]) context.addIssue({ code: "custom", message, path: [field] });
+  };
+  if (["navigate", "open-overlay"].includes(action.type)) requireField("targetScreenId", `${action.type} actions require a target screen`);
+  if (action.type === "scroll-to") requireField("targetNodeId", "scroll-to actions require a target node");
+  if (action.type === "change-state") requireField("state", "change-state actions require a visual state");
+  if (action.type === "external-link") requireField("url", "external-link actions require a URL");
+  if (action.trigger === "after-delay" && action.delayMs === undefined) {
+    context.addIssue({ code: "custom", message: "after-delay actions require delayMs", path: ["delayMs"] });
+  }
+});
+
+const reviewAuthorSchema = z.strictObject({
+  id: idSchema,
+  name: safeDisplayTextSchema(120),
+  kind: z.enum(["human", "agent", "system"]),
+});
+
+const reviewMessageSchema = z.strictObject({
+  id: idSchema,
+  author: reviewAuthorSchema,
+  createdAt: z.string().datetime({ offset: true }),
+  body: safeDisplayTextSchema(4_000),
+  mentions: z.array(idSchema).max(32).default([]),
+  transactionId: idSchema.optional(),
+});
+
+const reviewThreadSchema = z.strictObject({
+  id: idSchema,
+  anchor: z.strictObject({
+    screenId: idSchema,
+    nodeId: idSchema.optional(),
+    x: z.number().finite().min(0).max(1),
+    y: z.number().finite().min(0).max(1),
+  }),
+  nodeFingerprint: sha256Schema.optional(),
+  messages: z.array(reviewMessageSchema).min(1).max(GRAPH_LIMITS.maxReviewMessagesPerThread),
+  resolvedAt: z.string().datetime({ offset: true }).optional(),
+  resolvedBy: reviewAuthorSchema.optional(),
+});
 
 const componentValueTypeSchema = z.enum(["string", "number", "boolean"]);
 const componentBindingFieldSchema = z.enum([
@@ -823,6 +884,7 @@ const semanticNodeBaseSchema = z.strictObject({
       requires: z.array(identifierSchema).max(GRAPH_LIMITS.maxFieldsPerContract).default([]),
     }),
   ).max(GRAPH_LIMITS.maxInteractionsPerNode).default([]),
+  prototypeActions: z.array(prototypeActionSchema).max(GRAPH_LIMITS.maxPrototypeActionsPerNode).default([]),
   platformOverrides: z
     .record(
       tokenKeySchema,
@@ -1160,7 +1222,7 @@ export function isTransactionalScreen(
 
 export const semanticInterfaceGraphSchema = z
   .strictObject({
-    schemaVersion: z.literal("0.10.0"),
+    schemaVersion: z.literal("0.11.0"),
     product: z.strictObject({
       name: safeTextSchema(120),
       audience: z.array(safeTextSchema(240)).min(1).max(20),
@@ -1191,6 +1253,10 @@ export const semanticInterfaceGraphSchema = z
         })).min(1).max(GRAPH_LIMITS.maxStepsPerFlow),
       }),
     ).max(GRAPH_LIMITS.maxFlows),
+    prototype: z.strictObject({
+      startScreenId: idSchema,
+    }),
+    reviewThreads: z.array(reviewThreadSchema).max(GRAPH_LIMITS.maxReviewThreads).default([]),
     contracts: z.array(uiContractSchema).max(GRAPH_LIMITS.maxContracts),
     fixtures: z.array(fixtureSetSchema).max(GRAPH_LIMITS.maxFixtures),
   })
@@ -1219,6 +1285,10 @@ export const semanticInterfaceGraphSchema = z
     checkUnique(graph.fixtures.map((fixture) => fixture.id), "fixture id", ["fixtures"]);
     checkUnique(graph.assets.map((asset) => asset.id), "asset id", ["assets"]);
     checkUnique(graph.dependencies.map((dependency) => dependency.id), "dependency id", ["dependencies"]);
+    checkUnique(graph.reviewThreads.map((thread) => thread.id), "review thread id", ["reviewThreads"]);
+    if (!graph.screens.some((screen) => screen.id === graph.prototype.startScreenId)) {
+      addIssue(`Unknown prototype start screen: ${graph.prototype.startScreenId}`, ["prototype", "startScreenId"]);
+    }
     graph.components.forEach((component, componentIndex) => {
       checkUnique(component.codeBindings.map((binding) => binding.target), "component code binding target", ["components", componentIndex, "codeBindings"]);
       const propertyNames = new Set(component.properties.map((property) => property.name));
@@ -1701,7 +1771,18 @@ export const semanticInterfaceGraphSchema = z
           addIssue(`Screen ${screen.id} needs a contract for stateful or interactive nodes`, nodePath);
         }
         checkUnique(node.interactions.map((interaction) => interaction.event), "node interaction event", [...nodePath, "interactions"]);
+        checkUnique(node.prototypeActions.map((action) => action.id), "node prototype action id", [...nodePath, "prototypeActions"]);
         checkUnique(node.states.map((state) => state.name), "node visual state", [...nodePath, "states"]);
+
+        for (const [actionIndex, action] of node.prototypeActions.entries()) {
+          const actionPath = [...nodePath, "prototypeActions", actionIndex];
+          if (action.targetScreenId && !screenById.has(action.targetScreenId)) {
+            addIssue(`Prototype action references unknown screen: ${action.targetScreenId}`, [...actionPath, "targetScreenId"]);
+          }
+          if (action.state && !visualStates.has(action.state)) {
+            addIssue(`Prototype action references undeclared visual state: ${screen.id}.${action.state}`, [...actionPath, "state"]);
+          }
+        }
 
         for (const [interactionIndex, interaction] of node.interactions.entries()) {
           const interactionPath = [...nodePath, "interactions", interactionIndex];
@@ -1732,6 +1813,35 @@ export const semanticInterfaceGraphSchema = z
 
     if (totalNodeCount > GRAPH_LIMITS.maxTotalNodes) {
       addIssue(`Graph exceeds ${GRAPH_LIMITS.maxTotalNodes} total nodes`, ["screens"]);
+    }
+
+    graph.screens.forEach((screen, screenIndex) => {
+      walkSemanticNodes(screen.nodes, ({ node, indexPath }) => {
+        const nodePath: Array<string | number> = ["screens", screenIndex, "nodes", indexPath[0]!];
+        for (const childIndex of indexPath.slice(1)) nodePath.push("children", childIndex);
+        node.prototypeActions.forEach((action, actionIndex) => {
+          if (action.targetNodeId && !nodeIds.has(action.targetNodeId)) {
+            addIssue(`Prototype action references unknown node: ${action.targetNodeId}`, [...nodePath, "prototypeActions", actionIndex, "targetNodeId"]);
+          }
+        });
+      });
+    });
+
+    for (const [threadIndex, thread] of graph.reviewThreads.entries()) {
+      const threadPath: Array<string | number> = ["reviewThreads", threadIndex];
+      if (!screenById.has(thread.anchor.screenId)) {
+        addIssue(`Review thread references unknown screen: ${thread.anchor.screenId}`, [...threadPath, "anchor", "screenId"]);
+      }
+      if (thread.anchor.nodeId && !nodeIds.has(thread.anchor.nodeId)) {
+        addIssue(`Review thread references unknown node: ${thread.anchor.nodeId}`, [...threadPath, "anchor", "nodeId"]);
+      }
+      checkUnique(thread.messages.map((message) => message.id), "review message id", [...threadPath, "messages"]);
+      if (thread.resolvedAt && !thread.resolvedBy) {
+        addIssue("Resolved review threads require resolvedBy", [...threadPath, "resolvedBy"]);
+      }
+      if (!thread.resolvedAt && thread.resolvedBy) {
+        addIssue("Unresolved review threads cannot set resolvedBy", [...threadPath, "resolvedAt"]);
+      }
     }
 
     const fixtureStateKeys = new Set<string>();
@@ -1914,6 +2024,30 @@ export const graphPatchSchema = z.strictObject({
       }),
       z.strictObject({ op: z.literal("clear-asset"), target: idSchema }),
       z.strictObject({
+        op: z.literal("set-prototype-action"),
+        target: idSchema,
+        action: prototypeActionSchema.nullable(),
+      }),
+      z.strictObject({
+        op: z.literal("add-review-thread"),
+        thread: reviewThreadSchema,
+      }),
+      z.strictObject({
+        op: z.literal("reply-review-thread"),
+        threadId: idSchema,
+        message: reviewMessageSchema,
+      }),
+      z.strictObject({
+        op: z.literal("resolve-review-thread"),
+        threadId: idSchema,
+        resolvedAt: z.string().datetime({ offset: true }).nullable(),
+        resolvedBy: reviewAuthorSchema.nullable(),
+      }).superRefine((operation, context) => {
+        if (Boolean(operation.resolvedAt) !== Boolean(operation.resolvedBy)) {
+          context.addIssue({ code: "custom", message: "resolvedAt and resolvedBy must be set or cleared together" });
+        }
+      }),
+      z.strictObject({
         op: z.literal("set-web-layout"),
         target: idSchema,
         layout: webNodeLayoutSchema.nullable(),
@@ -2035,6 +2169,34 @@ export function applyGraphPatch(
       continue;
     }
 
+    if (operation.op === "add-review-thread") {
+      if (clone.reviewThreads.some((thread) => thread.id === operation.thread.id)) throw new Error(`Review thread already exists: ${operation.thread.id}`);
+      clone.reviewThreads.push(operation.thread);
+      continue;
+    }
+
+    if (operation.op === "reply-review-thread") {
+      const thread = clone.reviewThreads.find((candidate) => candidate.id === operation.threadId);
+      if (!thread) throw new Error(`Review thread not found: ${operation.threadId}`);
+      if (thread.resolvedAt) throw new Error(`Review thread is resolved: ${operation.threadId}`);
+      if (thread.messages.some((message) => message.id === operation.message.id)) throw new Error(`Review message already exists: ${operation.message.id}`);
+      thread.messages.push(operation.message);
+      continue;
+    }
+
+    if (operation.op === "resolve-review-thread") {
+      const thread = clone.reviewThreads.find((candidate) => candidate.id === operation.threadId);
+      if (!thread) throw new Error(`Review thread not found: ${operation.threadId}`);
+      if (operation.resolvedAt && operation.resolvedBy) {
+        thread.resolvedAt = operation.resolvedAt;
+        thread.resolvedBy = operation.resolvedBy;
+      } else {
+        delete thread.resolvedAt;
+        delete thread.resolvedBy;
+      }
+      continue;
+    }
+
     if (operation.op === "move-node") {
       const source = findGraphNodeLocation(clone, operation.target);
       if (!source) throw new Error(`Patch target not found: ${operation.target}`);
@@ -2107,6 +2269,8 @@ export function applyGraphPatch(
       };
     } else if (operation.op === "clear-asset") {
       delete node.asset;
+    } else if (operation.op === "set-prototype-action") {
+      node.prototypeActions = operation.action ? [operation.action] : [];
     } else if (operation.op === "set-web-layout") {
       if (operation.layout === null) delete node.web;
       else node.web = operation.layout;
@@ -2205,6 +2369,18 @@ export function semanticDiff(
   }
   if (JSON.stringify(before.devices) !== JSON.stringify(after.devices)) {
     changes.push({ path: "devices", before: before.devices, after: after.devices });
+  }
+  if (JSON.stringify(before.prototype) !== JSON.stringify(after.prototype)) {
+    changes.push({ path: "prototype", before: before.prototype, after: after.prototype });
+  }
+  const beforeReviews = new Map(before.reviewThreads.map((thread) => [thread.id, thread]));
+  const afterReviews = new Map(after.reviewThreads.map((thread) => [thread.id, thread]));
+  for (const id of new Set([...beforeReviews.keys(), ...afterReviews.keys()])) {
+    const previous = beforeReviews.get(id);
+    const next = afterReviews.get(id);
+    if (JSON.stringify(previous) !== JSON.stringify(next)) {
+      changes.push({ path: `reviewThreads.${id}`, before: previous, after: next });
+    }
   }
 
   const beforeComponents = new Map(before.components.map((definition) => [definition.id, definition]));
@@ -2330,6 +2506,9 @@ export function semanticDiff(
         before: previous.interactions.map((interaction) => interaction.event),
         after: node.interactions.map((interaction) => interaction.event),
       });
+    }
+    if (JSON.stringify(previous.prototypeActions) !== JSON.stringify(node.prototypeActions)) {
+      changes.push({ path: `${node.id}.prototypeActions`, before: previous.prototypeActions, after: node.prototypeActions });
     }
     const previousChildren = previous.children.map((child) => child.id);
     const nextChildren = node.children.map((child) => child.id);

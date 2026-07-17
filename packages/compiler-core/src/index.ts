@@ -91,6 +91,7 @@ export interface PlatformIRNode {
   web: SemanticNode["web"] | null;
   expo: NonNullable<SemanticNode["expo"]> | null;
   events: PlatformIREvent[];
+  prototypeActions: SemanticNode["prototypeActions"];
   visibility: Array<{ state: string; expression?: Expression }>;
   bindings: {
     value: PlatformIRField | null;
@@ -126,6 +127,7 @@ export interface PlatformIR {
   tokenCollection: TokenCollection;
   tokenModes: Record<string, ResolvedTokenMode>;
   activeTokenMode: string;
+  prototype: SemanticInterfaceGraph["prototype"];
   assets: AssetDefinition[];
   dependencies: Record<string, string>;
   devices: ResolvedDeviceConfiguration;
@@ -512,6 +514,7 @@ export function lowerGraph(graph: SemanticInterfaceGraph, target: PlatformTarget
       resolveTokenMode(graph.tokens, modeId),
     ])),
     activeTokenMode: graph.tokens.activeMode,
+    prototype: graph.prototype,
     assets: graph.assets,
     dependencies: Object.fromEntries(graph.dependencies
       .filter((dependency) => graph.components.some((component) => component.codeBindings.some((binding) =>
@@ -647,6 +650,7 @@ export function lowerGraph(graph: SemanticInterfaceGraph, target: PlatformTarget
           web: node.web ?? null,
           expo: node.expo ?? (graph.expo ? { strategy: graph.expo.defaultRenderStrategy } : null),
           events: eventsForNode(node, contract),
+          prototypeActions: structuredClone(node.prototypeActions),
           visibility: node.states.map((state) => ({
             state: state.name,
             ...(state.visibleWhen ? { expression: state.visibleWhen } : {}),

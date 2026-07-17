@@ -87,6 +87,8 @@ describe("responsive web compiler", () => {
     receipt.nodes[0]!.id = "sample.dot";
     receipt.nodes[1]!.id = "sample-dot";
     graph.screens = [receipt];
+    graph.prototype.startScreenId = receipt.id;
+    graph.reviewThreads = [];
     graph.contracts = graph.contracts.filter((contract) => contract.screenId === "receipt");
     graph.fixtures = graph.fixtures.filter((fixture) => fixture.screenId === "receipt");
     graph.flows = [];

@@ -91,6 +91,7 @@ function starterNode(
     accessibility: { label, live: kind === "status-message" ? "polite" : "off" },
     states: [],
     interactions: [],
+    prototypeActions: [],
     provenance: { author: "system", revision: 0 },
     children,
   };
@@ -131,7 +132,7 @@ export function createStarterGraph(input: StarterProjectInput): SemanticInterfac
     .slice(0, 80) || "intentform-project";
 
   return parseGraph({
-    schemaVersion: "0.10.0",
+    schemaVersion: "0.11.0",
     dependencies: [],
     product: {
       name,
@@ -212,6 +213,8 @@ export function createStarterGraph(input: StarterProjectInput): SemanticInterfac
       } : node),
     }],
     flows: [],
+    prototype: { startScreenId: "home" },
+    reviewThreads: [],
     contracts: [],
     fixtures: [],
   });
@@ -307,6 +310,8 @@ export function createLumenShowcaseGraph(): SemanticInterfaceGraph {
     ],
   }];
   graph.flows = [];
+  graph.prototype.startScreenId = "library";
+  graph.reviewThreads = [];
   graph.contracts = [{
     screenId: "collection",
     data: [{ name: "status", type: "status", required: true }],

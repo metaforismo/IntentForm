@@ -12,7 +12,7 @@ import {
   type DeviceProfile as RegistryDeviceProfile,
 } from "@intentform/device-registry";
 
-export type EditorTool = "select" | "hand";
+export type EditorTool = "select" | "hand" | "comment";
 export type MobilePanel = "structure" | "inspector" | null;
 export type PreviewBreakpoint = DeviceClass;
 export type DeviceId = `device:${string}` | `web:${string}`;

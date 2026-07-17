@@ -8,6 +8,7 @@ import {
   ArrowsOutSimple,
   CaretDown,
   CheckCircle,
+  ChatCircle,
   Command,
   Copy,
   CurrencyEur,
@@ -65,6 +66,7 @@ import { importLocalAsset } from "./editor/asset-import";
 import { Inspector } from "./editor/inspector";
 import { LayersPanel } from "./editor/layers-panel";
 import { ToolRail } from "./editor/tool-rail";
+import { ReviewPanel } from "./editor/review-panel";
 import { CommandMenu, ShortcutsSheet, type EditorCommand } from "./editor/overlays";
 import { MultiDeviceComparison } from "./stages/multi-device-comparison";
 import {
@@ -173,6 +175,9 @@ interface LocalBezelResponse {
   packs: LocalBezelPack[];
   diagnostics: string[];
 }
+
+const localReviewer = { id: "local-reviewer", name: "Local reviewer", kind: "human" as const };
+const reviewId = (prefix: string) => `${prefix}-${crypto.randomUUID()}`;
 
 const catalogIcons: Record<SemanticNode["kind"], Icon> = {
   text: TextT,
@@ -294,6 +299,9 @@ export function ManualEditor({
   const [commandQuery, setCommandQuery] = useState("");
   const [layerQuery, setLayerQuery] = useState("");
   const [previewMode, setPreviewMode] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewDraftAnchor, setReviewDraftAnchor] = useState<SemanticInterfaceGraph["reviewThreads"][number]["anchor"] | null>(null);
+  const [activeReviewThreadId, setActiveReviewThreadId] = useState<string | null>(null);
   const [comparisonMode, setComparisonMode] = useState(false);
   const [comparisonProfileIds, setComparisonProfileIds] = useState<string[]>(() => defaultComparisonProfileIds(editorProfiles(graph)));
   const [showDeviceChrome, setShowDeviceChrome] = useState(true);
@@ -317,6 +325,9 @@ export function ManualEditor({
     return { rail: 224, inspector: 264 };
   });
   const canvasApi = useRef<CanvasApi>(null);
+  const previewHistory = useRef<string[]>([]);
+  const previewWasOpen = useRef(false);
+  const previewOriginScreen = useRef(selectedScreen);
   const nodeClipboard = useRef<NodeClipboardPayload | null>(null);
   const styleClipboard = useRef<StyleClipboardPayload | null>(null);
   const pendingPasteMode = useRef<PasteMode>("after");
@@ -791,6 +802,7 @@ export function ManualEditor({
         accessibility: { label: value, live: "off" },
         states: insertionStateBindings(activeVisualState),
         interactions: [],
+        prototypeActions: [],
         provenance: { author: "human", revision: 0 },
         children: [],
       }],
@@ -887,6 +899,7 @@ export function ManualEditor({
       accessibility: { label: "Grouped content", live: "off" },
       states: [],
       interactions: [],
+      prototypeActions: [],
       provenance: { author: "human", revision: 0 },
       children: [],
     };
@@ -956,6 +969,7 @@ export function ManualEditor({
       accessibility: { label: preset.label, live: preset.live },
       states: insertionStateBindings(activeVisualState),
       interactions: [],
+      prototypeActions: [],
       provenance: { author: "human", revision: 0 },
       children: [],
     });
@@ -999,6 +1013,7 @@ export function ManualEditor({
       asset: { assetId, fit: "contain", focalPoint: { x: 0.5, y: 0.5 }, decorative: false },
       states: insertionStateBindings(activeVisualState),
       interactions: [],
+      prototypeActions: [],
       provenance: { author: "human", revision: 0 },
       children: [],
     });
@@ -1115,6 +1130,7 @@ export function ManualEditor({
     const draft = structuredClone(graph);
     const removed = draft.screens.find((item) => item.id === screenId);
     if (!removed) return;
+    const removedNodeIds = new Set(flattenSemanticNodes(removed.nodes).map((node) => node.id));
     draft.screens = draft.screens.filter((item) => item.id !== screenId);
     draft.contracts = draft.contracts.filter((item) => item.screenId !== screenId);
     draft.fixtures = draft.fixtures.filter((item) => item.screenId !== screenId);
@@ -1122,6 +1138,11 @@ export function ManualEditor({
       .map((flow) => ({ ...flow, steps: flow.steps.filter((step) => step.from !== screenId && step.to !== screenId) }))
       .filter((flow) => flow.steps.length > 0);
     const fallback = draft.screens[0];
+    if (draft.prototype.startScreenId === screenId && fallback) draft.prototype.startScreenId = fallback.id;
+    draft.reviewThreads = draft.reviewThreads.filter((thread) => thread.anchor.screenId !== screenId && (!thread.anchor.nodeId || !removedNodeIds.has(thread.anchor.nodeId)));
+    for (const node of flattenGraphNodes(draft)) {
+      node.prototypeActions = node.prototypeActions.filter((action) => action.targetScreenId !== screenId && (!action.targetNodeId || !removedNodeIds.has(action.targetNodeId)));
+    }
     const committed = commitDraft(draft, `Removed ${removed.title} and its contract, fixtures and flow steps.`);
     if (committed && selectedScreen === screenId && fallback) {
       onSelectScreen(fallback.id);
@@ -1149,6 +1170,7 @@ export function ManualEditor({
         accessibility: { label: "Start shaping this screen", live: "polite" },
         states: [],
         interactions: [],
+        prototypeActions: [],
         provenance: { author: "human", revision: 0 },
         children: [],
       }],
@@ -1212,6 +1234,92 @@ export function ManualEditor({
     if (flow) flow.steps.push({ from: fromScreenId, event: eventName, to: targetScreenId });
     else draft.flows.push({ id: "main", steps: [{ from: fromScreenId, event: eventName, to: targetScreenId }] });
     commitDraft(draft, `Routed ${eventName} to ${target.title}.`);
+  }, [commitDraft, graph]);
+
+  const setPrototypeAction = useCallback((nodeId: string, action: SemanticNode["prototypeActions"][number] | null) => {
+    const draft = structuredClone(graph);
+    const found = locateEditorNode(draft, nodeId);
+    if (!found) return;
+    found.node.prototypeActions = action ? [action] : [];
+    found.node.provenance = { author: "human", revision: found.node.provenance.revision + 1 };
+    commitDraft(draft, action ? `Set ${action.trigger} to ${action.type}.` : "Removed the prototype action.");
+  }, [commitDraft, graph]);
+
+  const setPrototypeStart = useCallback((screenId: string) => {
+    const target = graph.screens.find((item) => item.id === screenId);
+    if (!target) return;
+    const draft = structuredClone(graph);
+    draft.prototype.startScreenId = screenId;
+    commitDraft(draft, `Set ${target.title} as the prototype start screen.`);
+  }, [commitDraft, graph]);
+
+  useEffect(() => {
+    if (previewMode && !previewWasOpen.current) {
+      previewOriginScreen.current = selectedScreen;
+      previewHistory.current = [];
+      if (selectedScreen !== graph.prototype.startScreenId) {
+        onSelectScreen(graph.prototype.startScreenId);
+        requestAnimationFrame(() => canvasApi.current?.fitScreen(graph.prototype.startScreenId, true));
+      }
+    } else if (!previewMode && previewWasOpen.current) {
+      const origin = previewOriginScreen.current;
+      if (selectedScreen === graph.prototype.startScreenId && origin !== selectedScreen && graph.screens.some((item) => item.id === origin)) {
+        onSelectScreen(origin);
+        requestAnimationFrame(() => canvasApi.current?.fitScreen(origin, true));
+      }
+    }
+    previewWasOpen.current = previewMode;
+  }, [graph.prototype.startScreenId, graph.screens, onSelectScreen, previewMode, selectedScreen]);
+
+  const runPrototypeAction = useCallback((action: SemanticNode["prototypeActions"][number], sourceScreenId: string) => {
+    if (action.type === "navigate" || action.type === "open-overlay") {
+      if (!action.targetScreenId) return;
+      previewHistory.current.push(sourceScreenId);
+      onSelectScreen(action.targetScreenId);
+      requestAnimationFrame(() => canvasApi.current?.fitScreen(action.targetScreenId!, true));
+    } else if (action.type === "back" || action.type === "close-overlay") {
+      const target = previewHistory.current.pop() ?? graph.prototype.startScreenId;
+      onSelectScreen(target);
+      requestAnimationFrame(() => canvasApi.current?.fitScreen(target, true));
+    } else if (action.type === "change-state" && action.state) {
+      setVisualStateByScreen((current) => ({ ...current, [sourceScreenId]: action.state! }));
+    } else if (action.type === "scroll-to" && action.targetNodeId) {
+      document.querySelector<HTMLElement>(`[data-testid="canvas-node-${action.targetNodeId}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else if (action.type === "external-link" && action.url) {
+      window.open(action.url, "_blank", "noopener,noreferrer");
+    }
+    onNotice(`${action.type.replaceAll("-", " ")} · ${action.transition.type}${action.transition.durationMs ? ` · ${action.transition.durationMs}ms` : ""}`);
+  }, [graph.prototype.startScreenId, onNotice, onSelectScreen]);
+
+  const createReviewThread = useCallback((anchor: SemanticInterfaceGraph["reviewThreads"][number]["anchor"], body: string) => {
+    const draft = structuredClone(graph);
+    const threadId = reviewId("review");
+    draft.reviewThreads.push({ id: threadId, anchor, messages: [{ id: reviewId("message"), author: localReviewer, createdAt: new Date().toISOString(), body, mentions: [] }] });
+    commitDraft(draft, `Added a review comment to ${anchor.nodeId ?? anchor.screenId}.`);
+    setReviewDraftAnchor(null);
+    setActiveReviewThreadId(threadId);
+  }, [commitDraft, graph]);
+
+  const replyToReviewThread = useCallback((threadId: string, body: string) => {
+    const draft = structuredClone(graph);
+    const thread = draft.reviewThreads.find((item) => item.id === threadId);
+    if (!thread || thread.resolvedAt) return;
+    thread.messages.push({ id: reviewId("message"), author: localReviewer, createdAt: new Date().toISOString(), body, mentions: [] });
+    commitDraft(draft, "Replied to a review comment.");
+  }, [commitDraft, graph]);
+
+  const resolveReviewThread = useCallback((threadId: string, resolved: boolean) => {
+    const draft = structuredClone(graph);
+    const thread = draft.reviewThreads.find((item) => item.id === threadId);
+    if (!thread) return;
+    if (resolved) {
+      thread.resolvedAt = new Date().toISOString();
+      thread.resolvedBy = localReviewer;
+    } else {
+      delete thread.resolvedAt;
+      delete thread.resolvedBy;
+    }
+    commitDraft(draft, resolved ? "Resolved a review comment." : "Reopened a review comment.");
   }, [commitDraft, graph]);
 
   const handleNodeCommand = (command: NodeCommand, nodeId: string) => {
@@ -1596,7 +1704,7 @@ export function ManualEditor({
             {graph.components.map((definition) => <button key={definition.id} type="button" role="menuitem" disabled={Boolean(definition.deprecated)} onClick={() => insertLibraryComponent(definition.id)} className="flex w-full items-center gap-2.5 rounded-[6px] px-2.5 py-2 text-left hover:bg-[var(--hover)] disabled:cursor-not-allowed disabled:opacity-45"><span className="grid size-8 shrink-0 place-items-center rounded-[5px] border border-[var(--line)] bg-[var(--chip)] text-[var(--t-strong)]"><Stack size={14} /></span><span className="min-w-0"><strong className="block text-[11px] font-semibold">{definition.name}</strong><small className="block truncate text-[11px] text-[var(--muted)]">v{definition.version} · {definition.variants.length} variants</small></span></button>)}
           </div>
         ) : null}
-        onTool={setTool}
+        onTool={(nextTool) => { setTool(nextTool); if (nextTool === "comment") { setReviewOpen(true); setActiveReviewThreadId(null); } }}
         onInsert={() => setInsertOpen((open) => !open)}
         onUndo={onUndo}
         onRedo={onRedo}
@@ -1720,10 +1828,33 @@ export function ManualEditor({
               draft.intent.label = label;
               draft.accessibility.label = label;
             }, "Updated visible and accessible label.")}
+            onPrototypeAction={runPrototypeAction}
+            onReviewAnchor={(screenId, nodeId) => {
+              setReviewOpen(true);
+              setActiveReviewThreadId(null);
+              setReviewDraftAnchor({ screenId, nodeId, x: 1, y: 0 });
+            }}
+            onSelectReviewThread={(threadId) => {
+              setReviewOpen(true);
+              setReviewDraftAnchor(null);
+              setActiveReviewThreadId(threadId);
+            }}
             onOpenVerify={() => onOpenStage("verify")}
             onZoomChange={setZoomPct}
           />
         )}
+
+        <ReviewPanel
+          graph={graph}
+          open={reviewOpen}
+          draftAnchor={reviewDraftAnchor}
+          activeThreadId={activeReviewThreadId}
+          onActiveThread={(threadId) => { setReviewDraftAnchor(null); setActiveReviewThreadId(threadId); }}
+          onCreate={createReviewThread}
+          onReply={replyToReviewThread}
+          onResolve={resolveReviewThread}
+          onClose={() => { setReviewOpen(false); setReviewDraftAnchor(null); setActiveReviewThreadId(null); if (tool === "comment") setTool("select"); }}
+        />
 
         <div className="pointer-events-auto absolute inset-x-2 top-2 z-[2] flex flex-wrap items-start justify-between gap-2 sm:inset-x-3 sm:top-3 sm:flex-nowrap xl:justify-end">
           <div className="floating-chrome order-1 flex h-9 shrink-0 items-center gap-0.5 rounded-[8px] p-1 sm:order-none xl:hidden">
@@ -1750,11 +1881,12 @@ export function ManualEditor({
             {([
               { id: "select", label: "Select", icon: Cursor },
               { id: "hand", label: "Pan", icon: Hand },
+              { id: "comment", label: "Add comment", icon: ChatCircle },
             ] as const).map((item) => {
               const ToolIcon = item.icon;
               const active = tool === item.id && !(item.id === "select" && spaceHeld);
               return (
-                <button key={item.id} type="button" aria-label={item.label} aria-pressed={tool === item.id} onClick={() => setTool(item.id)} className={`grid size-7 place-items-center rounded-[5px] ${active || (item.id === "hand" && spaceHeld) ? "bg-[var(--accent)] text-white" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
+                <button key={item.id} type="button" aria-label={item.label} aria-pressed={tool === item.id} onClick={() => { setTool(item.id); if (item.id === "comment") { setReviewOpen(true); setActiveReviewThreadId(null); } }} className={`grid size-7 place-items-center rounded-[5px] ${active || (item.id === "hand" && spaceHeld) ? "bg-[var(--accent)] text-white" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
                   <ToolIcon size={13} weight={tool === item.id ? "fill" : "regular"} />
                 </button>
               );
@@ -1951,6 +2083,8 @@ export function ManualEditor({
         onUpdateFixture={updateFixture}
         onSetActionEvent={setActionEvent}
         onSetFlowTarget={setFlowTarget}
+        onSetPrototypeAction={setPrototypeAction}
+        onSetPrototypeStart={setPrototypeStart}
         onDuplicate={duplicateSelection}
         onReorder={moveSelection}
         onDelete={deleteSelection}

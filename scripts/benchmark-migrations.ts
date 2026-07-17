@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
-import { previewGraphMigration } from "../packages/semantic-schema/src/migrations.ts";
+import { CURRENT_SCHEMA_VERSION, previewGraphMigration } from "../packages/semantic-schema/src/migrations.ts";
 
 const requestedIterations = Number.parseInt(process.env.MIGRATION_BENCH_ITERATIONS ?? "1000", 10);
 const iterations = Number.isSafeInteger(requestedIterations)
@@ -22,7 +22,7 @@ const durationMs = performance.now() - startedAt;
 const operationsPerSecond = Math.round(iterations / (durationMs / 1_000));
 
 console.log(JSON.stringify({
-  fixture: "0.0.1-to-0.10.0",
+  fixture: `0.0.1-to-${CURRENT_SCHEMA_VERSION}`,
   iterations,
   durationMs: Number(durationMs.toFixed(2)),
   operationsPerSecond,

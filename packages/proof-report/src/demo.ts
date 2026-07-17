@@ -36,6 +36,7 @@ const baseNode = (
   accessibility: { label, live: kind === "status-message" ? "polite" : "off" },
   states: [],
   interactions: [],
+  prototypeActions: [],
   provenance: { author: "system", revision: 0 },
   children: [],
 });
@@ -78,7 +79,7 @@ export const demoBrief =
   "Create a calm payment flow for independent professionals. Keep the amount, recipient and next action unmistakable. Never expose blockchain terminology. Every failure must provide a recovery path.";
 
 export const demoGraph: SemanticInterfaceGraph = parseGraph({
-  schemaVersion: "0.10.0",
+  schemaVersion: "0.11.0",
   dependencies: [],
   product: {
     name: "Verdant Pay",
@@ -316,6 +317,8 @@ export const demoGraph: SemanticInterfaceGraph = parseGraph({
       ],
     },
   ],
+  prototype: { startScreenId: "home" },
+  reviewThreads: [],
   contracts: [
     {
       screenId: "home",

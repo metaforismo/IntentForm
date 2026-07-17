@@ -56,6 +56,7 @@ function node(
     accessibility: { label: id, live: "off" },
     states: [],
     interactions: [],
+    prototypeActions: [],
     provenance: { author: "system", revision: 0 },
     children,
   };

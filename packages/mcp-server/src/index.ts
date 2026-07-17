@@ -135,7 +135,7 @@ export const resourceDefinitions = [{
   mimeType: "application/json",
   read: () => {
     const graph = readCanonicalGraph();
-    return { screens: graph.screens.map(({ id, title, purpose, route, nodes }) => ({ id, title, purpose, route, rootNodeIds: nodes.map((node) => node.id) })), flows: graph.flows };
+    return { screens: graph.screens.map(({ id, title, purpose, route, nodes }) => ({ id, title, purpose, route, rootNodeIds: nodes.map((node) => node.id) })), flows: graph.flows, prototype: graph.prototype, reviewThreads: graph.reviewThreads };
   },
 }, {
   uri: "intentform://project/diagnostics",
@@ -200,7 +200,7 @@ export const resourceDefinitions = [{
 }] as const;
 
 const PATCH_CONTRACT = `A GraphPatch is {"id": string, "rationale": string, "operations": Operation[]} where Operation is one of:
-{"op":"set-label","target":nodeId,"label":string} · {"op":"set-placement","target":nodeId,"compact":"inline"|"persistent-bottom","regular":"inline"|"persistent-bottom"} · {"op":"set-purpose","target":nodeId,"purpose":string} · {"op":"set-emphasis","target":nodeId,"emphasis":"quiet"|"normal"|"strong"} · {"op":"set-gap-token","target":nodeId,"token":string} · {"op":"set-padding-token","target":nodeId,"token":string} · {"op":"set-layout","target":nodeId, ...layoutFields} · {"op":"set-web-layout","target":nodeId,"layout":typedWebLayout|null} · {"op":"move-node","target":nodeId,"screenId":screenId,"parent":nodeId|null,"index"?:number} · {"op":"set-color-token","token":colorTokenName,"value":"#rrggbb"} · {"op":"set-token-mode","mode":modeId} · {"op":"bind-asset","target":nodeId,"assetId":assetId,"variantId"?:variantId,"fit":"contain"|"cover"|"fill"|"none","focalPoint":{"x":0..1,"y":0..1},"decorative":boolean} · {"op":"clear-asset","target":nodeId} · {"op":"set-fixture-value","screenId":screenId,"state":"idle"|"loading"|"empty"|"failed"|"completed","field":contractField,"value":string|number|boolean}.
+{"op":"set-label","target":nodeId,"label":string} · {"op":"set-placement","target":nodeId,"compact":"inline"|"persistent-bottom","regular":"inline"|"persistent-bottom"} · {"op":"set-purpose","target":nodeId,"purpose":string} · {"op":"set-emphasis","target":nodeId,"emphasis":"quiet"|"normal"|"strong"} · {"op":"set-gap-token","target":nodeId,"token":string} · {"op":"set-padding-token","target":nodeId,"token":string} · {"op":"set-layout","target":nodeId, ...layoutFields} · {"op":"set-web-layout","target":nodeId,"layout":typedWebLayout|null} · {"op":"move-node","target":nodeId,"screenId":screenId,"parent":nodeId|null,"index"?:number} · {"op":"set-color-token","token":colorTokenName,"value":"#rrggbb"} · {"op":"set-token-mode","mode":modeId} · {"op":"bind-asset","target":nodeId,"assetId":assetId,"variantId"?:variantId,"fit":"contain"|"cover"|"fill"|"none","focalPoint":{"x":0..1,"y":0..1},"decorative":boolean} · {"op":"clear-asset","target":nodeId} · {"op":"set-fixture-value","screenId":screenId,"state":"idle"|"loading"|"empty"|"failed"|"completed","field":contractField,"value":string|number|boolean} · {"op":"set-prototype-action","target":nodeId,"action":prototypeAction|null} · {"op":"add-review-thread","thread":reviewThread} · {"op":"reply-review-thread","threadId":threadId,"message":reviewMessage} · {"op":"resolve-review-thread","threadId":threadId,"resolvedAt":datetime|null,"resolvedBy":reviewAuthor|null}.
 Node IDs are stable; discover them with intentform_describe_project. The patch is schema-validated and rejected atomically if any operation is invalid.`;
 
 const PATCH_INPUT_SCHEMA = {
@@ -400,7 +400,7 @@ export const toolDefinitions: ToolDefinition[] = [
   },
   {
     name: "intentform_replace_graph",
-    description: "Replace the entire Semantic Interface Graph (current schemaVersion 0.10.0). Use for structural edits a typed operation cannot express. Recursive hierarchy, components, token modes, licensed assets, locked ecosystem dependencies, logical device profiles, responsive-web and Expo profiles, node-count and layout constraints are fully validated; invalid graphs are rejected without side effects. Returns the semantic diff and fresh verification findings.",
+    description: "Replace the entire Semantic Interface Graph (current schemaVersion 0.11.0). Use for structural edits a typed operation cannot express. Recursive hierarchy, components, token modes, licensed assets, locked ecosystem dependencies, prototype actions, anchored review threads, logical device profiles, responsive-web and Expo profiles, node-count and layout constraints are fully validated; invalid graphs are rejected without side effects. Returns the semantic diff and fresh verification findings.",
     inputSchema: {
       type: "object",
       properties: {

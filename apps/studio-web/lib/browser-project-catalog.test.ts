@@ -44,8 +44,8 @@ describe("browser project catalog records", () => {
     legacy.graph.schemaVersion = "0.9.0";
     legacy.lastKnownGood = { graph: structuredClone(legacy.graph), savedAt: current.updatedAt, revision: current.revision } as never;
     const migrated = normalizeCatalogProjectRecord(legacy);
-    expect(migrated.graph.schemaVersion).toBe("0.10.0");
-    expect(migrated.lastKnownGood?.graph.schemaVersion).toBe("0.10.0");
+    expect(migrated.graph.schemaVersion).toBe("0.11.0");
+    expect(migrated.lastKnownGood?.graph.schemaVersion).toBe("0.11.0");
   });
 
   it("keeps the previous committed graph as last-known-good on every atomic revision", () => {

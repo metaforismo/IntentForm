@@ -20,6 +20,7 @@ import {
 } from "@phosphor-icons/react";
 import {
   findGraphNode,
+  flattenSemanticNodes,
   isContainerNode,
   resolveTokenMode,
   type ComponentOverride,
@@ -110,6 +111,8 @@ interface InspectorProps {
   onUpdateFixture(fieldName: string, value: string | number | boolean): void;
   onSetActionEvent(nodeId: string, eventName: string | null): void;
   onSetFlowTarget(fromScreenId: string, eventName: string, targetScreenId: string | null): void;
+  onSetPrototypeAction(nodeId: string, action: SemanticNode["prototypeActions"][number] | null): void;
+  onSetPrototypeStart(screenId: string): void;
   onDuplicate(): void;
   onReorder(direction: -1 | 1): void;
   onDelete(): void;
@@ -145,6 +148,8 @@ export function Inspector({
   onUpdateFixture,
   onSetActionEvent,
   onSetFlowTarget,
+  onSetPrototypeAction,
+  onSetPrototypeStart,
   onDuplicate,
   onReorder,
   onDelete,
@@ -162,6 +167,7 @@ export function Inspector({
   const contractStates = (contract?.visualStates ?? []) as VisualState[];
   const boundStates = new Set(selectedNode?.states.map((state) => state.name) ?? []);
   const isAction = selectedNode?.kind === "primary-action" || selectedNode?.kind === "secondary-action";
+  const prototypeAction = selectedNode?.prototypeActions[0];
   const exactFixture = graph.fixtures.find((item) => item.screenId === screen.id && item.state === visualState);
   const fixture = exactFixture ?? graph.fixtures.find((item) => item.screenId === screen.id && item.state === "idle");
   const componentRoot = componentContext ? findGraphNode(graph, componentContext.rootId) : undefined;
@@ -217,12 +223,37 @@ export function Inspector({
 
       {inspectorMode === "prototype" ? <div data-testid="prototype-inspector" className="divide-y divide-[var(--line)]">
         <Section title="Interaction">
-          {selectedNode && isAction && contract?.events.length ? <>
+          {selectedNode ? <>
+            <label className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-2 text-[10.5px] text-[var(--muted)]"><span>Trigger</span><select data-testid="prototype-trigger" value={prototypeAction?.trigger ?? ""} onChange={(event) => {
+              if (!event.target.value) onSetPrototypeAction(selectedNode.id, null);
+              else onSetPrototypeAction(selectedNode.id, prototypeAction ? { ...prototypeAction, trigger: event.target.value as typeof prototypeAction.trigger } : { id: `prototype-${selectedNode.id}`.slice(0, 96), trigger: event.target.value as "click", type: "navigate", targetScreenId: graph.screens.find((item) => item.id !== screen.id)?.id ?? screen.id, transition: { type: "instant", durationMs: 0, easing: "ease-out" } });
+            }} className="select-control h-7 text-[10.5px] font-normal"><option value="">No prototype action</option>{["click", "tap", "hover", "press", "key", "after-delay"].map((trigger) => <option key={trigger} value={trigger}>{trigger}</option>)}</select></label>
+            {prototypeAction ? <>
+              <label className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-2 text-[10.5px] text-[var(--muted)]"><span>Action</span><select data-testid="prototype-action-type" value={prototypeAction.type} onChange={(event) => {
+                const type = event.target.value as typeof prototypeAction.type;
+                const next = { id: prototypeAction.id, trigger: prototypeAction.trigger, type, transition: prototypeAction.transition } as typeof prototypeAction;
+                if (type === "navigate" || type === "open-overlay") next.targetScreenId = graph.screens.find((item) => item.id !== screen.id)?.id ?? screen.id;
+                if (type === "change-state") next.state = "idle";
+                if (type === "scroll-to") next.targetNodeId = selectedNode.id;
+                if (type === "external-link") next.url = "https://example.com";
+                if (prototypeAction.trigger === "after-delay") next.delayMs = prototypeAction.delayMs ?? 400;
+                onSetPrototypeAction(selectedNode.id, next);
+              }} className="select-control h-7 text-[10.5px] font-normal">{["navigate", "change-state", "open-overlay", "close-overlay", "back", "scroll-to", "external-link"].map((type) => <option key={type} value={type}>{type.replaceAll("-", " ")}</option>)}</select></label>
+              {prototypeAction.type === "navigate" || prototypeAction.type === "open-overlay" ? <label className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-2 text-[10.5px] text-[var(--muted)]"><span>Destination</span><select data-testid="prototype-destination" value={prototypeAction.targetScreenId ?? ""} onChange={(event) => onSetPrototypeAction(selectedNode.id, { ...prototypeAction, targetScreenId: event.target.value })} className="select-control h-7 text-[10.5px] font-normal">{graph.screens.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label> : null}
+              {prototypeAction.type === "change-state" ? <label className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-2 text-[10.5px] text-[var(--muted)]"><span>State</span><select value={prototypeAction.state ?? "idle"} onChange={(event) => onSetPrototypeAction(selectedNode.id, { ...prototypeAction, state: event.target.value as VisualState })} className="select-control h-7 text-[10.5px] font-normal">{(["idle", "loading", "empty", "failed", "completed"] as const).map((state) => <option key={state} value={state}>{state}</option>)}</select></label> : null}
+              {prototypeAction.type === "scroll-to" ? <label className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-2 text-[10.5px] text-[var(--muted)]"><span>Target layer</span><SearchablePicker label="Prototype scroll target" value={prototypeAction.targetNodeId ?? ""} options={flattenSemanticNodes(screen.nodes).map((node) => ({ value: node.id, label: node.intent.label ?? node.id, detail: node.id }))} onChange={(targetNodeId) => onSetPrototypeAction(selectedNode.id, { ...prototypeAction, targetNodeId })} /></label> : null}
+              {prototypeAction.type === "external-link" ? <TextField label="External URL" value={prototypeAction.url ?? ""} onCommit={(url) => { if (/^https?:\/\//.test(url)) onSetPrototypeAction(selectedNode.id, { ...prototypeAction, url }); }} /> : null}
+              {prototypeAction.trigger === "after-delay" ? <NumberField label="Delay" ariaLabel="Prototype delay in milliseconds" value={prototypeAction.delayMs ?? 400} min={0} max={60_000} onCommit={(delayMs) => { if (delayMs !== undefined) onSetPrototypeAction(selectedNode.id, { ...prototypeAction, delayMs }); }} /> : null}
+              <label className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-2 text-[10.5px] text-[var(--muted)]"><span>Transition</span><select value={prototypeAction.transition.type} onChange={(event) => onSetPrototypeAction(selectedNode.id, { ...prototypeAction, transition: { ...prototypeAction.transition, type: event.target.value as typeof prototypeAction.transition.type, durationMs: event.target.value === "instant" ? 0 : Math.max(200, prototypeAction.transition.durationMs) } })} className="select-control h-7 text-[10.5px] font-normal">{["instant", "dissolve", "slide-left", "slide-right", "push", "move-in"].map((type) => <option key={type} value={type}>{type.replaceAll("-", " ")}</option>)}</select></label>
+            </> : null}
+          </> : <p className="text-[10.5px] leading-4 text-[var(--faint)]">Select one layer to author a prototype action.</p>}
+          {selectedNode && isAction && contract?.events.length ? <div className="mt-2 grid gap-2 border-t border-[var(--line)] pt-2">
+            <span className="text-[9.5px] font-medium text-[var(--faint)]">Typed application event</span>
             <label className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-2 text-[10.5px] text-[var(--muted)]"><span>Event</span><select value={selectedNode.interactions[0]?.event ?? ""} onChange={(event) => onSetActionEvent(selectedNode.id, event.target.value || null)} className="select-control h-7 font-mono text-[10.5px] font-normal"><option value="">No event</option>{contract.events.map((event) => <option key={event.name} value={event.name}>{event.name}</option>)}</select></label>
             <label className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-2 text-[10.5px] text-[var(--muted)]"><span>Navigate to</span><select value={selectedNode.interactions[0] ? graph.flows.flatMap((flow) => flow.steps).find((step) => step.from === screen.id && step.event === selectedNode.interactions[0]?.event)?.to ?? "" : ""} disabled={!selectedNode.interactions[0]} onChange={(event) => { if (selectedNode.interactions[0]) onSetFlowTarget(screen.id, selectedNode.interactions[0].event, event.target.value || null); }} className="select-control h-7 text-[10.5px] font-normal"><option value="">No navigation</option>{graph.screens.filter((item) => item.id !== screen.id).map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
-          </> : <p className="text-[10.5px] leading-4 text-[var(--faint)]">{selectionCount > 1 ? "Select one action layer to author an interaction." : "Select a primary or secondary action with a typed screen event."}</p>}
+          </div> : null}
         </Section>
-        <Section title="Flow context"><div className="grid grid-cols-[88px_minmax(0,1fr)] gap-2 text-[10px]"><span className="text-[var(--faint)]">Start screen</span><span className="truncate font-mono">{graph.flows.some((flow) => flow.steps[0]?.from === screen.id) ? "Yes" : "No"}</span><span className="text-[var(--faint)]">Screen</span><span className="truncate font-mono">{screen.id}</span><span className="text-[var(--faint)]">State</span><span className="capitalize">{visualState}</span></div></Section>
+        <Section title="Flow context"><label className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-2 text-[10px]"><span className="text-[var(--faint)]">Start screen</span><select data-testid="prototype-start-screen" value={graph.prototype.startScreenId} onChange={(event) => onSetPrototypeStart(event.target.value)} className="select-control h-7 text-[10px] font-normal">{graph.screens.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label><div className="mt-2 grid grid-cols-[88px_minmax(0,1fr)] gap-2 text-[10px]"><span className="text-[var(--faint)]">Screen</span><span className="truncate font-mono">{screen.id}</span><span className="text-[var(--faint)]">State</span><span className="capitalize">{visualState}</span></div></Section>
       </div> : null}
 
       {inspectorMode === "inspect" ? <div data-testid="source-inspector" className="divide-y divide-[var(--line)]">

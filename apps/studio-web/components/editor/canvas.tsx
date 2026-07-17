@@ -12,7 +12,7 @@ import {
   Trash,
   Warning,
 } from "@phosphor-icons/react";
-import { findSemanticNode, type SemanticInterfaceGraph, type SemanticNode } from "@intentform/semantic-schema";
+import { findSemanticNode, flattenSemanticNodes, type SemanticInterfaceGraph, type SemanticNode } from "@intentform/semantic-schema";
 import { createHorizontalFrameIndex, queryHorizontalFrames } from "@intentform/graph-runtime";
 import { motion, type MotionStyle } from "motion/react";
 import {
@@ -97,6 +97,9 @@ interface CanvasStageProps {
   onMoveSelection(direction: -1 | 1): void;
   onNodeCommand(command: NodeCommand, nodeId: string, screenId: string): void;
   onRenameNode(nodeId: string, screenId: string, label: string): void;
+  onPrototypeAction(action: SemanticNode["prototypeActions"][number], sourceScreenId: string): void;
+  onReviewAnchor(screenId: string, nodeId: string): void;
+  onSelectReviewThread(threadId: string): void;
   onOpenVerify(): void;
   onZoomChange(percent: number): void;
 }
@@ -139,6 +142,9 @@ export function CanvasStage({
   onMoveSelection,
   onNodeCommand,
   onRenameNode,
+  onPrototypeAction,
+  onReviewAnchor,
+  onSelectReviewThread,
   onOpenVerify,
   onZoomChange,
 }: CanvasStageProps) {
@@ -385,6 +391,16 @@ export function CanvasStage({
 
   const panActive = tool === "hand" || spaceHeld;
 
+  useEffect(() => {
+    if (!previewMode) return;
+    const source = graph.screens.find((screen) => screen.id === selectedScreen);
+    const delayed = flattenSemanticNodes(source?.nodes ?? [])
+      .flatMap((node) => node.prototypeActions)
+      .filter((action) => action.trigger === "after-delay") ?? [];
+    const timers = delayed.map((action) => window.setTimeout(() => onPrototypeAction(action, selectedScreen), action.delayMs ?? 0));
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [graph.screens, onPrototypeAction, previewMode, selectedScreen]);
+
   const beginPan = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!panActive && event.button !== 1) return;
     event.preventDefault();
@@ -468,7 +484,11 @@ export function CanvasStage({
 
   const flowEdges = useMemo(() => {
     const index = new Map(frames.map((frame, position) => [frame.screen.id, position]));
-    return graph.flows.flatMap((flow) => flow.steps.flatMap((step) => {
+    const steps = [
+      ...graph.flows.flatMap((flow) => flow.steps.map((step) => ({ ...step, id: `${flow.id}.${step.from}.${step.event}`, label: step.event }))),
+      ...graph.screens.flatMap((screen) => flattenSemanticNodes(screen.nodes).flatMap((node) => node.prototypeActions.flatMap((action) => action.targetScreenId ? [{ from: screen.id, to: action.targetScreenId, id: action.id, label: action.type }] : []))),
+    ];
+    return steps.flatMap((step) => {
       const from = index.get(step.from);
       const to = index.get(step.to);
       if (from === undefined || to === undefined || from === to) return [];
@@ -482,16 +502,16 @@ export function CanvasStage({
       const labelX = forward ? (x1 + x2) / 2 : (frames[to]!.x + profile.width + frames[from]!.x) / 2;
       const labelY = forward ? y - 14 : y - 160;
       return [{
-        id: `${flow.id}.${step.from}.${step.event}`,
+        id: step.id,
         fromId: step.from,
         toId: step.to,
         path,
-        event: step.event,
+        event: step.label,
         labelX,
         labelY,
       }];
-    }));
-  }, [frames, graph.flows, profile.height, profile.width]);
+    });
+  }, [frames, graph.flows, graph.screens, profile.height, profile.width]);
   const visibleFrameSet = useMemo(() => new Set([...visibleFrameIds, selectedScreen]), [selectedScreen, visibleFrameIds]);
   const visibleFrames = frames.filter(({ screen }) => visibleFrameSet.has(screen.id));
   const visibleFlowEdges = flowEdges.filter((edge) => visibleFrameSet.has(edge.fromId) || visibleFrameSet.has(edge.toId));
@@ -663,9 +683,12 @@ export function CanvasStage({
                   {visibleNodes.map((node) => {
                     const selected = selectedNodeIds.includes(node.id) && isSelectedScreen;
                     const persistent = node.kind === "primary-action" && node.layout.placement?.[profile.breakpoint] === "persistent-bottom";
-                    const flowStep = previewMode && node.interactions[0]
+                    const prototypeAction = previewMode ? node.prototypeActions[0] : undefined;
+                    const flowStep = previewMode && !prototypeAction && node.interactions[0]
                       ? graph.flows.flatMap((flow) => flow.steps).find((step) => step.from === screen.id && step.event === node.interactions[0]?.event)
                       : undefined;
+                    const previewAction = Boolean(prototypeAction || flowStep);
+                    const nodeThreads = graph.reviewThreads.filter((thread) => thread.anchor.nodeId === node.id);
                     return (
                       <motion.div
                         layout
@@ -674,23 +697,29 @@ export function CanvasStage({
                         data-selected={selected}
                         data-cross-hover={hoveredNodeId === node.id}
                         role={selected && !previewMode ? undefined : "button"}
-                        tabIndex={selected && !previewMode ? -1 : previewMode ? (flowStep ? 0 : -1) : 0}
-                        aria-label={previewMode && flowStep
-                          ? `Follow ${node.intent.label} to ${graph.screens.find((item) => item.id === flowStep.to)?.title ?? flowStep.to}`
+                        tabIndex={selected && !previewMode ? -1 : previewMode ? (previewAction ? 0 : -1) : 0}
+                        aria-label={previewMode && (prototypeAction || flowStep)
+                          ? prototypeAction ? `${prototypeAction.trigger} to ${prototypeAction.type}` : `Follow ${node.intent.label} to ${graph.screens.find((item) => item.id === flowStep?.to)?.title ?? flowStep?.to}`
                           : `Select ${nodeNames[node.kind]}`}
-                        onClick={selected && !previewMode ? undefined : (event) => {
+                        onClick={selected && !previewMode && tool !== "comment" ? undefined : (event) => {
                           event.stopPropagation();
                           if (panActive) return;
                           if (previewMode) {
-                            if (flowStep) {
+                            if (prototypeAction && ["click", "tap", "press"].includes(prototypeAction.trigger)) onPrototypeAction(prototypeAction, screen.id);
+                            else if (flowStep) {
                               onSelectScreen(flowStep.to);
                               fitScreen(flowStep.to, true);
                             }
                             return;
                           }
+                          if (tool === "comment") {
+                            onReviewAnchor(screen.id, node.id);
+                            return;
+                          }
                           onSelectScreen(screen.id);
                           onSelectNode(node.id, event.shiftKey ? "range" : event.metaKey || event.ctrlKey ? "toggle" : "replace");
                         }}
+                        onMouseEnter={() => { if (previewMode && prototypeAction?.trigger === "hover") onPrototypeAction(prototypeAction, screen.id); }}
                         onDoubleClick={(event) => {
                           event.stopPropagation();
                           if (previewMode) return;
@@ -722,6 +751,10 @@ export function CanvasStage({
                           }
                           if (event.key === "Enter" || event.key === " ") {
                             event.preventDefault();
+                            if (previewMode && prototypeAction?.trigger === "key") {
+                              onPrototypeAction(prototypeAction, screen.id);
+                              return;
+                            }
                             if (previewMode && flowStep) {
                               onSelectScreen(flowStep.to);
                               fitScreen(flowStep.to, true);
@@ -731,7 +764,7 @@ export function CanvasStage({
                             onSelectNode(node.id);
                           }
                         }}
-                        className={`canvas-node relative outline-none ${persistent ? "mt-auto" : ""} ${flowStep ? "cursor-pointer" : "cursor-default"}`}
+                        className={`canvas-node relative outline-none ${persistent ? "mt-auto" : ""} ${previewAction || tool === "comment" ? "cursor-pointer" : "cursor-default"}`}
                         style={semanticNodeBoxStyle(node, graph, profile) as MotionStyle}
                       >
                         <NodePreview
@@ -745,6 +778,7 @@ export function CanvasStage({
                           hoveredNodeId={hoveredNodeId}
                           {...(!previewMode && isSelectedScreen ? { onSelectNode: (nodeId: string, intent: SelectionIntent) => onSelectNode(nodeId, intent) } : {})}
                         />
+                        {nodeThreads.map((thread, index) => <button key={thread.id} type="button" data-testid={`review-pin-${thread.id}`} aria-label={`Open review comment ${index + 1}`} onClick={(event) => { event.stopPropagation(); onSelectReviewThread(thread.id); }} className={`absolute -right-2.5 -top-2.5 z-[6] grid size-5 place-items-center rounded-full border-2 border-[var(--if-app)] text-[9px] font-semibold text-white shadow-md ${thread.resolvedAt ? "bg-[var(--if-green)]" : "bg-[var(--if-blue)]"}`}>{index + 1}</button>)}
                       </motion.div>
                     );
                   })}

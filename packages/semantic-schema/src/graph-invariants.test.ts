@@ -24,7 +24,7 @@ function makeValidGraph() {
   };
 
   return {
-    schemaVersion: "0.10.0",
+    schemaVersion: "0.11.0",
     dependencies: [],
     product: {
       name: "Invariant test",
@@ -94,6 +94,8 @@ function makeValidGraph() {
       },
     ],
     flows: [{ id: "submit-request", steps: [{ from: "home", event: "submit", to: "receipt" }] }],
+    prototype: { startScreenId: "home" },
+    reviewThreads: [],
     contracts: [
       {
         screenId: "home",
@@ -177,7 +179,7 @@ describe("semantic graph invariants", () => {
 
   it("migrates flat roots into recursive nodes with deterministic layout defaults", () => {
     const parsed = parseGraph(makeValidGraph());
-    expect(parsed.schemaVersion).toBe("0.10.0");
+    expect(parsed.schemaVersion).toBe("0.11.0");
     expect(parsed.screens[0]?.nodes[0]).toMatchObject({
       children: [],
       layout: {
@@ -189,6 +191,48 @@ describe("semantic graph invariants", () => {
         splitRatio: 0.5,
       },
     });
+  });
+
+  it("preserves portable prototype actions and anchored local review threads", () => {
+    const graph: GraphDraft = makeValidGraph();
+    graph.screens[0]!.nodes[0]!.prototypeActions = [{
+      id: "prototype-submit",
+      trigger: "tap",
+      type: "navigate",
+      targetScreenId: "receipt",
+      transition: { type: "push", durationMs: 240, easing: "ease-out" },
+    }];
+    graph.reviewThreads.push({
+      id: "review-submit",
+      anchor: { screenId: "home", nodeId: "home.submit", x: 1, y: 0 },
+      messages: [{
+        id: "message-submit",
+        author: { id: "agent-reviewer", name: "Design reviewer", kind: "agent" },
+        createdAt: "2026-07-17T08:00:00.000+00:00",
+        body: "Check the destructive state before shipping.",
+        mentions: ["local-reviewer"],
+        transactionId: "transaction-17",
+      }],
+    });
+
+    const parsed = parseGraph(graph);
+    expect(parsed.screens[0]!.nodes[0]!.prototypeActions[0]).toMatchObject({ type: "navigate", targetScreenId: "receipt" });
+    expect(parsed.reviewThreads[0]).toMatchObject({ id: "review-submit", anchor: { nodeId: "home.submit" } });
+  });
+
+  it("lets typed agent transactions author prototype actions and linked review threads", () => {
+    const graph = parseGraph(makeValidGraph());
+    const patched = applyGraphPatch(graph, {
+      id: "agent-review-patch",
+      rationale: "Connect the flow and leave auditable review context",
+      operations: [
+        { op: "set-prototype-action", target: "home.submit", action: { id: "prototype-agent-submit", trigger: "click", type: "navigate", targetScreenId: "receipt", transition: { type: "dissolve", durationMs: 200, easing: "ease-out" } } },
+        { op: "add-review-thread", thread: { id: "review-agent-submit", anchor: { screenId: "home", nodeId: "home.submit", x: 1, y: 0 }, messages: [{ id: "message-agent-submit", author: { id: "agent-codex", name: "Codex", kind: "agent" }, createdAt: "2026-07-17T08:00:00.000+00:00", body: "Prototype wiring is ready for human review.", mentions: [], transactionId: "transaction-agent-submit" }] } },
+      ],
+    });
+    expect(patched.screens[0]!.nodes[0]!.prototypeActions[0]!.type).toBe("navigate");
+    expect(patched.reviewThreads[0]!.messages[0]).toMatchObject({ author: { kind: "agent" }, transactionId: "transaction-agent-submit" });
+    expect(semanticDiff(graph, patched).map((change) => change.path)).toEqual(expect.arrayContaining(["home.submit.prototypeActions", "reviewThreads.review-agent-submit"]));
   });
 
   it("validates checksummed registry and custom device profiles fail closed", () => {
@@ -446,6 +490,16 @@ describe("semantic graph invariants", () => {
       secondPrimary.interactions = [];
       graph.screens[0]!.nodes.push(secondPrimary);
     }, /more than one primary action/);
+  });
+
+  it("rejects broken prototype and review references", () => {
+    expectInvalid((graph) => { graph.prototype.startScreenId = "missing"; }, /Unknown prototype start screen/);
+    expectInvalid((graph) => {
+      graph.screens[0]!.nodes[0]!.prototypeActions = [{ id: "prototype-missing", trigger: "click", type: "navigate", targetScreenId: "missing", transition: { type: "instant", durationMs: 0, easing: "ease-out" } }];
+    }, /Prototype action references unknown screen/);
+    expectInvalid((graph) => {
+      graph.reviewThreads.push({ id: "review-missing", anchor: { screenId: "home", nodeId: "missing", x: 0.5, y: 0.5 }, messages: [{ id: "message-missing", author: { id: "local-reviewer", name: "Reviewer", kind: "human" }, createdAt: "2026-07-17T08:00:00.000+00:00", body: "Missing anchor", mentions: [] }] });
+    }, /Review thread references unknown node/);
   });
 
   it("rejects broken expressions and excessive expression depth", () => {

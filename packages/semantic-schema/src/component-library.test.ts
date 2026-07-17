@@ -46,6 +46,7 @@ function node(id: string, kind: SemanticNode["kind"], label: string): SemanticNo
     accessibility: { label, live: "off" },
     states: [],
     interactions: [],
+    prototypeActions: [],
     provenance: { author: "system", revision: 0 },
     children: [],
   };
@@ -62,7 +63,7 @@ actionTemplate.style.emphasis = "strong";
 const cardTemplate = node("card.root", "stack", "Surface card");
 
 const demoGraph = parseGraph({
-  schemaVersion: "0.10.0",
+  schemaVersion: "0.11.0",
   dependencies: [],
   product: {
     name: "Component tests",
@@ -175,6 +176,8 @@ const demoGraph = parseGraph({
     nodes: [node("layout-lab.grid-a", "status-message", "Ready")],
   }],
   flows: [],
+  prototype: { startScreenId: "layout-lab" },
+  reviewThreads: [],
   contracts: [],
   fixtures: [],
 });
