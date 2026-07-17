@@ -13,6 +13,11 @@ import {
   type AccessibilityProfile,
   type AccessibilitySuppression,
 } from "@intentform/accessibility-verifier";
+import {
+  DESIGN_QUALITY_RULESET,
+  auditDesignQuality,
+  type DesignQualityCategory,
+} from "./design-quality.ts";
 
 export {
   ACCESSIBILITY_PROFILES,
@@ -21,9 +26,16 @@ export {
   type AccessibilityProfile,
   type AccessibilitySuppression,
 } from "@intentform/accessibility-verifier";
+export {
+  DESIGN_QUALITY_RULESET,
+  auditDesignQuality,
+  type DesignQualityCategory,
+  type DesignQualityFinding,
+  type DesignQualityScenario,
+} from "./design-quality.ts";
 
 export interface Evidence {
-  kind: "viewport" | "node" | "build" | "rule" | "screenshot" | "bounds" | "accessibility";
+  kind: "viewport" | "node" | "build" | "rule" | "screenshot" | "bounds" | "accessibility" | "design-quality";
   label: string;
   value: string | number | boolean;
 }
@@ -129,6 +141,18 @@ export interface VerificationFinding {
     profileId: string;
   };
   suppressionReason?: string;
+  category?: "semantic" | "accessibility" | "build" | "design-quality";
+  designQualityCategory?: DesignQualityCategory;
+  nodeId?: string;
+  nodeIds?: string[];
+  propertyPath?: string;
+  propertyPaths?: string[];
+  deviceProfile?: string;
+  visualState?: string;
+  suggestedRepair?: {
+    description: string;
+  };
+  subjective?: false;
 }
 
 export interface VerificationScenario {
@@ -262,6 +286,7 @@ export function verifyGraph(
     evidence: item.evidence,
     responsibleLayer: item.responsibleLayer,
     status: item.status,
+    category: "accessibility",
     rule: {
       id: item.ruleId,
       version: item.ruleVersion,
@@ -269,6 +294,48 @@ export function verifyGraph(
       profileId: item.profileId,
     },
     ...(item.suppressionReason ? { suppressionReason: item.suppressionReason } : {}),
+  })));
+
+  findings.push(...auditDesignQuality(graph, {
+    target: scenario.target,
+    viewport: scenario.viewport,
+    visualState: "idle",
+  }).map((item): VerificationFinding => ({
+    id: item.id,
+    target: item.target,
+    screenId: item.screenId,
+    severity: item.severity,
+    violatedIntent: item.message,
+    evidence: [
+      ...item.evidence.map((evidence) => ({
+        kind: "design-quality" as const,
+        label: evidence.label,
+        value: evidence.value,
+      })),
+      { kind: "viewport", label: "Viewport width", value: item.viewport.width },
+      { kind: "viewport", label: "Viewport height", value: item.viewport.height },
+      { kind: "design-quality", label: "Visual state", value: item.visualState },
+    ],
+    responsibleLayer: item.category === "spacing" || item.category === "color" || item.category === "components-tokens"
+      ? "tokens"
+      : "graph",
+    status: "open",
+    category: "design-quality",
+    designQualityCategory: item.category,
+    nodeIds: item.nodeIds,
+    propertyPaths: item.propertyPaths,
+    ...(item.nodeIds[0] ? { nodeId: item.nodeIds[0] } : {}),
+    ...(item.propertyPaths[0] ? { propertyPath: item.propertyPaths[0] } : {}),
+    deviceProfile: `${scenario.viewport.width}x${scenario.viewport.height}`,
+    visualState: item.visualState,
+    suggestedRepair: { description: item.suggestedRepair.description },
+    subjective: false,
+    rule: {
+      id: item.ruleId,
+      version: item.ruleVersion,
+      standard: DESIGN_QUALITY_RULESET.standard,
+      profileId: DESIGN_QUALITY_RULESET.profileId,
+    },
   })));
 
   if (scenario.buildStatus === "failed") {
@@ -281,6 +348,7 @@ export function verifyGraph(
       evidence: [{ kind: "build", label: "Build passed", value: false }],
       responsibleLayer: "compiler",
       status: "open",
+      category: "build",
     });
   } else if (scenario.buildStatus === "not-run") {
     findings.push({
@@ -292,6 +360,7 @@ export function verifyGraph(
       evidence: [{ kind: "build", label: "Build status", value: "not run" }],
       responsibleLayer: "compiler",
       status: "open",
+      category: "build",
     });
   }
 

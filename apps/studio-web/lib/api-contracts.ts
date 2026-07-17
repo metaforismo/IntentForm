@@ -22,7 +22,7 @@ export const interpretRequestSchema = z.discriminatedUnion("operation", [
 ]);
 
 const verificationEvidenceSchema = z.object({
-  kind: z.enum(["viewport", "node", "build", "rule", "screenshot", "bounds", "accessibility"]),
+  kind: z.enum(["viewport", "node", "build", "rule", "screenshot", "bounds", "accessibility", "design-quality"]),
   label: boundedText(160),
   value: z.union([z.string().max(500), z.number().finite(), z.boolean()]),
 }).strict();
@@ -43,6 +43,16 @@ export const verificationFindingSchema = z.object({
     profileId: identifier,
   }).strict().optional(),
   suppressionReason: boundedText(500).optional(),
+  category: z.enum(["semantic", "accessibility", "build", "design-quality"]).optional(),
+  designQualityCategory: z.enum(["typography", "spacing", "surfaces", "color", "hierarchy", "interaction", "responsiveness", "components-tokens"]).optional(),
+  nodeId: identifier.optional(),
+  nodeIds: z.array(identifier).max(256).optional(),
+  propertyPath: z.string().min(1).max(500).optional(),
+  propertyPaths: z.array(z.string().min(1).max(500)).max(256).optional(),
+  deviceProfile: z.string().min(1).max(160).optional(),
+  visualState: identifier.optional(),
+  suggestedRepair: z.object({ description: boundedText(1_000) }).strict().optional(),
+  subjective: z.literal(false).optional(),
 }).strict();
 
 const repairEvidenceSchema = z.object({
