@@ -2,11 +2,11 @@ import { resolveTokenMode, type SemanticInterfaceGraph, type SemanticNode } from
 import type { CSSProperties } from "react";
 
 type Appearance = NonNullable<SemanticNode["style"]["appearance"]>;
-type ColorBinding = Appearance["fills"][number] extends infer Fill
+export type AppearanceColorBinding = Appearance["fills"][number] extends infer Fill
   ? Fill extends { color: infer Color } ? Color : never
   : never;
 
-function resolveColor(binding: ColorBinding, graph: SemanticInterfaceGraph): string {
+function resolveColor(binding: AppearanceColorBinding, graph: SemanticInterfaceGraph): string {
   const tokens = resolveTokenMode(graph.tokens);
   return binding.color ?? (binding.token ? tokens.colors[binding.token] : undefined) ?? "transparent";
 }
@@ -83,32 +83,83 @@ export function nodeAppearanceStyle(node: SemanticNode, graph: SemanticInterface
 }
 
 export interface SelectionColor {
+  key: string;
   color: string;
   token?: string;
   usages: number;
+  nodes: number;
+  opacity?: number;
+  mixedOpacity: boolean;
   origins: Array<"fill" | "stroke">;
 }
 
+export function selectionColorKey(binding: AppearanceColorBinding, graph: SemanticInterfaceGraph): string {
+  return `${binding.token ?? "literal"}:${resolveColor(binding, graph)}`;
+}
+
 export function selectionColors(nodes: readonly SemanticNode[], graph: SemanticInterfaceGraph): SelectionColor[] {
-  const colors = new Map<string, SelectionColor>();
-  const add = (binding: ColorBinding, origin: "fill" | "stroke") => {
+  const colors = new Map<string, SelectionColor & { nodeIds: Set<string>; opacities: Set<number> }>();
+  const add = (nodeId: string, binding: AppearanceColorBinding, origin: "fill" | "stroke", opacity?: number) => {
     const color = resolveColor(binding, graph);
-    const key = `${binding.token ?? "literal"}:${color}`;
+    const key = selectionColorKey(binding, graph);
     const existing = colors.get(key);
     if (existing) {
       existing.usages += 1;
+      existing.nodeIds.add(nodeId);
+      if (opacity !== undefined) existing.opacities.add(opacity);
       if (!existing.origins.includes(origin)) existing.origins.push(origin);
     } else {
-      colors.set(key, { color, ...(binding.token ? { token: binding.token } : {}), usages: 1, origins: [origin] });
+      colors.set(key, {
+        key,
+        color,
+        ...(binding.token ? { token: binding.token } : {}),
+        usages: 1,
+        nodes: 1,
+        mixedOpacity: false,
+        origins: [origin],
+        nodeIds: new Set([nodeId]),
+        opacities: new Set(opacity === undefined ? [] : [opacity]),
+      });
     }
   };
   for (const node of nodes) {
     for (const fill of node.style.appearance?.fills ?? []) {
       if (!fill.visible) continue;
-      if (fill.type === "solid") add(fill.color, "fill");
-      else for (const stop of fill.stops) add(stop.color, "fill");
+      if (fill.type === "solid") add(node.id, fill.color, "fill", fill.opacity);
+      else for (const stop of fill.stops) add(node.id, stop.color, "fill", fill.opacity);
     }
-    if (node.style.appearance?.stroke?.visible) add(node.style.appearance.stroke.color, "stroke");
+    if (node.style.appearance?.stroke?.visible) add(node.id, node.style.appearance.stroke.color, "stroke");
   }
-  return [...colors.values()].sort((left, right) => right.usages - left.usages || left.color.localeCompare(right.color));
+  return [...colors.values()].map(({ nodeIds, opacities, ...color }) => ({
+    ...color,
+    nodes: nodeIds.size,
+    ...(opacities.size === 1 ? { opacity: [...opacities][0]! } : {}),
+    mixedOpacity: opacities.size > 1,
+  })).sort((left, right) => right.usages - left.usages || left.color.localeCompare(right.color));
+}
+
+export function replaceSelectionColor(
+  node: SemanticNode,
+  graph: SemanticInterfaceGraph,
+  key: string,
+  replacement: AppearanceColorBinding,
+): void {
+  const replace = (binding: AppearanceColorBinding): AppearanceColorBinding => selectionColorKey(binding, graph) === key
+    ? structuredClone(replacement)
+    : binding;
+  for (const fill of node.style.appearance?.fills ?? []) {
+    if (fill.type === "solid") fill.color = replace(fill.color);
+    else for (const stop of fill.stops) stop.color = replace(stop.color);
+  }
+  const stroke = node.style.appearance?.stroke;
+  if (stroke) stroke.color = replace(stroke.color);
+}
+
+export function setSelectionColorOpacity(node: SemanticNode, graph: SemanticInterfaceGraph, key: string, opacity: number): void {
+  for (const fill of node.style.appearance?.fills ?? []) {
+    const matches = fill.type === "solid"
+      ? selectionColorKey(fill.color, graph) === key
+      : fill.stops.some((stop) => selectionColorKey(stop.color, graph) === key);
+    if (matches) fill.opacity = Math.min(1, Math.max(0, opacity));
+  }
 }

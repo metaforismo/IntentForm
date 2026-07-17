@@ -27,6 +27,7 @@ import {
 } from "react";
 import { NodePreview, semanticNodeBoxStyle } from "./node-preview";
 import { SelectionOverlay } from "./selection-overlay";
+import type { EditorGuide } from "./guides";
 import {
   fitWorldRect,
   translateViewBetweenViewports,
@@ -96,6 +97,9 @@ interface CanvasStageProps {
   } | null;
   profile: DeviceProfile;
   viewportInsets: EditorViewportInsets;
+  guides: readonly EditorGuide[];
+  guidesVisible: boolean;
+  snapToGuides: boolean;
   apiRef: RefObject<CanvasApi | null>;
   visualStateFor(screenId: string): VisualState;
   frameStatus(screenId: string): FrameStatus;
@@ -172,6 +176,9 @@ export function CanvasStage({
   bezelOverlay,
   profile,
   viewportInsets,
+  guides,
+  guidesVisible,
+  snapToGuides,
   apiRef,
   visualStateFor,
   frameStatus,
@@ -716,6 +723,21 @@ export function CanvasStage({
           const fixture = fixtureFor(graph, screen.id, state);
           return (
             <div key={screen.id} className="absolute transition-[left,width,height] duration-300 ease-[cubic-bezier(.22,1,.36,1)]" style={{ left: x, top: FRAME_HEADER_WORLD, width: profile.width, height: profile.height }}>
+              {isSelectedScreen && guidesVisible ? <>
+                <div data-testid="canvas-ruler-x" aria-hidden="true" className="pointer-events-none absolute -top-5 left-0 h-4 w-full border-b border-[var(--if-border-strong)] opacity-70" style={{ backgroundImage: "repeating-linear-gradient(90deg, transparent 0 7px, var(--if-border-strong) 7px 8px, transparent 8px 39px, var(--if-text-tertiary) 39px 40px)" }} />
+                <div data-testid="canvas-ruler-y" aria-hidden="true" className="pointer-events-none absolute -left-5 top-0 h-full w-4 border-r border-[var(--if-border-strong)] opacity-70" style={{ backgroundImage: "repeating-linear-gradient(180deg, transparent 0 7px, var(--if-border-strong) 7px 8px, transparent 8px 39px, var(--if-text-tertiary) 39px 40px)" }} />
+                {guides.filter((guide) => !guide.hidden).map((guide) => <span
+                  key={guide.id}
+                  data-testid={`canvas-guide-${guide.id}`}
+                  data-axis={guide.axis}
+                  data-locked={guide.locked || undefined}
+                  aria-hidden="true"
+                  className={`pointer-events-none absolute z-[4] bg-[var(--if-blue)] ${guide.locked ? "opacity-45" : "opacity-80"}`}
+                  style={guide.axis === "vertical"
+                    ? { left: guide.position, top: 0, width: 1, height: profile.height }
+                    : { left: 0, top: guide.position, width: profile.width, height: 1 }}
+                />)}
+              </> : null}
               <div
                 className="absolute left-0 flex items-end justify-between gap-3"
                 style={{
@@ -937,6 +959,8 @@ export function CanvasStage({
           worldRef={worldRef}
           enabled={!previewMode && tool === "select" && !rename}
           breakpoint={profile.breakpoint}
+          guides={guides}
+          snapToGuides={snapToGuides}
           getScale={() => viewRef.current.scale}
           onReorder={onReorderSelection}
           onMoveFreeform={onMoveFreeform}
