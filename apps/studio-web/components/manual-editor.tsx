@@ -92,6 +92,11 @@ import { CommandMenu, ShortcutsSheet, type EditorCommand } from "./editor/overla
 import { MultiDeviceComparison } from "./stages/multi-device-comparison";
 import { compareModeStorageKey, readBooleanPreference, writeBooleanPreference } from "./reliability-model";
 import {
+  analyzeDesignSystem,
+  applyTokenExtraction,
+  type DesignSystemExtractionReview,
+} from "./editor/design-system-extraction";
+import {
   defaultComparisonProfileIds,
   reconcileComparisonProfileIds,
   replaceComparisonProfile,
@@ -1183,6 +1188,40 @@ export function ManualEditor({
     }
   }, [commitDraft, graph, onNotice]);
 
+  const applyDesignSystemExtraction = useCallback((review: DesignSystemExtractionReview) => {
+    try {
+      const analysis = analyzeDesignSystem(graph, review.screenId);
+      let next = applyTokenExtraction(graph, review.screenId, review.tokens);
+      let componentId: string | null = null;
+      if (review.component) {
+        const candidate = analysis.components.find((item) => item.id === review.component?.candidateId);
+        if (!candidate) throw new Error("The component candidate changed. Analyze the screen again.");
+        const name = review.component.name.trim().slice(0, 120);
+        if (!name) throw new Error("Component name cannot be empty.");
+        const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "component";
+        let index = 1;
+        componentId = `local.${base}`;
+        while (next.components.some((definition) => definition.id === componentId)) {
+          index += 1;
+          componentId = `local.${base}-${index}`;
+        }
+        next = createComponentFromNode(next, { nodeId: candidate.sourceNodeId, definitionId: componentId, name });
+      }
+      const changes = review.tokens.length + (componentId ? 1 : 0);
+      const committed = commitDraft(next, `Extracted ${changes} reviewed design-system change${changes === 1 ? "" : "s"} from ${review.screenId}.`);
+      if (committed) {
+        if (componentId && review.component) {
+          const candidate = analysis.components.find((item) => item.id === review.component?.candidateId);
+          if (candidate) onSelectNode(candidate.sourceNodeId);
+        }
+      }
+      return Boolean(committed);
+    } catch (error) {
+      onNotice(editorTransactionError(error));
+      return false;
+    }
+  }, [commitDraft, graph, onNotice, onSelectNode]);
+
   const mutateComponent = useCallback((
     mutate: (source: SemanticInterfaceGraph, instanceId: string) => SemanticInterfaceGraph,
     notice: string,
@@ -1840,6 +1879,7 @@ export function ManualEditor({
         onInstantiateComponent={insertLibraryComponent}
         onCreateComponent={createLibraryComponent}
         onUpdateComponent={updateLibraryComponent}
+        onApplyDesignSystemExtraction={applyDesignSystemExtraction}
         onUpdateTokens={updateTokens}
         localProjectFingerprint={localProjectFingerprint}
         localProjectSaved={localProjectSaved}

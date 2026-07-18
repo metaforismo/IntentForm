@@ -569,6 +569,49 @@ try {
   });
 
   await runSmokeScenario(browser, {
+    name: "reviewed design system extraction and atomic undo",
+    run: async (page) => {
+      await gotoStudio(page, origin, "/");
+      await page.getByRole("button", { name: "Examples", exact: true }).click();
+      await page.getByRole("button", { name: /^Aster Sound/ }).click();
+      await page.waitForURL(`${origin}/studio`);
+      await page.getByRole("tab", { name: "Components", exact: true }).click();
+      const library = page.getByTestId("component-library-panel");
+      await library.getByRole("button", { name: "Extract" }).click();
+      const extraction = page.getByTestId("design-system-extraction");
+      await extraction.getByText(/Deterministic analysis only/).waitFor();
+      const tokenChecks = extraction.locator('input[type="checkbox"]');
+      if (await tokenChecks.count() < 2) throw new Error("Aster extraction did not find repeated design values");
+      for (let index = 1; index < await tokenChecks.count(); index += 1) await tokenChecks.nth(index).uncheck();
+      const tokenName = extraction.getByLabel(/^Token name for/).first();
+      await tokenName.fill("space.invalid-family");
+      const componentName = extraction.getByLabel(/^Component name for/).first();
+      await componentName.fill("Release artwork");
+      await extraction.getByRole("button", { name: "Preview semantic transaction" }).click();
+      let review = page.getByTestId("design-system-extraction-review");
+      await review.getByText("Preview transaction · canonical graph unchanged", { exact: true }).waitFor();
+      await review.getByRole("button", { name: "Commit extraction" }).click();
+      await review.getByText("Preview transaction · canonical graph unchanged", { exact: true }).waitFor();
+      await review.getByRole("button", { name: "Back" }).click();
+      await tokenName.fill("radius.extracted.release-art");
+      await extraction.getByRole("button", { name: "Preview semantic transaction" }).click();
+      review = page.getByTestId("design-system-extraction-review");
+      await review.getByText(/tokens\.radii\.radius\.extracted\.release-art/).waitFor();
+      await review.getByText(/components\.Release artwork/).waitFor();
+      await mkdir(join(root, "output/playwright"), { recursive: true });
+      await page.screenshot({ path: join(root, "output/playwright/design-system-extraction.png"), fullPage: true });
+      await review.getByRole("button", { name: "Commit extraction" }).click();
+      await library.getByText("Release artwork", { exact: true }).waitFor();
+      await page.getByRole("tab", { name: "Tokens", exact: true }).click();
+      await page.getByText("radius.extracted.release-art", { exact: true }).first().waitFor();
+      await page.getByRole("button", { name: "Undo" }).click();
+      await page.waitForFunction(() => !document.body.textContent?.includes("radius.extracted.release-art"));
+      await page.getByRole("tab", { name: "Components", exact: true }).click();
+      await library.getByText("Release artwork", { exact: true }).waitFor({ state: "detached" });
+    },
+  });
+
+  await runSmokeScenario(browser, {
     name: "durable project catalog and document tabs",
     run: async (page) => {
       const createProject = async (name: string) => {

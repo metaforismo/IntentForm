@@ -43,7 +43,7 @@ Generated files are integration artifacts, not the source of truth. Every accept
 | Projects | Durable IndexedDB catalog, typed loading/error/no-project boot, six preserved project types, create/import/open, visual previews, search, grid/list views, folders, tags, rename, archive, last-saved recovery, migrations, multi-document tabs, dirty-close flows, and cross-window revision protection |
 | Canvas | Infinite board, recursive layers, mixed selection, eight resize handles, rotation, snapping, keyboard movement, grouping, duplication, nested reparenting, conflict-safe inline text editing with IME/RTL support, context menus, clipboard and style clipboard, comments, flow preview, device chrome, and synchronized multi-device comparison |
 | Layout | Stack, frame, list, grid tracks and span, wrap, overlay, split, scroll, safe area, adaptive, and freeform relations with deterministic layout indexes |
-| Design systems | Components, instances, variants, states, slots, overrides, detach/reset, DTCG token modes, searchable token binding, licensed assets with integrity recovery, image placement, and SVG paint editing |
+| Design systems | Reviewed extraction of repeated colors, spacing, radii, typography, and component structures; exact affected-node preview; atomic commit/undo; components, instances, variants, states, slots, overrides, DTCG token modes, licensed assets, and SVG paint editing |
 | Web workflows | Responsive frames and breakpoints, generated DOM/CSS runtime, sandboxed HTML/CSS import through computed styles, explicit unsupported-property diagnostics, and source-to-canvas navigation |
 | Native output | Deterministic React, Web, Expo Router, and SwiftUI compilers with readable generated files and target capability diagnostics |
 | Agents | Local setup center for Codex, Claude Code, OpenCode, Pi, and generic MCP; dry-run configuration plans, local capability status, read-only default, exact file/page/selection scope, preview/commit/reject/revert transactions, semantic diffs, comments, history, checkpoints, and rollback |
@@ -60,6 +60,10 @@ The product has three primary workspaces instead of a generation wizard:
 Code’s **Parity** evidence view compares canonical semantic nodes with the actual generated Web DOM through compiler-authored stable IDs. It measures visibility, accessible names, semantic order, target size, clipping, and active-device placement without pixel matching or adding an IntentForm runtime to production output. Results become stale as soon as the graph, compiler output, target, or profile changes. React is explicitly labeled as an instant projection; Expo and SwiftUI never show runtime parity without real runtime/native evidence.
 
 ![IntentForm Design workspace with semantic layers, direct selection, prototype flow, and inspector](docs/assets/readme/design-workspace.png)
+
+The Components panel can deterministically analyze the active screen for repeated literal values, near-duplicates, and structurally repeated groups. Suggestions are review-only: rename or exclude tokens, choose at most one component candidate, inspect every affected semantic node, then commit one undoable graph revision. No source, token, or component changes before explicit approval.
+
+![Reviewed design-system extraction showing exact token and component changes before an atomic commit](docs/assets/readme/design-system-extraction.png)
 
 The editor chrome is deliberately neutral. Blue is reserved for selection and editing, green for connected or verified state, and the authored project keeps its own visual identity.
 
