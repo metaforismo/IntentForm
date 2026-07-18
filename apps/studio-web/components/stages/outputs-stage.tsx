@@ -57,6 +57,7 @@ interface OutputsStageProps {
   scenarioId: string;
   graphFingerprint: string;
   deviceClass: "compact" | "regular";
+  autoRunParity?: boolean;
   onLocalProjectChanged: () => void;
   onApplyWebImport: (projection: DomImportProjection) => void;
   onInspectNode: (nodeId: string) => void;
@@ -80,6 +81,7 @@ export function OutputsStage({
   scenarioId,
   graphFingerprint,
   deviceClass,
+  autoRunParity = false,
   onLocalProjectChanged,
   onApplyWebImport,
   onInspectNode,
@@ -192,6 +194,11 @@ export function OutputsStage({
     previewFrame.current.contentWindow.postMessage({ type: PARITY_REQUEST, version: RUNTIME_PARITY_PROTOCOL_VERSION, requestId, graphFingerprint, compilerFingerprint: output.fingerprint, screenId: selectedScreen }, "*");
   };
 
+  const handlePreviewLoad = () => {
+    sendPreview();
+    if (autoRunParity && !parityResult && !parityPending) window.setTimeout(runParity, 0);
+  };
+
   const focusFile = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
     event.preventDefault();
@@ -210,7 +217,7 @@ export function OutputsStage({
     if (!output) return <div role="alert" className="grid h-full place-items-center p-8 text-center text-xs text-[var(--warn)]">{outputMessage}</div>;
     if (outputTarget === "react") return (
       <div className="relative h-full bg-[var(--canvas)] p-3">
-        <iframe ref={previewFrame} src="/runtime-preview" onLoad={sendPreview} title={`Generated React preview: ${selectedScreen}`} sandbox="allow-scripts" className="h-full w-full border border-[var(--line)] bg-white" />
+        <iframe ref={previewFrame} src="/runtime-preview" onLoad={handlePreviewLoad} title={`Generated React preview: ${selectedScreen}`} sandbox="allow-scripts" className="h-full w-full border border-[var(--line)] bg-white" />
         {previewError ? <div role="alert" className="absolute inset-3 grid place-items-center bg-[var(--backdrop)] p-6 text-center"><div className="rounded-lg border border-[var(--danger)]/30 bg-[var(--panel)] p-4 text-xs text-[var(--danger)]"><p>{previewError}</p><button type="button" onClick={sendPreview} className="mt-3 rounded-md bg-[var(--danger)] px-3 py-2 font-semibold text-white">Retry</button></div></div> : null}
       </div>
     );
@@ -218,7 +225,7 @@ export function OutputsStage({
     if (outputTarget === "web" && graph.web && webScreen && webPreviewSource) return (
       <div className="flex h-full justify-center overflow-auto bg-[var(--canvas)] p-3">
         <div data-testid="responsive-web-preview" className="h-full overflow-hidden border border-[var(--line)] bg-white" style={{ width: `${previewWidth}%` }}>
-          <iframe ref={previewFrame} title={`Generated Web preview: ${webScreen.title}`} sandbox="allow-scripts" srcDoc={webPreviewSource} className="h-full w-full border-0 bg-white" />
+          <iframe ref={previewFrame} title={`Generated Web preview: ${webScreen.title}`} sandbox="allow-scripts" srcDoc={webPreviewSource} onLoad={handlePreviewLoad} className="h-full w-full border-0 bg-white" />
         </div>
       </div>
     );

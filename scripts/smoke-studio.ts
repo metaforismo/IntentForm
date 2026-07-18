@@ -513,31 +513,51 @@ try {
       await navigateToStudio(judgePage, origin, "/");
       const launcherJudgeLink = judgePage.getByRole("link", { name: "Judge Mode" });
       await launcherJudgeLink.waitFor();
-      if (await launcherJudgeLink.getAttribute("href") !== "/studio?judge=1&step=design") throw new Error("Launcher Judge Mode deep link is invalid");
+      if (await launcherJudgeLink.getAttribute("href") !== "/studio?judge=1&path=overview&step=design") throw new Error("Launcher Judge Mode deep link is invalid");
 
-      const response = await navigateToStudio(judgePage, origin, "/studio?judge=1&step=code");
+      const response = await navigateToStudio(judgePage, origin, "/studio?judge=1&path=overview&step=design");
       assertSecurityHeaders(response, "Judge Mode");
       const panel = judgePage.getByTestId("judge-mode-panel");
       await panel.getByRole("heading", { name: "Judge Mode" }).waitFor();
+      await panel.getByRole("button", { name: /90-second overview/ }).and(judgePage.locator('[aria-pressed="true"]')).waitFor();
+      await panel.getByText("Intent is canonical.", { exact: true }).waitFor();
+      await judgePage.getByText("Aster Sound", { exact: true }).first().waitFor();
+      await judgePage.getByRole("region", { name: "Multi-device comparison" }).waitFor();
+
+      await panel.getByRole("button", { name: /^2\. Preview an agent transaction/ }).click();
+      await judgePage.waitForURL(`${origin}/studio?judge=1&path=overview&step=agent`);
+      await panel.getByText("The agent proposes a transaction.", { exact: true }).waitFor();
+      await judgePage.getByText("transaction transaction.aster-player-placement", { exact: true }).waitFor();
+
+      await panel.getByRole("button", { name: /^3\. Open generated code/ }).click();
+      await judgePage.waitForURL(`${origin}/studio?judge=1&path=overview&step=code`);
       await judgePage.getByRole("button", { name: "Native outputs" }).and(judgePage.locator('[aria-current="page"]')).waitFor();
-      await panel.getByRole("button", { name: /^2\. Read native output/ }).and(judgePage.locator('[aria-current="step"]')).waitFor();
-      if (!judgePage.url().endsWith("/studio?judge=1&step=code")) throw new Error(`Judge deep link drifted to ${judgePage.url()}`);
+      await panel.getByText("The compiler generates code.", { exact: true }).waitFor();
+
+      await panel.getByRole("button", { name: /^4\. Verify runtime parity/ }).click();
+      await judgePage.waitForURL(`${origin}/studio?judge=1&path=overview&step=parity`);
+      await panel.getByText("Runtime evidence verifies the result.", { exact: true }).waitFor();
+      await judgePage.getByTestId("runtime-parity-result").waitFor();
+      await judgePage.getByTestId("runtime-parity-result").getByText(/matched · .*warnings · 0 errors/).waitFor();
+      await mkdir(join(root, "output/playwright"), { recursive: true });
+      await judgePage.screenshot({ path: join(root, "output/playwright/studio-judge-mode.png"), fullPage: true });
 
       await panel.getByRole("button", { name: "Submission readiness" }).click();
       await panel.getByText("Public endpoint responded successfully.", { exact: true }).waitFor();
       await panel.getByText("Placeholder only; add after recording.", { exact: true }).waitFor();
       await panel.getByText("Placeholder only; no external write performed.", { exact: true }).waitFor();
 
-      await panel.getByRole("button", { name: /^3\. Verify and repair/ }).click();
-      await judgePage.waitForURL(`${origin}/studio?judge=1&step=verify`);
+      await panel.getByRole("button", { name: /4-minute hands-on/ }).click();
+      await judgePage.waitForURL(`${origin}/studio?judge=1&path=hands-on&step=design`);
+      await judgePage.getByTestId("canvas-node-payment-request.amount").waitFor();
+      await panel.getByRole("button", { name: /^4\. Verify and repair/ }).click();
+      await judgePage.waitForURL(`${origin}/studio?judge=1&path=hands-on&step=verify`);
       await judgePage.getByRole("button", { name: "Verification" }).and(judgePage.locator('[aria-current="page"]')).waitFor();
       await judgePage.reload({ waitUntil: "networkidle" });
-      await judgePage.getByTestId("judge-mode-panel").getByRole("button", { name: /^3\. Verify and repair/ }).and(judgePage.locator('[aria-current="step"]')).waitFor();
-      await mkdir(join(root, "output/playwright"), { recursive: true });
-      await judgePage.screenshot({ path: join(root, "output/playwright/studio-judge-mode.png"), fullPage: true });
+      await judgePage.getByTestId("judge-mode-panel").getByRole("button", { name: /^4\. Verify and repair/ }).and(judgePage.locator('[aria-current="step"]')).waitFor();
 
-      await judgePage.getByTestId("judge-mode-panel").getByRole("button", { name: "Reset" }).click();
-      await judgePage.waitForURL(`${origin}/studio?judge=1&step=design`);
+      await judgePage.getByTestId("judge-mode-panel").getByRole("button", { name: "Reset", exact: true }).click();
+      await judgePage.waitForURL(`${origin}/studio?judge=1&path=hands-on&step=design`);
       await judgePage.getByTestId("canvas-node-payment-request.amount").waitFor();
       const preservedProjectId = await judgePage.evaluate(() => localStorage.getItem("intentform-active-project-id"));
       if (preservedProjectId !== "catalog-project-must-remain-untouched") throw new Error("Judge Mode mutated durable catalog selection");

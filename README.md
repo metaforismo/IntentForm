@@ -65,14 +65,14 @@ The editor chrome is deliberately neutral. Blue is reserved for selection and ed
 
 ## Judge demo
 
-The public replay path takes about four minutes and requires no login, API key, account, or model call:
+[Judge Mode](https://intentform-amber.vercel.app/studio?judge=1&path=overview&step=design) is an isolated, deterministic replay with no login, API key, account, or model call. It now offers two explicit paths:
 
-1. Open [Judge Mode](https://intentform-amber.vercel.app/studio?judge=1&step=design).
-2. Inspect the validated Verdant Pay graph and make one semantic canvas edit.
-3. Continue to **Code** and inspect the generated target files and fingerprint.
-4. Continue to **Verify**, preview the bounded repair, apply it, and rerun the finding.
-5. Open submission readiness to distinguish live checks from owner-supplied video and Devpost fields.
-6. Reset or exit; Judge Mode never changes the durable project catalog.
+- **90-second overview** — compare Aster Sound across three devices, inspect a bounded agent transaction, follow generated Web code back to semantic nodes, collect live runtime parity evidence, and finish on reproducible proof.
+- **4-minute hands-on** — edit the validated Verdant Pay graph, review an agent transaction, compile target output, preview and apply a bounded repair, verify again, and reset.
+
+Both paths tell the same product story: intent is canonical; the agent proposes a transaction; the compiler generates code; runtime evidence verifies the result. Deep links, refreshes, path switching, and reset remain deterministic, and Judge Mode never changes the durable project catalog.
+
+![Judge Mode 90-second overview showing Aster Sound generated Web code and current runtime parity evidence](docs/assets/readme/judge-overview.png)
 
 For the richer product tour, open **Examples → Aster Sound**. It includes original graph-native artwork, desktop/tablet/phone frames, components, token modes, prototype navigation, loading/empty/error/success states, and a comment linked to an agent transaction.
 

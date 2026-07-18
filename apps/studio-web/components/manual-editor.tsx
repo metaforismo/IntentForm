@@ -1892,7 +1892,7 @@ export function ManualEditor({
           </div>
         ) : (
           <div className="relative h-full">
-          {agentPreview ? <div role="status" className="absolute left-1/2 top-14 z-20 flex -translate-x-1/2 items-center gap-2 rounded-[7px] border border-[var(--accent)]/30 bg-[var(--panel)] px-3 py-2 text-[9px] shadow-lg"><strong className="text-[var(--accent-text)]">Agent preview</strong><span className="text-[var(--muted)]">{agentPreview.changes} changes · canonical graph unchanged</span><button type="button" onClick={onClearAgentPreview} className="rounded px-1.5 py-0.5 font-semibold hover:bg-[var(--hover)]">Clear</button></div> : null}
+          {agentPreview ? <div role="status" className="absolute left-1/2 top-14 z-20 flex -translate-x-1/2 items-center gap-2 rounded-[7px] border border-[var(--accent)]/30 bg-[var(--panel)] px-3 py-2 text-[9px] shadow-lg"><strong className="text-[var(--accent-text)]">Agent preview</strong><span className="font-mono text-[var(--ink)]">{agentPreview.transactionId}</span><span className="text-[var(--muted)]">{agentPreview.changes} changes · canonical graph unchanged</span><button type="button" onClick={onClearAgentPreview} className="rounded px-1.5 py-0.5 font-semibold hover:bg-[var(--hover)]">Clear</button></div> : null}
           <CanvasStage
             graph={graph}
             selectedScreen={screen.id}

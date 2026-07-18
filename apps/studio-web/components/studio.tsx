@@ -51,10 +51,11 @@ import {
   type ProjectType,
 } from "../lib/browser-project-catalog";
 import { hasUnsavedLocalChanges, serializedGraphFingerprint } from "../lib/project-save-state";
-import { createStarterGraph } from "../lib/project-starters";
+import { createLumenShowcaseGraph, createStarterGraph } from "../lib/project-starters";
 import { inferProjectType } from "../lib/launcher-model";
 import {
   JUDGE_SESSION_KEY,
+  LEGACY_JUDGE_SESSION_KEY,
   advanceJudgeSession,
   createJudgeSession,
   judgeDeepLink,
@@ -62,7 +63,9 @@ import {
   judgeSteps,
   parseJudgeDeepLink,
   parseJudgeSession,
+  selectJudgePath,
   selectJudgeStep,
+  type JudgePathId,
   type JudgeSession,
   type JudgeStepId,
 } from "../lib/judge-mode";
@@ -168,6 +171,10 @@ const bootGraph = createStarterGraph({
   startFrom: "empty",
 });
 
+function judgeSample(path: JudgePathId): SemanticInterfaceGraph {
+  return structuredClone(path === "overview" ? createLumenShowcaseGraph() : demoGraph);
+}
+
 export function Studio() {
   const [bootState, setBootState] = useState<StudioBootState>({ status: "loading-project" });
   const [stage, setStage] = useState<Stage>("canvas");
@@ -253,6 +260,7 @@ export function Studio() {
     if (!judgeSession) return;
     try {
       window.sessionStorage.setItem(JUDGE_SESSION_KEY, JSON.stringify(judgeSession));
+      window.sessionStorage.removeItem(LEGACY_JUDGE_SESSION_KEY);
     } catch {
       // A private browsing quota must not block the deterministic walkthrough.
     }
@@ -473,14 +481,26 @@ export function Studio() {
       try {
         const judgeLink = parseJudgeDeepLink(window.location.search);
         if (judgeLink.enabled) {
-          let restoredSession = createJudgeSession(judgeLink.step);
+          let restoredSession = createJudgeSession(judgeLink.path, judgeLink.step);
           try {
-            restoredSession = parseJudgeSession(window.sessionStorage.getItem(JUDGE_SESSION_KEY), judgeLink.step);
+            restoredSession = parseJudgeSession(
+              window.sessionStorage.getItem(JUDGE_SESSION_KEY) ?? window.sessionStorage.getItem(LEGACY_JUDGE_SESSION_KEY),
+              judgeLink.path,
+              judgeLink.step,
+            );
           } catch {
             // Session storage is optional; the deep link remains authoritative.
           }
-          const sample = structuredClone(demoGraph);
-          const walkthroughStep = judgeStep(restoredSession.activeStep);
+          const sample = judgeSample(restoredSession.path);
+          const walkthroughStep = judgeStep(restoredSession.path, restoredSession.activeStep);
+          const overview = restoredSession.path === "overview";
+          const initialScreen = overview
+            ? restoredSession.activeStep === "agent" ? "player" : "library"
+            : "payment-request";
+          const initialNode = overview
+            ? restoredSession.activeStep === "agent" ? "player.play" : "library.shell"
+            : restoredSession.activeStep === "agent" ? "payment-request.confirm" : "payment-request.amount";
+          if (overview) window.localStorage.setItem(`intentform-compare-mode:${sample.product.name}`, "true");
           setJudgeSession(restoredSession);
           setStage(walkthroughStep.stage);
           setGraph(sample);
@@ -490,14 +510,25 @@ export function Studio() {
           setCatalogSavedGraph(null);
           setCatalogSavedSnapshot(null);
           setWorkspace(defaultWorkspaceState(sample));
-          setProjectType("application");
+          setProjectType(overview ? "responsive-web" : "application");
           setProjectSource("example");
           setLocalProjectFingerprint(null);
-          setSelectedScreen("payment-request");
-          setSelectedNodeId("payment-request.amount");
+          setSelectedScreen(initialScreen);
+          setSelectedNodeId(initialNode);
+          if (restoredSession.activeStep === "agent") {
+            setAgentPreview(overview
+              ? { transactionId: "transaction.aster-player-placement", nodeIds: ["player.play"], changes: 1 }
+              : { transactionId: "judge.preview.payment-action", nodeIds: ["payment-request.confirm"], changes: 1 });
+            if (overview) {
+              const thread = sample.reviewThreads.find((candidate) => candidate.id === "review.aster-player-action");
+              if (thread) setAgentReviewTarget({ key: Date.now(), threadId: thread.id });
+            }
+          }
+          setOutputTarget(overview ? "web" : "react");
+          setScenarioId(overview ? "web:desktop-browser" : `device:${sample.devices.defaultProfile}`);
           setMode("replay");
           setModel("deterministic-sample");
-          setNotice("Judge Mode opened an isolated verified sample. Catalog projects will not be changed.");
+          setNotice(`Judge Mode opened the isolated ${overview ? "90-second Aster Sound overview" : "4-minute hands-on sample"}. Catalog projects will not be changed.`);
           setDraftReady(true);
           setBootState({ status: "judge-mode" });
           return;
@@ -869,48 +900,84 @@ export function Studio() {
     resetProject();
   };
 
-  const openJudgeStep = (stepId: JudgeStepId) => {
-    const step = judgeStep(stepId);
-    setJudgeSession((current) => current ? selectJudgeStep(current, stepId) : createJudgeSession(stepId));
+  const applyJudgeContext = (session: JudgeSession, sample: SemanticInterfaceGraph = graphRef.current) => {
+    const step = judgeStep(session.path, session.activeStep);
+    const overview = session.path === "overview";
     setStage(step.stage);
-    window.history.replaceState(null, "", judgeDeepLink(stepId));
+    setAgentPreview(null);
+    setAgentReviewTarget(null);
+    if (overview) {
+      setProjectType("responsive-web");
+      setOutputTarget("web");
+      setScenarioId("web:desktop-browser");
+      window.localStorage.setItem(`intentform-compare-mode:${sample.product.name}`, "true");
+      if (session.activeStep === "agent") {
+        setSelectedScreen("player");
+        setSelectedNodeId("player.play");
+        setAgentPreview({ transactionId: "transaction.aster-player-placement", nodeIds: ["player.play"], changes: 1 });
+        const thread = sample.reviewThreads.find((candidate) => candidate.id === "review.aster-player-action");
+        if (thread) setAgentReviewTarget({ key: Date.now(), threadId: thread.id });
+      } else {
+        setSelectedScreen("library");
+        setSelectedNodeId("library.shell");
+      }
+    } else {
+      setProjectType("application");
+      setOutputTarget("react");
+      setScenarioId(`device:${sample.devices.defaultProfile}`);
+      setSelectedScreen("payment-request");
+      setSelectedNodeId(session.activeStep === "agent" ? "payment-request.confirm" : "payment-request.amount");
+      if (session.activeStep === "agent") setAgentPreview({ transactionId: "judge.preview.payment-action", nodeIds: ["payment-request.confirm"], changes: 1 });
+    }
+    setOutputFilePath(null);
+  };
+
+  const openJudgeStep = (stepId: JudgeStepId) => {
+    const current = judgeSession ?? createJudgeSession();
+    const next = selectJudgeStep(current, stepId);
+    setJudgeSession(next);
+    applyJudgeContext(next);
+    window.history.replaceState(null, "", judgeDeepLink(next.path, next.activeStep));
     document.getElementById("studio-workspace")?.focus();
+  };
+
+  const openJudgePath = (path: JudgePathId) => {
+    resetJudgeMode(path);
   };
 
   const advanceJudgeMode = () => {
     if (!judgeSession) return;
-    if (judgeSession.completed.length === judgeSteps.length) {
-      resetJudgeMode();
+    if (judgeSession.completed.length === judgeSteps(judgeSession.path).length) {
+      resetJudgeMode(judgeSession.path);
       return;
     }
     const next = advanceJudgeSession(judgeSession);
     setJudgeSession(next);
-    setStage(judgeStep(next.activeStep).stage);
-    window.history.replaceState(null, "", judgeDeepLink(next.activeStep));
+    applyJudgeContext(next);
+    window.history.replaceState(null, "", judgeDeepLink(next.path, next.activeStep));
   };
 
-  const resetJudgeMode = () => {
-    const sample = structuredClone(demoGraph);
+  const resetJudgeMode = (path: JudgePathId = judgeSession?.path ?? "overview") => {
+    const sample = judgeSample(path);
     setGraph(sample);
     setBaseline(sample);
     setWorkspace(defaultWorkspaceState(sample));
     setHistory([]);
     setFuture([]);
-    setSelectedScreen("payment-request");
-    setSelectedNodeId("payment-request.amount");
     lastCommit.current = { at: 0, notice: "" };
-    const next = createJudgeSession();
+    const next = selectJudgePath(path);
     setJudgeSession(next);
-    setStage("canvas");
+    applyJudgeContext(next, sample);
     setMode("replay");
     setModel("deterministic-sample");
-    window.history.replaceState(null, "", judgeDeepLink("design"));
-    setNotice("Judge Mode reset to a clean isolated sample.");
+    window.history.replaceState(null, "", judgeDeepLink(next.path, next.activeStep));
+    setNotice(`Judge Mode reset to the isolated ${path === "overview" ? "90-second Aster Sound overview" : "4-minute hands-on sample"}.`);
   };
 
   const exitJudgeMode = () => {
     try {
       window.sessionStorage.removeItem(JUDGE_SESSION_KEY);
+      window.sessionStorage.removeItem(LEGACY_JUDGE_SESSION_KEY);
     } catch {
       // Session storage is best-effort.
     }
@@ -1553,6 +1620,7 @@ export function Studio() {
                   scenarioId={scenarioId}
                   graphFingerprint={currentGraphFingerprint}
                   deviceClass={scenario.viewport.width <= 680 || scenario.viewport.height <= 520 ? "compact" : "regular"}
+                  autoRunParity={judgeSession?.path === "overview" && judgeSession.activeStep === "parity"}
                   onLocalProjectChanged={openLocalProject}
                   onApplyWebImport={applyWebImport}
                   onInspectNode={inspectGeneratedNode}
@@ -1603,9 +1671,10 @@ export function Studio() {
       {judgeSession ? (
         <JudgeModePanel
           session={judgeSession}
+          onSelectPath={openJudgePath}
           onSelectStep={openJudgeStep}
           onAdvance={advanceJudgeMode}
-          onReset={resetJudgeMode}
+          onReset={() => resetJudgeMode()}
           onExit={exitJudgeMode}
         />
       ) : null}
