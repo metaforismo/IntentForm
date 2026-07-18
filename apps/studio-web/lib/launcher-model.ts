@@ -1,6 +1,7 @@
 import type { SemanticInterfaceGraph } from "@intentform/semantic-schema";
 import type { BrowserCatalogProject } from "./browser-project-catalog";
 import type { ProjectType } from "./browser-projects";
+import { PROJECT_TYPES } from "./browser-projects";
 import type { ProjectExample } from "./project-starters";
 
 export type LauncherSection = "home" | "recents" | "projects" | "files" | "agents" | "builds" | "archive" | "examples" | "learn" | "settings";
@@ -56,9 +57,14 @@ export function filterProjectExamples(examples: ProjectExample[], query: string)
 }
 
 export function inferProjectType(graph: SemanticInterfaceGraph, declaredType?: unknown): ProjectType {
-  if (declaredType === "application" || declaredType === "prototype" || declaredType === "component-library" || declaredType === "responsive-web") return declaredType;
+  if ((PROJECT_TYPES as readonly unknown[]).includes(declaredType)) return declaredType as ProjectType;
+  const enabled = new Set(graph.platforms.filter((platform) => platform.enabled).map((platform) => platform.target));
+  const hasNative = enabled.has("expo") || enabled.has("swiftui") || enabled.has("compose");
+  const hasWeb = enabled.has("web") || enabled.has("react");
   if (graph.web) return "responsive-web";
+  if (hasNative && hasWeb) return "multi-platform";
   if (graph.components.length > 0 && graph.screens.length <= 2) return "component-library";
+  if (hasNative) return "mobile-prototype";
   return "application";
 }
 

@@ -270,7 +270,7 @@ try {
       await page.locator('aside img[src="/brand/intentform-mark.png"]').waitFor();
       await page.getByRole("button", { name: "Connect agent" }).click();
       await page.getByRole("heading", { name: "Agents", level: 1 }).waitFor();
-      await page.getByText("Connected agents", { exact: true }).waitFor();
+      await page.getByText("Agent setup center", { exact: true }).waitFor();
       await page.getByRole("button", { name: "Home", exact: true }).click();
       await page.getByText("No recent projects", { exact: true }).waitFor();
       await page.keyboard.press("Control+k");
@@ -361,7 +361,7 @@ try {
       await page.getByLabel("Project name").fill("Northline Field Notes");
       await page.getByLabel("Primary audience").fill("Distributed research teams");
       await page.getByLabel("First outcome").fill("Review and organize field observations");
-      await page.getByLabel("SwiftUI").uncheck();
+      await page.getByRole("checkbox", { name: "SwiftUI", exact: true }).uncheck();
       await page.getByLabel("Starter").selectOption("example");
       await page.getByLabel("Theme").selectOption("dark");
       await page.getByRole("button", { name: "Create project" }).click();
@@ -389,7 +389,6 @@ try {
       await page.getByRole("button", { name: "IntentForm project menu" }).click();
       await page.getByRole("menuitem", { name: "Back to project launcher" }).click();
       await page.waitForURL(`${origin}/`);
-      await page.getByText("Northline Field Notes", { exact: true }).waitFor();
       await page.getByRole("button", { name: /^Northline Field Notes/ }).waitFor();
 
       await page.setViewportSize({ width: 375, height: 667 });
@@ -483,6 +482,7 @@ try {
 
   await runSmokeScenario(browser, {
     name: "deterministic Judge Mode and submission readiness",
+    allowRequestFailure: (request) => request.failure()?.errorText === "net::ERR_ABORTED",
     allowPageError: (error) => Boolean(remoteOrigin)
       && error.message.includes("Failed to read the 'cookie' property from 'Document'")
       && error.message.includes("sandboxed and lacks the 'allow-same-origin' flag"),
@@ -513,31 +513,51 @@ try {
       await navigateToStudio(judgePage, origin, "/");
       const launcherJudgeLink = judgePage.getByRole("link", { name: "Judge Mode" });
       await launcherJudgeLink.waitFor();
-      if (await launcherJudgeLink.getAttribute("href") !== "/studio?judge=1&step=design") throw new Error("Launcher Judge Mode deep link is invalid");
+      if (await launcherJudgeLink.getAttribute("href") !== "/studio?judge=1&path=overview&step=design") throw new Error("Launcher Judge Mode deep link is invalid");
 
-      const response = await navigateToStudio(judgePage, origin, "/studio?judge=1&step=code");
+      const response = await navigateToStudio(judgePage, origin, "/studio?judge=1&path=overview&step=design");
       assertSecurityHeaders(response, "Judge Mode");
       const panel = judgePage.getByTestId("judge-mode-panel");
       await panel.getByRole("heading", { name: "Judge Mode" }).waitFor();
+      await panel.getByRole("button", { name: /90-second overview/ }).and(judgePage.locator('[aria-pressed="true"]')).waitFor();
+      await panel.getByText("Intent is canonical.", { exact: true }).waitFor();
+      await judgePage.getByText("Aster Sound", { exact: true }).first().waitFor();
+      await judgePage.getByRole("region", { name: "Multi-device comparison" }).waitFor();
+
+      await panel.getByRole("button", { name: /^2\. Preview an agent transaction/ }).click();
+      await judgePage.waitForURL(`${origin}/studio?judge=1&path=overview&step=agent`);
+      await panel.getByText("The agent proposes a transaction.", { exact: true }).waitFor();
+      await judgePage.getByText("transaction transaction.aster-player-placement", { exact: true }).waitFor();
+
+      await panel.getByRole("button", { name: /^3\. Open generated code/ }).click();
+      await judgePage.waitForURL(`${origin}/studio?judge=1&path=overview&step=code`);
       await judgePage.getByRole("button", { name: "Native outputs" }).and(judgePage.locator('[aria-current="page"]')).waitFor();
-      await panel.getByRole("button", { name: /^2\. Read native output/ }).and(judgePage.locator('[aria-current="step"]')).waitFor();
-      if (!judgePage.url().endsWith("/studio?judge=1&step=code")) throw new Error(`Judge deep link drifted to ${judgePage.url()}`);
+      await panel.getByText("The compiler generates code.", { exact: true }).waitFor();
+
+      await panel.getByRole("button", { name: /^4\. Verify runtime parity/ }).click();
+      await judgePage.waitForURL(`${origin}/studio?judge=1&path=overview&step=parity`);
+      await panel.getByText("Runtime evidence verifies the result.", { exact: true }).waitFor();
+      await judgePage.getByTestId("runtime-parity-result").waitFor();
+      await judgePage.getByTestId("runtime-parity-result").getByText(/matched · .*warnings · 0 errors/).waitFor();
+      await mkdir(join(root, "output/playwright"), { recursive: true });
+      await judgePage.screenshot({ path: join(root, "output/playwright/studio-judge-mode.png"), fullPage: true });
 
       await panel.getByRole("button", { name: "Submission readiness" }).click();
       await panel.getByText("Public endpoint responded successfully.", { exact: true }).waitFor();
       await panel.getByText("Placeholder only; add after recording.", { exact: true }).waitFor();
       await panel.getByText("Placeholder only; no external write performed.", { exact: true }).waitFor();
 
-      await panel.getByRole("button", { name: /^3\. Verify and repair/ }).click();
-      await judgePage.waitForURL(`${origin}/studio?judge=1&step=verify`);
+      await panel.getByRole("button", { name: /4-minute hands-on/ }).click();
+      await judgePage.waitForURL(`${origin}/studio?judge=1&path=hands-on&step=design`);
+      await judgePage.getByTestId("canvas-node-payment-request.amount").waitFor();
+      await panel.getByRole("button", { name: /^4\. Verify and repair/ }).click();
+      await judgePage.waitForURL(`${origin}/studio?judge=1&path=hands-on&step=verify`);
       await judgePage.getByRole("button", { name: "Verification" }).and(judgePage.locator('[aria-current="page"]')).waitFor();
       await judgePage.reload({ waitUntil: "networkidle" });
-      await judgePage.getByTestId("judge-mode-panel").getByRole("button", { name: /^3\. Verify and repair/ }).and(judgePage.locator('[aria-current="step"]')).waitFor();
-      await mkdir(join(root, "output/playwright"), { recursive: true });
-      await judgePage.screenshot({ path: join(root, "output/playwright/studio-judge-mode.png"), fullPage: true });
+      await judgePage.getByTestId("judge-mode-panel").getByRole("button", { name: /^4\. Verify and repair/ }).and(judgePage.locator('[aria-current="step"]')).waitFor();
 
-      await judgePage.getByTestId("judge-mode-panel").getByRole("button", { name: "Reset" }).click();
-      await judgePage.waitForURL(`${origin}/studio?judge=1&step=design`);
+      await judgePage.getByTestId("judge-mode-panel").getByRole("button", { name: "Reset", exact: true }).click();
+      await judgePage.waitForURL(`${origin}/studio?judge=1&path=hands-on&step=design`);
       await judgePage.getByTestId("canvas-node-payment-request.amount").waitFor();
       const preservedProjectId = await judgePage.evaluate(() => localStorage.getItem("intentform-active-project-id"));
       if (preservedProjectId !== "catalog-project-must-remain-untouched") throw new Error("Judge Mode mutated durable catalog selection");
@@ -545,6 +565,49 @@ try {
       await judgePage.getByRole("button", { name: "Exit Judge Mode" }).click();
       await judgePage.waitForURL(`${origin}/`);
       await judgePage.getByRole("heading", { name: "Home", level: 1 }).waitFor();
+    },
+  });
+
+  await runSmokeScenario(browser, {
+    name: "reviewed design system extraction and atomic undo",
+    run: async (page) => {
+      await gotoStudio(page, origin, "/");
+      await page.getByRole("button", { name: "Examples", exact: true }).click();
+      await page.getByRole("button", { name: /^Aster Sound/ }).click();
+      await page.waitForURL(`${origin}/studio`);
+      await page.getByRole("tab", { name: "Components", exact: true }).click();
+      const library = page.getByTestId("component-library-panel");
+      await library.getByRole("button", { name: "Extract" }).click();
+      const extraction = page.getByTestId("design-system-extraction");
+      await extraction.getByText(/Deterministic analysis only/).waitFor();
+      const tokenChecks = extraction.locator('input[type="checkbox"]');
+      if (await tokenChecks.count() < 2) throw new Error("Aster extraction did not find repeated design values");
+      for (let index = 1; index < await tokenChecks.count(); index += 1) await tokenChecks.nth(index).uncheck();
+      const tokenName = extraction.getByLabel(/^Token name for/).first();
+      await tokenName.fill("space.invalid-family");
+      const componentName = extraction.getByLabel(/^Component name for/).first();
+      await componentName.fill("Release artwork");
+      await extraction.getByRole("button", { name: "Preview semantic transaction" }).click();
+      let review = page.getByTestId("design-system-extraction-review");
+      await review.getByText("Preview transaction · canonical graph unchanged", { exact: true }).waitFor();
+      await review.getByRole("button", { name: "Commit extraction" }).click();
+      await review.getByText("Preview transaction · canonical graph unchanged", { exact: true }).waitFor();
+      await review.getByRole("button", { name: "Back" }).click();
+      await tokenName.fill("radius.extracted.release-art");
+      await extraction.getByRole("button", { name: "Preview semantic transaction" }).click();
+      review = page.getByTestId("design-system-extraction-review");
+      await review.getByText(/tokens\.radii\.radius\.extracted\.release-art/).waitFor();
+      await review.getByText(/components\.Release artwork/).waitFor();
+      await mkdir(join(root, "output/playwright"), { recursive: true });
+      await page.screenshot({ path: join(root, "output/playwright/design-system-extraction.png"), fullPage: true });
+      await review.getByRole("button", { name: "Commit extraction" }).click();
+      await library.getByText("Release artwork", { exact: true }).waitFor();
+      await page.getByRole("tab", { name: "Tokens", exact: true }).click();
+      await page.getByText("radius.extracted.release-art", { exact: true }).first().waitFor();
+      await page.getByRole("button", { name: "Undo" }).click();
+      await page.waitForFunction(() => !document.body.textContent?.includes("radius.extracted.release-art"));
+      await page.getByRole("tab", { name: "Components", exact: true }).click();
+      await library.getByText("Release artwork", { exact: true }).waitFor({ state: "detached" });
     },
   });
 
@@ -634,6 +697,7 @@ try {
       if (await documentTabs.count() !== 1) throw new Error("Closing a document did not remove its tab");
       await page.keyboard.press("Control+Shift+t");
       if (await documentTabs.count() !== 2) throw new Error("Reopen closed tab did not restore the document");
+      await page.locator('[aria-label="Unsaved project changes"]').waitFor({ state: "detached", timeout: 10_000 });
 
       const persisted = await page.evaluate(async () => {
         const id = localStorage.getItem("intentform-active-project-id");
@@ -664,7 +728,6 @@ try {
       const label = page.getByTestId("semantic-inspector").getByLabel("Label", { exact: true });
       await label.fill("Dirty close regression");
       await label.press("Enter");
-      await page.locator('[aria-label="Unsaved project changes"]').waitFor();
       await page.getByRole("button", { name: "Close active document" }).click();
       await page.getByRole("alertdialog", { name: "Save changes before closing?" }).waitFor();
       const dirtyCloseCancel = page.getByRole("button", { name: "Cancel", exact: true });
@@ -805,8 +868,14 @@ try {
         return projects;
       });
       if (recovered.length !== 1) throw new Error(`Relink created ${recovered.length} catalog copies instead of updating one`);
-      if (recovered[0]?.missingLocalPath || recovered[0]?.source !== "local" || recovered[0]?.projectType !== "application" || recovered[0].revision < 3) {
-        throw new Error(`Relink did not preserve catalog identity: ${JSON.stringify(recovered[0])}`);
+      if (recovered[0]?.missingLocalPath || recovered[0]?.source !== "local" || recovered[0]?.projectType !== "multi-platform" || recovered[0].revision < 3) {
+        const project = recovered[0];
+        throw new Error(`Relink did not preserve catalog identity: ${JSON.stringify(project && {
+          missingLocalPath: project.missingLocalPath,
+          source: project.source,
+          projectType: project.projectType,
+          revision: project.revision,
+        })}`);
       }
     },
   });
@@ -1066,8 +1135,8 @@ try {
       await page.getByLabel("Project name").fill("Northline Journal");
       await page.getByLabel("Primary audience").fill("Field researchers");
       await page.getByLabel("First outcome").fill("Publish observations across browser widths");
-      await page.getByLabel("React").uncheck();
-      await page.getByLabel("SwiftUI").uncheck();
+      await page.getByRole("checkbox", { name: "React", exact: true }).uncheck();
+      await page.getByRole("checkbox", { name: "SwiftUI", exact: true }).uncheck();
       if (!await page.getByRole("checkbox", { name: "Responsive web" }).isChecked()) {
         throw new Error("Responsive-web compiler target was not enabled by default");
       }
@@ -1216,6 +1285,7 @@ try {
       const desktopLayersTrigger = page.getByRole("button", { name: "Open pages and layers" });
       await desktopLayersTrigger.waitFor();
       await desktopLayersTrigger.click();
+      await page.getByRole("button", { name: /^Request payment \d+$/ }).click();
       await page.getByTestId("layer-payment-request.amount").waitFor();
       const layerSearch = page.getByLabel("Search layers");
       await layerSearch.fill("Recipient");
@@ -1759,6 +1829,7 @@ try {
         throw new Error("The theme toggle did not restore light mode");
       }
 
+      await page.waitForTimeout(350);
       await page.getByRole("button", { name: "Toggle preview mode" }).click();
       await page.getByTestId("canvas-node-payment-request.confirm").click();
       await page.locator('[data-testid="device-frame"][data-screen-id="receipt"]').waitFor();
@@ -1933,6 +2004,7 @@ try {
     context: { viewport: { width: 1536, height: 1024 } },
     run: async (guidePage) => {
       await gotoStudio(guidePage, origin);
+      await guidePage.getByRole("button", { name: /^Request payment \d+$/ }).click();
       await guidePage.getByRole("button", { name: "Guide settings" }).click();
       const guideDialog = guidePage.getByRole("dialog", { name: "Rulers and guides" });
       await guideDialog.getByRole("button", { name: "+ Vertical" }).click();
@@ -1951,6 +2023,7 @@ try {
       if (await guidePage.getByTestId("canvas-guide-guide-h-1").count() !== 0) throw new Error("Hidden guide remained visible on the canvas");
       await guidePage.getByRole("button", { name: "Close guide settings" }).click();
       await guidePage.reload({ waitUntil: "networkidle" });
+      await guidePage.getByRole("button", { name: /^Request payment \d+$/ }).click();
       if (await guidePage.getByTestId("canvas-guide-guide-v-1").getAttribute("data-locked") !== "true") throw new Error("Guide metadata did not persist across reload");
 
       await guidePage.getByTestId("layer-payment-request.confirm").click();
@@ -1976,6 +2049,7 @@ try {
     name: "professional inspector appearance authoring",
     run: async (page) => {
       await gotoStudio(page, origin);
+      await page.getByRole("button", { name: /^Request payment \d+$/ }).click();
       const node = page.getByTestId("canvas-node-payment-request.confirm");
       await node.click();
       const inspector = page.locator("#editor-inspector-panel");
@@ -2077,6 +2151,8 @@ try {
       }
       await layersTrigger.click();
       await adaptivePage.locator("#editor-structure-panel").waitFor();
+      await adaptivePage.getByRole("button", { name: /^Request payment \d+$/ }).click();
+      await layersTrigger.click();
       await adaptivePage.getByTestId("layer-payment-request.confirm").click();
       if (await layersTrigger.getAttribute("aria-expanded") !== "false") {
         throw new Error("Adaptive layer drawer did not close after selecting a semantic node");
@@ -2120,6 +2196,9 @@ try {
       await compactPage.keyboard.press("Escape");
       await commandDialog.waitFor({ state: "detached" });
 
+      await compactLayers.click();
+      await compactPage.getByRole("button", { name: /^Request payment \d+$/ }).click();
+      if (await compactLayers.getAttribute("aria-expanded") === "true") await compactPage.keyboard.press("Escape");
       await compactPage.getByRole("button", { name: "Toggle preview mode" }).click();
       const keyboardFlow = compactPage.getByRole("button", { name: /Follow Confirm request to Request sent/ });
       await keyboardFlow.focus();
@@ -2167,6 +2246,7 @@ try {
       && request.url().includes("/api/repair"),
     run: async (transactionPage) => {
       await gotoStudio(transactionPage, origin);
+      await transactionPage.getByRole("button", { name: /^Request payment \d+$/ }).click();
 
       await transactionPage.keyboard.press("Control+k");
       await transactionPage.getByLabel("Search commands").fill("Duplicate current screen");
@@ -2201,14 +2281,14 @@ try {
       await transactionPage.getByTestId(`layer-${insertedId}`).waitFor({ state: "detached" });
 
       await transactionPage.keyboard.press("Control+k");
-      await transactionPage.getByLabel("Search commands").fill("Reset to verified sample");
-      await transactionPage.getByRole("button", { name: "Reset to verified sample" }).click();
-      const resetDialog = transactionPage.getByRole("alertdialog", { name: "Reset this workspace?" });
+      await transactionPage.getByLabel("Search commands").fill("Restore last saved revision");
+      await transactionPage.getByRole("button", { name: "Restore last saved revision" }).click();
+      const resetDialog = transactionPage.getByRole("alertdialog", { name: "Restore the last saved revision?" });
       await resetDialog.waitFor();
       await transactionPage.waitForTimeout(200);
       await transactionPage.screenshot({ path: join(root, "output/playwright/reset-project-confirmation.png"), fullPage: true });
       const cancelReset = resetDialog.getByRole("button", { name: "Cancel" });
-      const confirmReset = resetDialog.getByRole("button", { name: "Reset workspace" });
+      const confirmReset = resetDialog.getByRole("button", { name: "Restore saved revision" });
       if (!await cancelReset.evaluate((element) => element === document.activeElement)) throw new Error("Reset dialog did not focus its safe action");
       await transactionPage.keyboard.press("Shift+Tab");
       if (!await confirmReset.evaluate((element) => element === document.activeElement)) throw new Error("Reset dialog did not wrap backward focus");
@@ -2219,9 +2299,9 @@ try {
       if (!await transactionPage.getByRole("button", { name: "IntentForm project menu" }).evaluate((element) => element === document.activeElement)) throw new Error("Reset cancellation did not restore focus to the project menu");
       await transactionPage.getByRole("button", { name: "Request payment 4", exact: true }).waitFor();
       await transactionPage.keyboard.press("Control+k");
-      await transactionPage.getByLabel("Search commands").fill("Reset to verified sample");
-      await transactionPage.getByRole("button", { name: "Reset to verified sample" }).click();
-      await transactionPage.getByRole("alertdialog", { name: "Reset this workspace?" }).getByRole("button", { name: "Reset workspace" }).click();
+      await transactionPage.getByLabel("Search commands").fill("Restore last saved revision");
+      await transactionPage.getByRole("button", { name: "Restore last saved revision" }).click();
+      await transactionPage.getByRole("alertdialog", { name: "Restore the last saved revision?" }).getByRole("button", { name: "Restore saved revision" }).click();
       await transactionPage.getByRole("button", { name: "Request payment 4", exact: true }).waitFor();
       await transactionPage.getByRole("button", { name: "Verification" }).click();
       await transactionPage.getByRole("button", { name: /primary action must remain persistently reachable/i }).click();
@@ -2422,6 +2502,7 @@ try {
       && message.location().url.startsWith(`${origin}/api/interpret`),
     run: async (editPage) => {
       await gotoStudio(editPage, origin);
+      await editPage.getByRole("button", { name: /^Request payment \d+$/ }).click();
       await editPage.getByRole("button", { name: "IntentForm project menu" }).click();
       await editPage.getByRole("menuitem", { name: "Product brief" }).click();
       await editPage.getByRole("button", { name: "Semantic edit" }).click();
@@ -2519,6 +2600,7 @@ try {
     name: "semantic prototype and anchored review comments",
     run: async (page) => {
       await gotoStudio(page, origin);
+      await page.getByRole("button", { name: /^Request payment \d+$/ }).click();
       const action = page.getByTestId("canvas-node-payment-request.confirm");
       await action.click();
       await page.getByTestId("inspector-mode-prototype").click();
@@ -2590,9 +2672,10 @@ try {
       await routePage.evaluate(() => localStorage.clear());
       const emptyPage = await routePage.context().newPage();
       const emptyStudioResponse = await navigateToStudio(emptyPage, origin, "/studio");
-      assertSecurityHeaders(emptyStudioResponse, "Empty Studio redirect");
-      await emptyPage.waitForURL(`${origin}/`);
-      await emptyPage.getByRole("heading", { name: "Home", level: 1 }).waitFor();
+      assertSecurityHeaders(emptyStudioResponse, "Empty Studio state");
+      await emptyPage.waitForURL(`${origin}/studio`);
+      await emptyPage.getByRole("heading", { name: "Choose a project first", level: 1 }).waitFor();
+      await emptyPage.getByText("Studio never creates a sample implicitly.", { exact: false }).waitFor();
       await emptyPage.close();
     },
   });

@@ -17,6 +17,7 @@ import {
   LockOpen,
   Plus,
   Selection,
+  Sparkle,
   Stack,
   TextT,
   TreeStructure,
@@ -51,6 +52,11 @@ import { importLocalAsset } from "./asset-import";
 import { isNodeVisible, nodeNames, type NodeCommand, type RailTab, type VisualState } from "./support";
 import type { SelectionIntent } from "./direct-manipulation";
 import { virtualWindow } from "../reliability-model";
+import {
+  analyzeDesignSystem,
+  type DesignSystemExtractionReview,
+} from "./design-system-extraction";
+import { DesignSystemExtractionPanel } from "./design-system-extraction-panel";
 
 interface LayersPanelProps {
   graph: SemanticInterfaceGraph;
@@ -76,6 +82,7 @@ interface LayersPanelProps {
   onInstantiateComponent(definitionId: string): void;
   onCreateComponent(nodeId: string, name: string): void;
   onUpdateComponent(definition: ComponentDefinition): void;
+  onApplyDesignSystemExtraction(review: DesignSystemExtractionReview): boolean;
   onUpdateTokens(mutate: (tokens: SemanticInterfaceGraph["tokens"]) => void, notice: string): void;
   localProjectFingerprint: string | null;
   localProjectSaved: boolean;
@@ -308,6 +315,7 @@ export function LayersPanel({
   onInstantiateComponent,
   onCreateComponent,
   onUpdateComponent,
+  onApplyDesignSystemExtraction,
   onUpdateTokens,
   localProjectFingerprint,
   localProjectSaved,
@@ -342,6 +350,7 @@ export function LayersPanel({
   const [newTokenKey, setNewTokenKey] = useState("");
   const [newTokenValue, setNewTokenValue] = useState("");
   const [layerScroll, setLayerScroll] = useState({ top: 0, height: 480 });
+  const [extractionOpen, setExtractionOpen] = useState(false);
 
   useEffect(() => {
     setOrder(screen.nodes.map((node) => node.id));
@@ -408,6 +417,7 @@ export function LayersPanel({
   const resolvedTokens = useMemo(() => resolveTokenMode(graph.tokens), [graph.tokens]);
   const tokenEntries = useMemo(() => Object.entries(resolvedTokens).flatMap(([group, values]) =>
     (Object.entries(values) as Array<[string, string | number]>).map(([key, value]) => ({ group: group as keyof typeof resolvedTokens, key, value }))), [resolvedTokens]);
+  const extraction = useMemo(() => analyzeDesignSystem(graph, screen.id), [graph, screen.id]);
   const filteredNodes = useMemo(() => query
     ? allNodes.filter((node) => `${node.intent.label ?? ""} ${nodeNames[node.kind]} ${node.id}`.toLowerCase().includes(query))
     : null, [allNodes, query]);
@@ -826,13 +836,16 @@ export function LayersPanel({
       ) : railTab === "components" ? (
         <div id="editor-components-tabpanel" role="tabpanel" aria-labelledby="editor-components-tab" className="min-h-0 overflow-y-auto overflow-x-hidden" data-testid="component-library-panel">
           <section className="border-b border-[var(--line)] px-3 pb-3 pt-2">
-            <PanelHeading label="Local components" action={<button type="button" disabled={selectedNodeIds.length !== 1} onClick={() => {
+            <PanelHeading label="Local components" action={<div className="flex gap-1"><button type="button" onClick={() => {
+              setExtractionOpen(true);
+            }} className="inline-flex min-h-7 items-center gap-1 rounded-lg border border-[var(--line)] px-2 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)]"><Sparkle size={11} /> Extract</button><button type="button" disabled={selectedNodeIds.length !== 1} onClick={() => {
               const selected = selectedNodeIds[0] ? findGraphNodeLocation(graph, selectedNodeIds[0])?.node : undefined;
               if (selected) onCreateComponent(selected.id, selected.intent.label ?? selected.intent.purpose);
-            }} className="inline-flex min-h-7 items-center gap-1 rounded-lg border border-[var(--line)] px-2 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-40"><Plus size={11} /> Create</button>} />
+            }} className="inline-flex min-h-7 items-center gap-1 rounded-lg border border-[var(--line)] px-2 text-[9px] font-semibold text-[var(--muted)] hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-40"><Plus size={11} /> Create</button></div>} />
             <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--faint)]">Versioned semantic definitions expand deterministically into every enabled compiler.</p>
             <p className="mt-1 text-[10px] leading-relaxed text-[var(--muted)]">Select one layer, then create a reusable definition with a typed label property and content slot.</p>
           </section>
+          {extractionOpen ? <DesignSystemExtractionPanel analysis={extraction} screenTitle={screen.title} onCommit={onApplyDesignSystemExtraction} onClose={() => setExtractionOpen(false)} /> : null}
           <div className="grid gap-2 p-2">
             {graph.components.map((definition) => (
               <article key={definition.id} className="rounded-xl border border-[var(--line)] bg-[var(--field)] p-2.5">

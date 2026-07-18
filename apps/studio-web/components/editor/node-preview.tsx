@@ -275,7 +275,7 @@ export function NodePreview({
           {loading
             ? <Skeleton className="h-[34px] w-40 rounded-lg opacity-40" />
             : <strong className="font-mono text-[34px] leading-none tracking-[-0.05em]">{formatMoney(fixture.balance, "€8,420.16")}</strong>}
-          <span className="text-[11px] text-white/50">{loading ? "Refreshing…" : "Updated just now"}</span>
+          <span className="text-[11px] text-white/80">{loading ? "Refreshing…" : "Updated just now"}</span>
         </div>
       );
     case "transaction-list":

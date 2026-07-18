@@ -10,6 +10,7 @@ import {
   Check,
   CirclesThreePlus,
   Cube,
+  DeviceMobile,
   DotsThree,
   FileArrowUp,
   FlagCheckered,
@@ -19,6 +20,7 @@ import {
   Plus,
   SquaresFour,
   Sparkle,
+  Stack,
   ClockCounterClockwise,
   House,
   MagnifyingGlass,
@@ -86,6 +88,8 @@ const projectTypeOptions: Array<{ id: ProjectType; label: string; detail: string
   { id: "prototype", label: "Prototype", detail: "A focused concept intended for fast semantic iteration and testing.", icon: Sparkle },
   { id: "component-library", label: "Component library", detail: "A reusable catalog of intent roles, tokens, and variants.", icon: Cube },
   { id: "responsive-web", label: "Responsive web", detail: "A semantic site or web app with intrinsic layout and declared breakpoints.", icon: Browser },
+  { id: "mobile-prototype", label: "Mobile prototype", detail: "A touch-safe native concept for Expo, SwiftUI, or Compose targets.", icon: DeviceMobile },
+  { id: "multi-platform", label: "Multi-platform", detail: "One semantic product intent compiled across Web and native targets.", icon: Stack },
 ];
 
 const launcherSectionLabels: Record<LauncherSection, string> = {
@@ -112,6 +116,8 @@ function validationMessage(error: unknown): string {
 function projectTypeLabel(projectType: ProjectType): string {
   if (projectType === "component-library") return "Component library";
   if (projectType === "responsive-web") return "Responsive web";
+  if (projectType === "mobile-prototype") return "Mobile prototype";
+  if (projectType === "multi-platform") return "Multi-platform";
   return projectType[0]!.toUpperCase() + projectType.slice(1);
 }
 
@@ -687,7 +693,7 @@ export function Launcher() {
               <button type="button" aria-label="List view" aria-pressed={catalogView === "list"} onClick={() => setPreferences((current) => ({ ...current, catalogView: "list" }))} className={`grid size-7 place-items-center rounded-[4px] ${catalogView === "list" ? "bg-[var(--if-pressed)] text-[var(--if-text)]" : "text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)]"}`}><List size={14} /></button>
             </div>
             <label className="relative"><MagnifyingGlass size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--if-text-tertiary)]" /><input ref={searchInput} value={projectQuery} onChange={(event) => { setProjectQuery(event.target.value); if (event.target.value.trim()) setSection("projects"); }} aria-label="Search projects" placeholder="Search" className="h-8 w-32 rounded-md border border-[var(--if-border)] bg-[var(--if-input)] pl-8 pr-2 text-[11px] outline-none focus:border-[var(--if-blue)] sm:w-56" /></label>
-            <a href="/studio?judge=1&step=design" className="hidden h-8 items-center gap-1.5 rounded-md border border-[var(--if-border)] px-3 text-[11px] font-medium text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)] hover:text-[var(--if-text)] md:inline-flex"><FlagCheckered size={13} /> Judge Mode</a>
+            <a href="/studio?judge=1&path=overview&step=design" className="hidden h-8 items-center gap-1.5 rounded-md border border-[var(--if-border)] px-3 text-[11px] font-medium text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)] hover:text-[var(--if-text)] md:inline-flex"><FlagCheckered size={13} /> Judge Mode</a>
             <button type="button" onClick={openLocalProject} disabled={bridge !== "available" || opening !== null} className="hidden h-8 items-center gap-1.5 rounded-md border border-[var(--if-border)] bg-[var(--if-raised)] px-3 text-[11px] font-medium hover:bg-[var(--if-hover)] disabled:opacity-45 sm:inline-flex"><FolderOpen size={13} /> Open project</button>
             <button type="button" onClick={() => { setView("new"); setError(null); }} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--if-blue)] px-3 text-[11px] font-medium text-white hover:bg-[var(--if-blue-hover)]"><Plus size={13} /> New project</button>
           </div>

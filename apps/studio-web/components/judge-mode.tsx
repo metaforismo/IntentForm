@@ -12,8 +12,11 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import {
+  judgePaths,
+  judgeStep,
   judgeSteps,
   totalJudgeDurationSeconds,
+  type JudgePathId,
   type JudgeSession,
   type JudgeStepId,
 } from "../lib/judge-mode";
@@ -32,6 +35,7 @@ interface ReadinessResponse {
 
 interface JudgeModePanelProps {
   session: JudgeSession;
+  onSelectPath: (path: JudgePathId) => void;
   onSelectStep: (step: JudgeStepId) => void;
   onAdvance: () => void;
   onReset: () => void;
@@ -49,13 +53,14 @@ function ReadinessRow({ label, ready, detail }: { label: string; ready: boolean;
   );
 }
 
-export function JudgeModePanel({ session, onSelectStep, onAdvance, onReset, onExit }: JudgeModePanelProps) {
+export function JudgeModePanel({ session, onSelectPath, onSelectStep, onAdvance, onReset, onExit }: JudgeModePanelProps) {
   const [readiness, setReadiness] = useState<ReadinessResponse | null>(null);
   const [readinessOpen, setReadinessOpen] = useState(false);
   const [readinessError, setReadinessError] = useState(false);
-  const activeIndex = judgeSteps.findIndex((step) => step.id === session.activeStep);
-  const active = judgeSteps[activeIndex] ?? judgeSteps[0]!;
-  const finished = session.completed.length === judgeSteps.length;
+  const steps = judgeSteps(session.path);
+  const activeIndex = steps.findIndex((step) => step.id === session.activeStep);
+  const active = judgeStep(session.path, session.activeStep);
+  const finished = session.completed.length === steps.length;
 
   const refreshReadiness = async () => {
     setReadinessError(false);
@@ -77,13 +82,16 @@ export function JudgeModePanel({ session, onSelectStep, onAdvance, onReset, onEx
     <aside data-testid="judge-mode-panel" aria-label="Judge Mode walkthrough" className="fixed bottom-3 right-3 z-30 flex max-h-[calc(100dvh-24px)] w-[min(344px,calc(100vw-24px))] flex-col overflow-hidden rounded-[9px] border border-[var(--if-border-strong)] bg-[var(--if-panel)] shadow-[var(--if-shadow-dialog)]">
       <header className="flex items-start gap-2.5 border-b border-[var(--if-border-subtle)] px-3 py-2.5">
         <span className="grid size-7 shrink-0 place-items-center rounded-[6px] bg-[var(--if-blue-soft)] text-[var(--if-blue)]"><FlagCheckered size={14} weight="fill" /></span>
-        <div className="min-w-0 flex-1"><h2 className="text-[12px] font-semibold leading-4">Judge Mode</h2><p className="mt-0.5 text-[9.5px] leading-[13px] text-[var(--faint)]">Deterministic replay · no account or API key · {Math.ceil(totalJudgeDurationSeconds() / 60)} min</p></div>
+        <div className="min-w-0 flex-1"><h2 className="text-[12px] font-semibold leading-4">Judge Mode</h2><p className="mt-0.5 text-[9.5px] leading-[13px] text-[var(--faint)]">Deterministic replay · no account or API key · {totalJudgeDurationSeconds(session.path) < 120 ? `${totalJudgeDurationSeconds(session.path)} sec` : `${Math.ceil(totalJudgeDurationSeconds(session.path) / 60)} min`}</p></div>
         <button type="button" onClick={onExit} aria-label="Exit Judge Mode" className="grid size-7 shrink-0 place-items-center rounded-[5px] text-[var(--muted)] hover:bg-[var(--hover)]"><X size={13} /></button>
       </header>
 
       <div className="min-h-0 overflow-auto">
-        <ol className="grid grid-cols-4 border-b border-[var(--if-border-subtle)]" aria-label="Walkthrough steps">
-          {judgeSteps.map((step, index) => {
+        <div className="grid grid-cols-2 gap-1 border-b border-[var(--if-border-subtle)] p-1.5" role="group" aria-label="Judge path">
+          {judgePaths.map((path) => <button key={path.id} type="button" aria-pressed={session.path === path.id} onClick={() => onSelectPath(path.id)} className={`rounded-[5px] px-2 py-1.5 text-left ${session.path === path.id ? "bg-[var(--if-blue-soft)] text-[var(--if-blue-text)]" : "text-[var(--faint)] hover:bg-[var(--hover)]"}`}><strong className="block text-[9.5px]">{path.title}</strong><span className="mt-0.5 block text-[8px] leading-3">{path.id === "overview" ? "Aster Sound story" : "Edit to repair"}</span></button>)}
+        </div>
+        <ol className="grid border-b border-[var(--if-border-subtle)]" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }} aria-label="Walkthrough steps">
+          {steps.map((step, index) => {
             const selected = step.id === session.activeStep;
             const complete = session.completed.includes(step.id);
             return (
@@ -98,9 +106,10 @@ export function JudgeModePanel({ session, onSelectStep, onAdvance, onReset, onEx
         </ol>
 
         <section className="p-3" aria-labelledby="judge-step-title">
-          <div className="flex items-center justify-between gap-3"><span className="font-mono text-[8.5px] uppercase tracking-[.12em] text-[var(--if-blue-text)]">Step {activeIndex + 1} of {judgeSteps.length} · {active.durationSeconds}s</span><span className="text-[9px] text-[var(--faint)]">{session.completed.length}/{judgeSteps.length} complete</span></div>
+          <div className="flex items-center justify-between gap-3"><span className="font-mono text-[8.5px] uppercase tracking-[.12em] text-[var(--if-blue-text)]">Step {activeIndex + 1} of {steps.length} · {active.durationSeconds}s</span><span className="text-[9px] text-[var(--faint)]">{session.completed.length}/{steps.length} complete</span></div>
           <h3 id="judge-step-title" className="mt-2 text-[13px] font-semibold">{active.title}</h3>
           <p className="mt-1 text-[10.5px] leading-[16px] text-[var(--muted)]">{active.summary}</p>
+          <p className="mt-2 rounded-[5px] bg-[var(--if-blue-soft)] px-2.5 py-2 text-[10px] font-semibold text-[var(--if-blue-text)]">{active.concept}</p>
           <div className="mt-2.5 rounded-[6px] border border-[var(--if-border-subtle)] bg-[var(--if-panel-alt)] px-2.5 py-2 text-[9.5px] leading-[14px] text-[var(--faint)]"><strong className="text-[var(--muted)]">What this proves</strong><span className="mt-0.5 block">{active.proof}</span></div>
         </section>
 
@@ -127,7 +136,7 @@ export function JudgeModePanel({ session, onSelectStep, onAdvance, onReset, onEx
       <footer className="flex items-center gap-2 border-t border-[var(--if-border-subtle)] p-2.5">
         <button type="button" onClick={onReset} className="h-7 rounded-[5px] px-2.5 text-[10px] font-medium text-[var(--muted)] hover:bg-[var(--hover)]">Reset</button>
         <a href="https://github.com/metaforismo/IntentForm" target="_blank" rel="noreferrer" className="grid size-7 place-items-center rounded-[5px] text-[var(--muted)] hover:bg-[var(--hover)]" aria-label="Open public repository"><ArrowSquareOut size={12} /></a>
-        <button type="button" onClick={onAdvance} className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-[5px] bg-[var(--if-blue-action)] px-2.5 text-[10px] font-medium text-white hover:bg-[var(--if-blue-action-hover)]">{finished ? "Start again" : activeIndex === judgeSteps.length - 1 ? "Complete" : "Next"}<ArrowRight size={11} /></button>
+        <button type="button" onClick={onAdvance} className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-[5px] bg-[var(--if-blue-action)] px-2.5 text-[10px] font-medium text-white hover:bg-[var(--if-blue-action-hover)]">{finished ? "Start again" : activeIndex === steps.length - 1 ? "Complete" : "Next"}<ArrowRight size={11} /></button>
       </footer>
       <span className="sr-only">Judge deep links preserve the active walkthrough step.</span>
     </aside>
