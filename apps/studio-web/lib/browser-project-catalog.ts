@@ -2,6 +2,7 @@ import { parseGraph, semanticInterfaceGraphSchema, type SemanticInterfaceGraph }
 import { previewGraphMigration } from "@intentform/semantic-schema/migrations";
 import { z } from "zod";
 import {
+  PROJECT_TYPES,
   clearBrowserProject,
   loadBrowserProject,
   type BrowserProjectMetadata,
@@ -57,7 +58,7 @@ const catalogProjectSchema = z.strictObject({
   id: z.string().min(1).max(120),
   name: z.string().min(1).max(120),
   graph: semanticInterfaceGraphSchema,
-  projectType: z.enum(["application", "prototype", "component-library", "responsive-web"]),
+  projectType: z.enum(PROJECT_TYPES),
   source: z.enum(["created", "example", "imported", "local", "recovery"]),
   localFingerprint: z.string().regex(/^[a-f0-9]{8}$/).optional(),
   createdAt: z.string().datetime(),

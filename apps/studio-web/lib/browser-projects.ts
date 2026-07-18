@@ -13,14 +13,15 @@ export const BROWSER_PROJECT_CHUNK_PREFIX = "intentform-browser-project-v2-chunk
 export const LEGACY_DRAFT_KEY = "intentform-project-draft-v1";
 export const BROWSER_MIGRATION_BACKUP_KEY = "intentform-browser-migration-backup-v1";
 
-export type ProjectType = "application" | "prototype" | "component-library" | "responsive-web";
+export const PROJECT_TYPES = ["application", "responsive-web", "prototype", "component-library", "mobile-prototype", "multi-platform"] as const;
+export type ProjectType = typeof PROJECT_TYPES[number];
 export type ProjectSource = "created" | "example" | "imported" | "local" | "recovery";
 
 const browserProjectSchema = z.strictObject({
   version: z.literal(1),
   graph: semanticInterfaceGraphSchema,
   savedAt: z.string().datetime(),
-  projectType: z.enum(["application", "prototype", "component-library", "responsive-web"]),
+  projectType: z.enum(PROJECT_TYPES),
   source: z.enum(["created", "example", "imported", "local", "recovery"]),
   localFingerprint: z.string().regex(/^[a-f0-9]{8}$/).optional(),
 });

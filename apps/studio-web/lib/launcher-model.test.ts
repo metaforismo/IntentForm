@@ -23,6 +23,11 @@ describe("launcher model", () => {
     expect(inferProjectType(application.graph, "prototype")).toBe("prototype");
     expect(inferProjectType(responsive.graph)).toBe("responsive-web");
     expect(inferProjectType(library.graph, library.projectType)).toBe("component-library");
+    expect(inferProjectType(application.graph, "mobile-prototype")).toBe("mobile-prototype");
+    const nativeOnly = structuredClone(application.graph);
+    nativeOnly.platforms = nativeOnly.platforms.map((platform) => ({ ...platform, enabled: platform.target === "expo" || platform.target === "swiftui" }));
+    expect(inferProjectType(nativeOnly)).toBe("mobile-prototype");
+    expect(inferProjectType(application.graph)).toBe("multi-platform");
     expect(projectSearchIndex(application.graph, ["Research"], "Field work")).toContain("Research");
   });
 

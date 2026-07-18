@@ -17,7 +17,10 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import {
   PREVIEW_READY,
   PREVIEW_STATUS,
+  PARITY_RESULT,
+  RUNTIME_PARITY_PROTOCOL_VERSION,
   isPreviewRequest,
+  isParityCollectRequest,
   type ActivePreviewReady,
   type ActivePreviewStatus,
 } from "./runtime-preview-protocol";
@@ -128,6 +131,7 @@ function RuntimeNode({
       className={`runtime-node runtime-axis-${node.layout.axis} runtime-width-${node.layout.width} runtime-height-${node.layout.height} runtime-align-${node.layout.align} runtime-justify-${node.layout.justify} runtime-overflow-${node.layout.overflow} runtime-emphasis-${node.style.emphasis} runtime-importance-${node.intent.importance}`}
       data-intent-purpose={node.intent.purpose}
       data-intent-role={node.style.role}
+      data-node-id={node.id}
       style={semantics}
     >
       {content}
@@ -195,7 +199,21 @@ export function RuntimePreview() {
 
   useEffect(() => {
     const receive = (event: MessageEvent<unknown>) => {
-      if (event.source !== window.parent || !isPreviewRequest(event.data)) return;
+      if (event.source !== window.parent) return;
+      if (isParityCollectRequest(event.data)) {
+        const request = event.data;
+        const elements = [...document.querySelectorAll<HTMLElement>("[data-node-id]")].slice(0, 2_001);
+        const focusable = [...document.querySelectorAll<HTMLElement>('a[href],button,input,select,textarea,[tabindex]:not([tabindex="-1"])')];
+        const nodes = elements.map((element, semanticOrder) => {
+          const bounds = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          const role = element.getAttribute("role") ?? ({ BUTTON: "button", A: "link", INPUT: "textbox", SELECT: "combobox", TEXTAREA: "textbox", IMG: "img" }[element.tagName] ?? "generic");
+          return { nodeId: element.dataset.nodeId, bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }, visible: style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) > 0 && bounds.width > 0 && bounds.height > 0, accessibleName: element.getAttribute("aria-label") ?? element.querySelector<HTMLElement>("[aria-label]")?.getAttribute("aria-label") ?? "", computedRole: role, semanticOrder, tabOrder: focusable.indexOf(element), position: style.position };
+        });
+        window.parent.postMessage({ type: PARITY_RESULT, version: RUNTIME_PARITY_PROTOCOL_VERSION, requestId: request.requestId, graphFingerprint: request.graphFingerprint, compilerFingerprint: request.compilerFingerprint, screenId: request.screenId, collectedAt: new Date().toISOString(), nodes }, "*");
+        return;
+      }
+      if (!isPreviewRequest(event.data)) return;
       const request = event.data;
       try {
         const graph = parseGraph(request.graph);

@@ -46,6 +46,16 @@ const starterCopy: Record<ProjectType, { title: string; nodeLabel: string; princ
     nodeLabel: "Shape the first responsive section",
     principle: "Let intrinsic content and declared breakpoints drive the layout",
   },
+  "mobile-prototype": {
+    title: "Mobile concept",
+    nodeLabel: "Shape the first touch-safe flow",
+    principle: "Keep native reachability and platform capability explicit",
+  },
+  "multi-platform": {
+    title: "Shared experience",
+    nodeLabel: "Shape the first cross-platform workflow",
+    principle: "Share semantic intent while keeping target differences explicit",
+  },
 };
 
 const lightTokens = {

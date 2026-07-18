@@ -1737,7 +1737,7 @@ export function ManualEditor({
     { label: "Open verification", section: "Workflow", icon: ShieldCheck, action: () => onOpenStage("verify") },
     { label: "Open proof report", section: "Workflow", icon: FileText, action: () => onOpenStage("report") },
     { label: "Export graph as JSON", section: "Project", icon: DownloadSimple, action: onExportGraph },
-    { label: "Reset to verified sample", section: "Project", icon: ArrowsCounterClockwise, action: onResetProject },
+    { label: "Restore last saved revision", section: "Project", icon: ArrowsCounterClockwise, action: onResetProject },
   ];
 
   if (!screen) return null;

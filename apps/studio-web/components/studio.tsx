@@ -51,6 +51,8 @@ import {
   type ProjectType,
 } from "../lib/browser-project-catalog";
 import { hasUnsavedLocalChanges, serializedGraphFingerprint } from "../lib/project-save-state";
+import { createStarterGraph } from "../lib/project-starters";
+import { inferProjectType } from "../lib/launcher-model";
 import {
   JUDGE_SESSION_KEY,
   advanceJudgeSession,
@@ -133,6 +135,13 @@ interface ActivityEntry {
 }
 
 type PendingAction = "project-open" | "project-save" | "interpret" | "repair";
+type StudioBootState =
+  | { status: "loading-project" }
+  | { status: "judge-mode" }
+  | { status: "catalog-project"; projectId: string }
+  | { status: "desktop-project"; projectId: string }
+  | { status: "restore-error"; message: string }
+  | { status: "no-project" };
 
 interface RequestFailure {
   message: string;
@@ -150,25 +159,35 @@ function deferredCompilation(target: OutputTarget) {
   };
 }
 
+const bootGraph = createStarterGraph({
+  name: "Untitled interface",
+  audience: "Product team",
+  purpose: "Create a semantic interface",
+  projectType: "application",
+  targets: ["react"],
+  startFrom: "empty",
+});
+
 export function Studio() {
+  const [bootState, setBootState] = useState<StudioBootState>({ status: "loading-project" });
   const [stage, setStage] = useState<Stage>("canvas");
-  const [brief, setBrief] = useState(demoBrief);
+  const [brief, setBrief] = useState("");
   const [editInstruction, setEditInstruction] = useState("Keep the primary action reachable on compact devices and inline when space allows.");
   const [briefOperation, setBriefOperation] = useState<"create" | "edit">("create");
-  const [graph, setGraph] = useState<SemanticInterfaceGraph>(demoGraph);
-  const [baseline, setBaseline] = useState<SemanticInterfaceGraph>(demoGraph);
-  const [selectedScreen, setSelectedScreen] = useState("payment-request");
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>("payment-request.amount");
+  const [graph, setGraph] = useState<SemanticInterfaceGraph>(bootGraph);
+  const [baseline, setBaseline] = useState<SemanticInterfaceGraph>(bootGraph);
+  const [selectedScreen, setSelectedScreen] = useState(bootGraph.screens[0]?.id ?? "");
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(bootGraph.screens[0]?.nodes[0]?.id ?? null);
   const [history, setHistory] = useState<SemanticInterfaceGraph[]>([]);
   const [future, setFuture] = useState<SemanticInterfaceGraph[]>([]);
   const [outputTarget, setOutputTarget] = useState<OutputTarget>("react");
   const [outputFilePath, setOutputFilePath] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [scenarioId, setScenarioId] = useState<ScenarioId>(`device:${demoGraph.devices.defaultProfile}`);
+  const [scenarioId, setScenarioId] = useState<ScenarioId>(`device:${bootGraph.devices.defaultProfile}`);
   const [mode, setMode] = useState<"live" | "replay">("replay");
   const [model, setModel] = useState("deterministic-sample");
   const [lastTrace, setLastTrace] = useState<TraceSummary | null>(null);
-  const [notice, setNoticeText] = useState("Ready to compile the sample brief.");
+  const [notice, setNoticeText] = useState("Opening project…");
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [noticeOpen, setNoticeOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -186,12 +205,12 @@ export function Studio() {
   const [requestFailure, setRequestFailure] = useState<RequestFailure | null>(null);
   const [localProjectFingerprint, setLocalProjectFingerprint] = useState<string | null>(null);
   const [projectType, setProjectType] = useState<ProjectType>("application");
-  const [projectSource, setProjectSource] = useState<ProjectSource>("example");
+  const [projectSource, setProjectSource] = useState<ProjectSource>("created");
   const [catalogProject, setCatalogProject] = useState<BrowserCatalogProject | null>(null);
   const [catalogSavedGraph, setCatalogSavedGraph] = useState<SemanticInterfaceGraph | null>(null);
   const [catalogSavedSnapshot, setCatalogSavedSnapshot] = useState<string | null>(null);
   const [catalogSaveState, setCatalogSaveState] = useState<"saved" | "dirty" | "saving" | "error">("saved");
-  const [workspace, setWorkspace] = useState<BrowserWorkspaceState>(() => defaultWorkspaceState(demoGraph));
+  const [workspace, setWorkspace] = useState<BrowserWorkspaceState>(() => defaultWorkspaceState(bootGraph));
   const [judgeSession, setJudgeSession] = useState<JudgeSession | null>(null);
   const [pendingTabClose, setPendingTabClose] = useState<BrowserDocumentTab | null>(null);
   const lastCommit = useRef({ at: 0, notice: "" });
@@ -448,6 +467,7 @@ export function Studio() {
       setSelectedNodeId(nextScreen?.nodes[0]?.id ?? null);
       setNotice(notice);
       setDraftReady(true);
+      setBootState(window.intentformDesktop ? { status: "desktop-project", projectId: project.id } : { status: "catalog-project", projectId: project.id });
     };
     void (async () => {
       try {
@@ -479,13 +499,14 @@ export function Studio() {
           setModel("deterministic-sample");
           setNotice("Judge Mode opened an isolated verified sample. Catalog projects will not be changed.");
           setDraftReady(true);
+          setBootState({ status: "judge-mode" });
           return;
         }
         const migration = await migrateLegacyBrowserProject(window.localStorage);
         if (migration.warning) throw new Error(migration.warning);
         const requestedId = new URLSearchParams(window.location.search).get("project");
         const id = requestedId ?? activeBrowserProjectId(window.localStorage) ?? migration.migratedProjectId;
-        if (id) {
+        if (id && !window.intentformDesktop) {
           const project = await browserProjectCatalog().get(id);
           if (project && !project.archivedAt) {
             setActiveBrowserProject(window.localStorage, project.id);
@@ -501,7 +522,7 @@ export function Studio() {
           }
           const restored = parseGraph(result.graph);
           const created = await browserProjectCatalog().create(restored, {
-            projectType: restored.web ? "responsive-web" : "application",
+            projectType: inferProjectType(restored),
             source: "local",
             localFingerprint: result.fingerprint,
           });
@@ -510,10 +531,11 @@ export function Studio() {
           restoreProject(created.project, `Opened ${restored.product.name} from the granted desktop project.`);
           return;
         }
-        window.location.replace("/");
+        setBootState({ status: "no-project" });
       } catch (cause) {
-        setNotice(cause instanceof Error ? cause.message : "The selected project could not be opened.");
-        window.location.replace("/");
+        const message = cause instanceof Error ? cause.message : "The selected project could not be opened.";
+        setNotice(message);
+        setBootState({ status: "restore-error", message });
       }
     })();
     return () => { cancelled = true; };
@@ -815,19 +837,20 @@ export function Studio() {
   };
 
   const resetProject = () => {
-    setGraph(demoGraph);
-    setBaseline(demoGraph);
-    setWorkspace(defaultWorkspaceState(demoGraph));
-    setProjectType("application");
-    setProjectSource("example");
-    setLocalProjectFingerprint(null);
+    const restored = catalogSavedGraph ?? catalogProject?.lastKnownGood?.graph;
+    if (!restored) {
+      setNotice("No saved project revision is available to restore.");
+      return;
+    }
+    setGraph(restored);
+    setBaseline(restored);
+    setWorkspace(normalizeWorkspaceState(restored, catalogProject?.workspace));
     setHistory([]);
     setFuture([]);
-    setSelectedScreen("payment-request");
-    setSelectedNodeId("payment-request.amount");
+    reconcileSelection(restored);
     lastCommit.current = { at: 0, notice: "" };
     setMenuOpen(false);
-    setNotice("Reset the workspace to the verified sample project.");
+    setNotice("Restored the last saved project revision.");
   };
 
   const requestProjectReset = () => {
@@ -867,7 +890,15 @@ export function Studio() {
   };
 
   const resetJudgeMode = () => {
-    resetProject();
+    const sample = structuredClone(demoGraph);
+    setGraph(sample);
+    setBaseline(sample);
+    setWorkspace(defaultWorkspaceState(sample));
+    setHistory([]);
+    setFuture([]);
+    setSelectedScreen("payment-request");
+    setSelectedNodeId("payment-request.amount");
+    lastCommit.current = { at: 0, notice: "" };
     const next = createJudgeSession();
     setJudgeSession(next);
     setStage("canvas");
@@ -1223,6 +1254,18 @@ export function Studio() {
     activateDocument(tab);
   };
 
+  if (bootState.status === "loading-project") return (
+    <main className="grid min-h-[100dvh] place-items-center bg-[var(--canvas)] p-6 text-[var(--ink)]" aria-busy="true">
+      <div className="text-center"><CircleNotch size={28} className="mx-auto animate-spin text-[var(--accent)]" /><h1 className="mt-4 text-base font-semibold">Opening your project</h1><p className="mt-1 text-xs text-[var(--muted)]">Restoring the canonical graph and document workspace…</p></div>
+    </main>
+  );
+  if (bootState.status === "no-project") return (
+    <main className="grid min-h-[100dvh] place-items-center bg-[var(--canvas)] p-6 text-[var(--ink)]"><section className="max-w-md text-center"><BrandMark className="mx-auto size-10" /><h1 className="mt-4 text-lg font-semibold">Choose a project first</h1><p className="mt-2 text-sm leading-relaxed text-[var(--muted)]">Studio never creates a sample implicitly. Open an existing project or copy an example from the launcher.</p><a href="/" className="mt-5 inline-flex h-9 items-center rounded-[6px] bg-[var(--accent-deep)] px-4 text-xs font-semibold text-white">Open project launcher</a></section></main>
+  );
+  if (bootState.status === "restore-error") return (
+    <main className="grid min-h-[100dvh] place-items-center bg-[var(--canvas)] p-6 text-[var(--ink)]"><section role="alert" className="menu-pop max-w-lg rounded-[10px] p-5"><Warning size={24} className="text-[var(--danger)]" /><h1 className="mt-3 text-lg font-semibold">Project restore stopped safely</h1><p className="mt-2 text-sm leading-relaxed text-[var(--muted)]">{bootState.message}</p><p className="mt-2 text-xs text-[var(--muted)]">No example or fallback project was substituted.</p><a href="/" className="mt-5 inline-flex h-9 items-center rounded-[6px] bg-[var(--accent-deep)] px-4 text-xs font-semibold text-white">Return to launcher</a></section></main>
+  );
+
   return (
     <main className="studio-grain h-[100dvh] overflow-hidden text-[var(--ink)]">
       <a className="skip-link" href="#studio-workspace">Skip to workspace</a>
@@ -1507,6 +1550,9 @@ export function Studio() {
                   selectedScreen={selectedScreen}
                   localPreviews={localPreviews}
                   scenarioLabel={scenario.label}
+                  scenarioId={scenarioId}
+                  graphFingerprint={currentGraphFingerprint}
+                  deviceClass={scenario.viewport.width <= 680 || scenario.viewport.height <= 520 ? "compact" : "regular"}
                   onLocalProjectChanged={openLocalProject}
                   onApplyWebImport={applyWebImport}
                   onInspectNode={inspectGeneratedNode}
@@ -1617,12 +1663,12 @@ export function Studio() {
         <div className="fixed inset-0 z-50 grid place-items-center bg-[var(--backdrop)] p-4" onPointerDown={(event) => { if (event.target === event.currentTarget) cancelProjectReset(); }}>
           <section ref={resetDialog} data-testid="reset-project-dialog" role="alertdialog" aria-modal="true" aria-labelledby="reset-project-title" aria-describedby="reset-project-description" className="menu-pop w-full max-w-md rounded-[10px] p-4 shadow-[var(--if-shadow-dialog)]">
             <span className="grid size-8 place-items-center rounded-[6px] bg-[var(--danger-soft)] text-[var(--danger)]"><ArrowsCounterClockwise size={16} weight="bold" /></span>
-            <h2 id="reset-project-title" className="mt-3 text-[15px] font-[550] leading-[21px] tracking-[-.02em]">Reset this workspace?</h2>
-            <p id="reset-project-description" className="mt-2 text-[12px] leading-relaxed text-[var(--muted)]">This replaces the current semantic graph with the verified sample. The previous committed revision remains available as last-known-good recovery.</p>
+            <h2 id="reset-project-title" className="mt-3 text-[15px] font-[550] leading-[21px] tracking-[-.02em]">Restore the last saved revision?</h2>
+            <p id="reset-project-description" className="mt-2 text-[12px] leading-relaxed text-[var(--muted)]">This discards current unsaved semantic edits and restores this project’s last saved graph. It never substitutes an example project.</p>
             {localChangesAreUnsaved ? <p className="mt-3 rounded-[6px] bg-[var(--warn-soft)] px-3 py-2 text-[11px] font-medium text-[var(--warn)]">This local project also has changes that have not been saved to disk.</p> : null}
             <div className="mt-4 flex justify-end gap-2">
               <button ref={resetCancelButton} type="button" onClick={cancelProjectReset} className="h-8 rounded-[6px] border border-[var(--line)] px-3 text-[11px] font-medium hover:bg-[var(--hover)]">Cancel</button>
-              <button type="button" onClick={confirmProjectReset} className="h-8 rounded-[6px] bg-[var(--danger)] px-3 text-[11px] font-medium text-white hover:brightness-95">Reset workspace</button>
+              <button type="button" onClick={confirmProjectReset} className="h-8 rounded-[6px] bg-[var(--danger)] px-3 text-[11px] font-medium text-white hover:brightness-95">Restore saved revision</button>
             </div>
           </section>
         </div>

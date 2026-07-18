@@ -10,6 +10,7 @@ import {
   Check,
   CirclesThreePlus,
   Cube,
+  DeviceMobile,
   DotsThree,
   FileArrowUp,
   FlagCheckered,
@@ -19,6 +20,7 @@ import {
   Plus,
   SquaresFour,
   Sparkle,
+  Stack,
   ClockCounterClockwise,
   House,
   MagnifyingGlass,
@@ -86,6 +88,8 @@ const projectTypeOptions: Array<{ id: ProjectType; label: string; detail: string
   { id: "prototype", label: "Prototype", detail: "A focused concept intended for fast semantic iteration and testing.", icon: Sparkle },
   { id: "component-library", label: "Component library", detail: "A reusable catalog of intent roles, tokens, and variants.", icon: Cube },
   { id: "responsive-web", label: "Responsive web", detail: "A semantic site or web app with intrinsic layout and declared breakpoints.", icon: Browser },
+  { id: "mobile-prototype", label: "Mobile prototype", detail: "A touch-safe native concept for Expo, SwiftUI, or Compose targets.", icon: DeviceMobile },
+  { id: "multi-platform", label: "Multi-platform", detail: "One semantic product intent compiled across Web and native targets.", icon: Stack },
 ];
 
 const launcherSectionLabels: Record<LauncherSection, string> = {
@@ -112,6 +116,8 @@ function validationMessage(error: unknown): string {
 function projectTypeLabel(projectType: ProjectType): string {
   if (projectType === "component-library") return "Component library";
   if (projectType === "responsive-web") return "Responsive web";
+  if (projectType === "mobile-prototype") return "Mobile prototype";
+  if (projectType === "multi-platform") return "Multi-platform";
   return projectType[0]!.toUpperCase() + projectType.slice(1);
 }
 

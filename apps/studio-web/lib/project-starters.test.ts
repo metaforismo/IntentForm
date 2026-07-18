@@ -9,7 +9,7 @@ import {
 } from "./project-starters";
 
 describe("project starters", () => {
-  it.each<ProjectType>(["application", "prototype", "component-library", "responsive-web"])(
+  it.each<ProjectType>(["application", "prototype", "component-library", "responsive-web", "mobile-prototype", "multi-platform"])(
     "creates a deterministic valid %s starter",
     (projectType) => {
       const first = createStarterGraph({
