@@ -230,6 +230,25 @@ export function WebImportDialog({ open, graph, screenId, onClose, onApply }: Web
     setSource(sandbox.source);
   };
 
+  /* Graph validation raises Zod errors whose .message is the raw serialized
+     issue array; a person should read one sentence, not a JSON blob. */
+  const importErrorMessage = (error: unknown): string => {
+    if (error && typeof error === "object" && "issues" in error && Array.isArray((error as { issues?: unknown }).issues)) {
+      const issues = (error as { issues: Array<{ message?: string }> }).issues.slice(0, 3);
+      return issues.map((issue) => issue.message ?? "Invalid value").join(" · ");
+    }
+    const message = error instanceof Error ? error.message : "";
+    if (message.trim().startsWith("[")) {
+      try {
+        const parsed = JSON.parse(message) as Array<{ message?: string }>;
+        if (Array.isArray(parsed)) return parsed.slice(0, 3).map((issue) => issue?.message ?? "Invalid value").join(" · ");
+      } catch {
+        // Not JSON after all; fall through to the raw message.
+      }
+    }
+    return message || "The browser could not analyze this HTML/CSS input.";
+  };
+
   const capture = () => {
     if (!analyzingRef.current) return;
     try {
@@ -242,7 +261,7 @@ export function WebImportDialog({ open, graph, screenId, onClose, onApply }: Web
       });
       setProjection(projectComputedDom(graph, screenId, roots));
     } catch (captureError) {
-      setError(captureError instanceof Error ? captureError.message : "The browser could not analyze this HTML/CSS input.");
+      setError(`This import cannot replace the screen yet: ${importErrorMessage(captureError)}`);
     } finally {
       analyzingRef.current = false;
       setAnalyzing(false);

@@ -297,6 +297,52 @@ html[data-intentform-minimal-ui] .studio-topbar {
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 14%, transparent);
 }
 
+/* Customizable-select progressive enhancement (Chromium): the OPEN picker
+   adopts the app's menu language instead of the OS listbox. Real <select>
+   semantics are untouched, and other browsers keep their native picker. */
+@supports (appearance: base-select) {
+  .select-control,
+  .select-control::picker(select) {
+    appearance: base-select;
+  }
+  .select-control::picker-icon { display: none; }
+  .select-control::picker(select) {
+    margin-top: 4px;
+    border: 1px solid var(--if-border-strong);
+    border-radius: 8px;
+    padding: 4px;
+    background: var(--if-raised);
+    box-shadow: var(--if-shadow-menu);
+  }
+  .select-control option {
+    display: flex;
+    min-height: 26px;
+    align-items: center;
+    gap: 6px;
+    border-radius: 4px;
+    padding: 0 8px;
+    font-size: 11px;
+    color: var(--if-text);
+    background: transparent;
+  }
+  .select-control option:hover,
+  .select-control option:focus-visible {
+    background: var(--if-hover);
+  }
+  .select-control option:checked {
+    color: var(--if-blue-text);
+    background: var(--if-blue-soft);
+  }
+  .select-control option::checkmark { display: none; }
+}
+
+/* Native checkboxes and radios stay real controls but always carry the
+   product accent instead of the OS default blue. */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--if-blue);
+}
+
 /* Sandboxed active-graph preview. Every selector is scoped so the generated
    product surface cannot leak styles back into the Studio chrome. */
 .runtime-preview-root {

@@ -1507,12 +1507,13 @@ export function ManualEditor({
   });
   keyActions.current = {
     escape: () => {
-      if (commandOpen || shortcutsOpen || insertOpen || zoomMenuOpen || mobilePanel) {
+      if (commandOpen || shortcutsOpen || insertOpen || zoomMenuOpen || guideMenuOpen || mobilePanel) {
         setCommandOpen(false);
         setCommandQuery("");
         setShortcutsOpen(false);
         setInsertOpen(false);
         setZoomMenuOpen(false);
+        setGuideMenuOpen(false);
         setMobilePanel(null);
         return;
       }
