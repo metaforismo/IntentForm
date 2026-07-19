@@ -8,6 +8,7 @@ import {
 } from "@intentform/token-assets/assets";
 import { loadProject, resolveProjectDir, saveProject } from "@intentform/mcp-server/store";
 import { isLocalProjectRequestAllowed } from "../../../../lib/api-contracts";
+import { logServerFailure } from "../../../../lib/server-log";
 
 export const runtime = "nodejs";
 
@@ -42,7 +43,8 @@ export async function GET(request: Request) {
       fingerprint: project.fingerprint,
       diagnostics: inspectProjectAssets(projectDir, project.graph.assets),
     }, { headers: noStoreHeaders });
-  } catch {
+  } catch (error) {
+    logServerFailure("asset inspection", error);
     return Response.json(
       { error: "The local asset store could not be inspected." },
       { status: 409, headers: noStoreHeaders },
@@ -156,7 +158,8 @@ export async function DELETE(request: Request) {
       garbageCollectProjectAssets(projectDir, project.graph.assets, true),
       { headers: noStoreHeaders },
     );
-  } catch {
+  } catch (error) {
+    logServerFailure("asset cleanup", error);
     return Response.json({ error: "The local asset store could not be cleaned." }, { status: 409, headers: noStoreHeaders });
   }
 }

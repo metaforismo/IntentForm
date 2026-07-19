@@ -1,6 +1,7 @@
 import { projectEcosystemResource } from "@intentform/mcp-server/tools";
 import { resolveProjectDir } from "@intentform/mcp-server/store";
 import { isLocalProjectRequestAllowed } from "../../../../lib/api-contracts";
+import { logServerFailure } from "../../../../lib/server-log";
 
 export const runtime = "nodejs";
 
@@ -19,7 +20,8 @@ export async function GET(request: Request) {
   }
   try {
     return Response.json(projectEcosystemResource(resolveProjectDir()), { headers: noStoreHeaders });
-  } catch {
+  } catch (error) {
+    logServerFailure("ecosystem inspection", error);
     return Response.json(
       { error: "The local ecosystem state is unavailable." },
       { status: 503, headers: noStoreHeaders },
