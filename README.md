@@ -44,7 +44,7 @@ Generated files are integration artifacts, not the source of truth. Every accept
 | Canvas | Infinite board, recursive layers, mixed selection, eight resize handles, rotation, snapping, keyboard movement, grouping, duplication, nested reparenting, conflict-safe inline text editing with IME/RTL support, context menus, clipboard and style clipboard, comments, flow preview, device chrome, and synchronized multi-device comparison |
 | Layout | Stack, frame, list, grid tracks and span, wrap, overlay, split, scroll, safe area, adaptive, and freeform relations with deterministic layout indexes |
 | Design systems | Components, instances, variants, states, slots, overrides, detach/reset, DTCG token modes, searchable token binding, licensed assets with integrity recovery, image placement, and SVG paint editing |
-| Web workflows | Responsive frames and breakpoints, generated DOM/CSS runtime, sandboxed HTML/CSS import through computed styles, explicit unsupported-property diagnostics, and source-to-canvas navigation |
+| Web workflows | Responsive frames and breakpoints, generated DOM/CSS runtime, sandboxed HTML/CSS import through computed styles, explicit unsupported-property diagnostics, runtime parity inspection, and source-to-canvas navigation |
 | Native output | Deterministic React, Web, Expo Router, and SwiftUI compilers with readable generated files and target capability diagnostics |
 | Agents | Local MCP resources and bounded tools, read-only default, exact file/page/selection scope, preview/commit/reject/revert transactions, semantic diffs, comments, history, checkpoints, and rollback |
 | Evidence | Unit and integration tests, accessibility profiles, Playwright production smoke, responsive runtime checks, Expo iOS/Android exports, SwiftUI builds and Simulator accessibility/screenshots, desktop packaging, and a 10,000-node benchmark |
@@ -153,6 +153,8 @@ IntentForm separates these states:
 5. Evidence verdict produced for the active target and profile.
 
 The Studio Code workspace provides a virtualized, syntax-aware source viewer with search, exact node links, copy context, and source-to-canvas navigation. Verify groups semantic, responsive, accessibility, browser, Expo, SwiftUI, and desktop evidence without pretending that one target proves another.
+
+The **Runtime Parity Inspector** answers "did the real rendered app preserve the semantic design intent?" with measurements instead of assumptions. A sandboxed probe renders the compiled web document at every declared frame and measures each stable node in the live DOM; existence, document order, accessible names and roles, WCAG 2.2 target sizes, horizontal overflow, and compact reachability of persistently placed actions are compared against the graph. Every finding links to the exact node on the canvas, reports are fingerprint-bound and flag themselves stale when the graph changes, and measured geometry is presented as evidence rather than judged — canvas-to-runtime pixel fidelity remains explicitly ongoing work, and the inspector never claims parity for targets it has not measured.
 
 CI runs typecheck, the complete test suite, the 10,000-node benchmark, production builds, Web runtime smoke, Expo exports for iOS and Android, the full Studio browser matrix, checked-in preview drift checks, SwiftUI native build/render evidence, and the hardened macOS desktop package. GitHub Actions are pinned to immutable commits.
 
