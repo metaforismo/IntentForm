@@ -621,6 +621,7 @@ try {
       await page.getByRole("button", { name: /^Catalog Alpha/ }).click();
       await page.waitForURL(`${origin}/studio`);
       const documentTabs = page.getByRole("tablist", { name: "Open project documents" }).getByRole("tab");
+      await documentTabs.first().waitFor();
       if (await documentTabs.count() !== 1) throw new Error("A new project did not start with one real document tab");
       await page.getByRole("button", { name: "Open another document" }).click();
       if (await documentTabs.count() !== 2) throw new Error("Opening another document did not add a real tab");
@@ -2201,8 +2202,8 @@ try {
       await transactionPage.getByTestId(`layer-${insertedId}`).waitFor({ state: "detached" });
 
       await transactionPage.keyboard.press("Control+k");
-      await transactionPage.getByLabel("Search commands").fill("Reset to verified sample");
-      await transactionPage.getByRole("button", { name: "Reset to verified sample" }).click();
+      await transactionPage.getByLabel("Search commands").fill("Revert to saved revision");
+      await transactionPage.getByRole("button", { name: "Revert to saved revision" }).click();
       const resetDialog = transactionPage.getByRole("alertdialog", { name: "Reset this workspace?" });
       await resetDialog.waitFor();
       await transactionPage.waitForTimeout(200);
@@ -2219,8 +2220,8 @@ try {
       if (!await transactionPage.getByRole("button", { name: "IntentForm project menu" }).evaluate((element) => element === document.activeElement)) throw new Error("Reset cancellation did not restore focus to the project menu");
       await transactionPage.getByRole("button", { name: "Request payment 4", exact: true }).waitFor();
       await transactionPage.keyboard.press("Control+k");
-      await transactionPage.getByLabel("Search commands").fill("Reset to verified sample");
-      await transactionPage.getByRole("button", { name: "Reset to verified sample" }).click();
+      await transactionPage.getByLabel("Search commands").fill("Revert to saved revision");
+      await transactionPage.getByRole("button", { name: "Revert to saved revision" }).click();
       await transactionPage.getByRole("alertdialog", { name: "Reset this workspace?" }).getByRole("button", { name: "Reset workspace" }).click();
       await transactionPage.getByRole("button", { name: "Request payment 4", exact: true }).waitFor();
       await transactionPage.getByRole("button", { name: "Verification" }).click();

@@ -64,6 +64,7 @@ import {
   parseLauncherPreferences,
   type LauncherPreferences,
 } from "../lib/launcher-preferences";
+import { takeBootNotice } from "../lib/boot-notice";
 import { BrandMark } from "./brand-mark";
 import { LauncherAgents, LauncherBuilds, LauncherHome, LauncherLearn, LauncherSettings, ProjectOrganizationControls } from "./launcher-sections";
 
@@ -268,6 +269,8 @@ export function Launcher() {
   useEffect(() => {
     setPreferences(parseLauncherPreferences(window.localStorage.getItem(LAUNCHER_PREFERENCES_KEY)));
     setPreferencesReady(true);
+    const bootNotice = takeBootNotice(window.sessionStorage);
+    if (bootNotice) setError(bootNotice);
   }, []);
 
   useEffect(() => {

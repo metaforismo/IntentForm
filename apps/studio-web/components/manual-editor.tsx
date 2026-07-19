@@ -179,6 +179,7 @@ interface ManualEditorProps {
   onRedo(): void;
   onOpenStage(stage: WorkflowStage): void;
   onResetProject(): void;
+  resetProjectLabel: string;
   onExportGraph(): void;
 }
 
@@ -314,6 +315,7 @@ export function ManualEditor({
   onRedo,
   onOpenStage,
   onResetProject,
+  resetProjectLabel,
   onExportGraph,
 }: ManualEditorProps) {
   const [tool, setTool] = useState<EditorTool>("select");
@@ -1737,7 +1739,7 @@ export function ManualEditor({
     { label: "Open verification", section: "Workflow", icon: ShieldCheck, action: () => onOpenStage("verify") },
     { label: "Open proof report", section: "Workflow", icon: FileText, action: () => onOpenStage("report") },
     { label: "Export graph as JSON", section: "Project", icon: DownloadSimple, action: onExportGraph },
-    { label: "Reset to verified sample", section: "Project", icon: ArrowsCounterClockwise, action: onResetProject },
+    { label: resetProjectLabel, section: "Project", icon: ArrowsCounterClockwise, action: onResetProject },
   ];
 
   if (!screen) return null;

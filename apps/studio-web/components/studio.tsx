@@ -51,6 +51,7 @@ import {
   type ProjectType,
 } from "../lib/browser-project-catalog";
 import { hasUnsavedLocalChanges, serializedGraphFingerprint } from "../lib/project-save-state";
+import { stashBootNotice } from "../lib/boot-notice";
 import {
   JUDGE_SESSION_KEY,
   advanceJudgeSession,
@@ -195,6 +196,7 @@ export function Studio() {
   const [judgeSession, setJudgeSession] = useState<JudgeSession | null>(null);
   const [pendingTabClose, setPendingTabClose] = useState<BrowserDocumentTab | null>(null);
   const lastCommit = useRef({ at: 0, notice: "" });
+  const copyResetTimer = useRef<number | null>(null);
   const graphRef = useRef(graph);
   graphRef.current = graph;
   const graphSnapshot = useMemo(() => stableSerialize(graph), [graph]);
@@ -228,6 +230,9 @@ export function Studio() {
 
   useEffect(() => {
     if (document.documentElement.dataset.theme === "dark") setThemeState("dark");
+    return () => {
+      if (copyResetTimer.current !== null) window.clearTimeout(copyResetTimer.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -492,6 +497,12 @@ export function Studio() {
             restoreProject(project, `Opened ${project.name} from the durable browser catalog.`);
             return;
           }
+          if (!window.intentformDesktop) {
+            if (cancelled) return;
+            stashBootNotice(window.sessionStorage, "The requested project could not be found in this browser's catalog. It may have been deleted or archived in another window.");
+            window.location.replace("/");
+            return;
+          }
         }
         if (window.intentformDesktop) {
           const response = await fetch("/api/project", { cache: "no-store" });
@@ -512,7 +523,8 @@ export function Studio() {
         }
         window.location.replace("/");
       } catch (cause) {
-        setNotice(cause instanceof Error ? cause.message : "The selected project could not be opened.");
+        if (cancelled) return;
+        stashBootNotice(window.sessionStorage, cause instanceof Error ? cause.message : "The selected project could not be opened.");
         window.location.replace("/");
       }
     })();
@@ -814,7 +826,19 @@ export function Studio() {
     setNotice("Restored the semantic edit.");
   };
 
+  const revertsToSavedRevision = !judgeMode && catalogSavedGraph !== null;
+
   const resetProject = () => {
+    if (revertsToSavedRevision && catalogSavedGraph) {
+      setGraph(catalogSavedGraph);
+      reconcileSelection(catalogSavedGraph);
+      setHistory([]);
+      setFuture([]);
+      lastCommit.current = { at: 0, notice: "" };
+      setMenuOpen(false);
+      setNotice("Reverted the workspace to the last saved revision.");
+      return;
+    }
     setGraph(demoGraph);
     setBaseline(demoGraph);
     setWorkspace(defaultWorkspaceState(demoGraph));
@@ -994,7 +1018,11 @@ export function Studio() {
     try {
       await navigator.clipboard.writeText(selectedCode.content);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
+      if (copyResetTimer.current !== null) window.clearTimeout(copyResetTimer.current);
+      copyResetTimer.current = window.setTimeout(() => {
+        copyResetTimer.current = null;
+        setCopied(false);
+      }, 1600);
     } catch {
       setNotice("The browser blocked clipboard access, so nothing was copied.");
     }
@@ -1222,6 +1250,18 @@ export function Studio() {
     }));
     activateDocument(tab);
   };
+
+  if (!draftReady) {
+    return (
+      <main className="studio-grain grid h-[100dvh] place-items-center overflow-hidden text-[var(--ink)]">
+        <div role="status" aria-live="polite" className="flex flex-col items-center gap-3.5">
+          <BrandMark size={28} />
+          <div aria-hidden="true" className="skeleton-block h-1 w-40 overflow-hidden rounded-full" />
+          <p className="text-[11px] text-[var(--muted)]">Opening project…</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="studio-grain h-[100dvh] overflow-hidden text-[var(--ink)]">
@@ -1463,6 +1503,7 @@ export function Studio() {
                   onRedo={redo}
                   onOpenStage={setStage}
                   onResetProject={requestProjectReset}
+                  resetProjectLabel={revertsToSavedRevision ? "Revert to saved revision" : "Reset to verified sample"}
                   onExportGraph={exportGraph}
                 />
               ) : null}
@@ -1618,7 +1659,9 @@ export function Studio() {
           <section ref={resetDialog} data-testid="reset-project-dialog" role="alertdialog" aria-modal="true" aria-labelledby="reset-project-title" aria-describedby="reset-project-description" className="menu-pop w-full max-w-md rounded-[10px] p-4 shadow-[var(--if-shadow-dialog)]">
             <span className="grid size-8 place-items-center rounded-[6px] bg-[var(--danger-soft)] text-[var(--danger)]"><ArrowsCounterClockwise size={16} weight="bold" /></span>
             <h2 id="reset-project-title" className="mt-3 text-[15px] font-[550] leading-[21px] tracking-[-.02em]">Reset this workspace?</h2>
-            <p id="reset-project-description" className="mt-2 text-[12px] leading-relaxed text-[var(--muted)]">This replaces the current semantic graph with the verified sample. The previous committed revision remains available as last-known-good recovery.</p>
+            <p id="reset-project-description" className="mt-2 text-[12px] leading-relaxed text-[var(--muted)]">{revertsToSavedRevision
+              ? "This replaces the current semantic graph with the last saved revision of this project. Edits made since that save are discarded from this window."
+              : "This replaces the current semantic graph with the verified sample. The previous committed revision remains available as last-known-good recovery."}</p>
             {localChangesAreUnsaved ? <p className="mt-3 rounded-[6px] bg-[var(--warn-soft)] px-3 py-2 text-[11px] font-medium text-[var(--warn)]">This local project also has changes that have not been saved to disk.</p> : null}
             <div className="mt-4 flex justify-end gap-2">
               <button ref={resetCancelButton} type="button" onClick={cancelProjectReset} className="h-8 rounded-[6px] border border-[var(--line)] px-3 text-[11px] font-medium hover:bg-[var(--hover)]">Cancel</button>
