@@ -371,7 +371,10 @@ export function OutputsStage({
           <div className="px-2 py-2 text-[9px] font-semibold uppercase tracking-[.1em] text-[var(--faint)]">Generated · read only</div>
           {files.map((file, index) => {
             const active = selectedCode?.path === file.path;
-            return <button key={file.path} type="button" role="treeitem" aria-selected={active} tabIndex={active || (!selectedCode && index === 0) ? 0 : -1} onKeyDown={(event) => focusFile(event, index)} onClick={() => setOutputFilePath(file.path)} className={`flex min-h-8 w-full items-center gap-1 truncate rounded px-2 text-left font-mono text-[10px] ${active ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}><CaretRight size={10} className="shrink-0 opacity-50" /><span className="truncate">{file.path}</span></button>;
+            const separator = file.path.lastIndexOf("/");
+            const fileName = separator === -1 ? file.path : file.path.slice(separator + 1);
+            const directory = separator === -1 ? null : file.path.slice(0, separator);
+            return <button key={file.path} type="button" role="treeitem" aria-selected={active} aria-label={file.path} title={file.path} tabIndex={active || (!selectedCode && index === 0) ? 0 : -1} onKeyDown={(event) => focusFile(event, index)} onClick={() => setOutputFilePath(file.path)} className={`grid min-h-8 w-full grid-cols-[10px_minmax(0,1fr)] items-center gap-1.5 rounded-[4px] px-2 text-left font-mono ${active ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}><CaretRight size={10} className="shrink-0 opacity-50" /><span className="min-w-0"><span className="block truncate text-[10px] leading-[13px]">{fileName}</span>{directory ? <span className={`block truncate text-[8px] leading-[11px] ${active ? "text-[var(--accent-text)]/60" : "text-[var(--faint)]"}`}>{directory}</span> : null}</span></button>;
           })}
         </nav>
 
