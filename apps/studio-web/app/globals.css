@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* Map the Tailwind font utilities onto the loaded Geist faces so font-sans
+   and font-mono never fall back to system stacks in the editor chrome. */
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
 :root {
   color-scheme: light;
 
@@ -242,6 +249,31 @@ html[data-intentform-minimal-ui] .studio-topbar {
   border-radius: 8px;
   box-shadow: var(--if-shadow-menu);
 }
+
+/* Quiet range controls: a thin track and compact thumb instead of the
+   default browser widget, keeping real <input type=range> semantics. */
+.if-range {
+  appearance: none;
+  height: 14px;
+  background: transparent;
+  cursor: pointer;
+}
+.if-range::-webkit-slider-runnable-track { height: 3px; border-radius: 2px; background: var(--if-border-strong); }
+.if-range::-webkit-slider-thumb {
+  appearance: none;
+  margin-top: -4.5px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid var(--if-border-strong);
+  background: var(--if-raised);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 25%);
+  transition: border-color 120ms ease;
+}
+.if-range:hover::-webkit-slider-thumb, .if-range:focus-visible::-webkit-slider-thumb { border-color: var(--if-blue); }
+.if-range::-moz-range-track { height: 3px; border-radius: 2px; background: var(--if-border-strong); }
+.if-range::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--if-border-strong); background: var(--if-raised); }
+.if-range:disabled { cursor: default; opacity: .5; }
 
 /* Premium native selects: custom caret and quiet chrome while keeping real
    <select> semantics for accessibility and tests. */

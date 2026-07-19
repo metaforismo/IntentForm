@@ -1937,7 +1937,7 @@ try {
       await surfacePage.getByRole("button", { name: "Native outputs" }).click();
       const codeWorkspace = surfacePage.getByTestId("code-workspace");
       await codeWorkspace.waitFor();
-      const activeTarget = codeWorkspace.getByRole("button", { name: "react", exact: true });
+      const activeTarget = codeWorkspace.getByRole("button", { name: "React", exact: true });
       if (await activeTarget.getAttribute("data-state") !== "active") throw new Error("Code target tabs do not use the shared active state");
 
       await surfacePage.getByRole("button", { name: "Verification" }).click();

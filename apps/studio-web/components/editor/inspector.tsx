@@ -489,10 +489,10 @@ export function Inspector({
                 {selectedNode.asset.fit === "cover" ? (
                   <div className="grid gap-2 rounded-lg border border-[var(--line)] bg-[var(--field)] p-2.5">
                     <label className="grid gap-1 text-[10px] font-medium text-[var(--muted)]">Horizontal focal point
-                      <input type="range" min={0} max={1} step={0.01} value={selectedNode.asset.focalPoint.x} disabled={Boolean(componentContext)} onChange={(event) => updateNode((node) => { if (node.asset) node.asset.focalPoint.x = Number(event.target.value); }, "Adjusted asset crop focal point.")} className="w-full accent-[var(--accent)]" />
+                      <input type="range" min={0} max={1} step={0.01} value={selectedNode.asset.focalPoint.x} disabled={Boolean(componentContext)} onChange={(event) => updateNode((node) => { if (node.asset) node.asset.focalPoint.x = Number(event.target.value); }, "Adjusted asset crop focal point.")} className="if-range w-full accent-[var(--accent)]" />
                     </label>
                     <label className="grid gap-1 text-[10px] font-medium text-[var(--muted)]">Vertical focal point
-                      <input type="range" min={0} max={1} step={0.01} value={selectedNode.asset.focalPoint.y} disabled={Boolean(componentContext)} onChange={(event) => updateNode((node) => { if (node.asset) node.asset.focalPoint.y = Number(event.target.value); }, "Adjusted asset crop focal point.")} className="w-full accent-[var(--accent)]" />
+                      <input type="range" min={0} max={1} step={0.01} value={selectedNode.asset.focalPoint.y} disabled={Boolean(componentContext)} onChange={(event) => updateNode((node) => { if (node.asset) node.asset.focalPoint.y = Number(event.target.value); }, "Adjusted asset crop focal point.")} className="if-range w-full accent-[var(--accent)]" />
                     </label>
                   </div>
                 ) : null}
