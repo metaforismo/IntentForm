@@ -9,14 +9,20 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   graphPatchSchema,
+  stableSerialize,
   type GraphPatch,
   type SemanticChange,
 } from "@intentform/semantic-schema";
 import type { VerificationFinding } from "@intentform/verifier";
+import { loadProject } from "./store.ts";
 import { applyPatch, type MutationResult } from "./tools.ts";
+
+export function projectGraphDigest(projectDir: string): string {
+  return createHash("sha256").update(stableSerialize(loadProject(projectDir).graph)).digest("hex");
+}
 
 const REVIEW_FILE = "transaction-reviews.json";
 const REVIEW_LOCK = ".transaction-reviews.lock";
@@ -33,6 +39,10 @@ interface StoredTransactionReview {
   expiresAt: string;
   resolvedAt: string | null;
   baseFingerprint: string;
+  /** Full sha256 of the serialized base graph. The 8-hex fingerprint is a
+      display label with a searchable 32-bit space; commits verify this
+      digest so a fingerprint collision cannot smuggle a different base. */
+  baseDigest?: string | null;
   previewFingerprint: string;
   status: Exclude<TransactionReviewStatus, "expired">;
   patch: GraphPatch;
@@ -76,6 +86,7 @@ function validReview(input: unknown): input is StoredTransactionReview {
     && typeof review.expiresAt === "string"
     && (review.resolvedAt === null || typeof review.resolvedAt === "string")
     && typeof review.baseFingerprint === "string"
+    && (review.baseDigest === undefined || review.baseDigest === null || /^[a-f0-9]{64}$/.test(review.baseDigest))
     && typeof review.previewFingerprint === "string"
     && (review.commentId === undefined || review.commentId === null || typeof review.commentId === "string")
     && (review.historyOperationId === undefined || review.historyOperationId === null || typeof review.historyOperationId === "string")
@@ -178,6 +189,9 @@ export function commitTransactionReview(
       throw new Error("Agent transaction review fingerprint conflict.");
     }
     try {
+      if (review.baseDigest && projectGraphDigest(projectDir) !== review.baseDigest) {
+        throw new Error("Agent transaction review fingerprint conflict: the project content changed since the reviewed base.");
+      }
       const committed = applyPatch(projectDir, review.patch, review.baseFingerprint);
       if (committed.fingerprint !== review.previewFingerprint) {
         throw new Error("Committed output did not match the reviewed transaction preview.");

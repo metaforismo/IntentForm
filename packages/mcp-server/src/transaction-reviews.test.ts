@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -111,6 +111,28 @@ describe("persisted agent transaction reviews", () => {
     expect(() => commitTransactionReview(dir, begun.transactionId, previewed.preview.previewFingerprint)).toThrow(/fingerprint conflict/i);
     expect(readTransactionReviews(dir).reviews[0]).toMatchObject({ status: "stale" });
     expect(loadProject(dir).fingerprint).toBe(winner.fingerprint);
+    expect(loadProject(dir).graph.screens[1]?.nodes[3]?.intent.label).toBe("Human");
+  });
+
+  it("rejects a commit whose base content differs even when the short fingerprint matches", () => {
+    const transactions = new SemanticTransactionService();
+    const before = loadProject(dir);
+    const begun = transactions.begin(dir, "session-a", before.fingerprint, "Collision guard");
+    const previewed = transactions.preview(dir, "session-a", begun.transactionId, patch("review.collision", "Agent"));
+    const winner = applyPatch(dir, patch("review.winner", "Human"), before.fingerprint);
+
+    // Simulate a 32-bit fingerprint collision: the stored review claims the
+    // current fingerprint as its base while its recorded sha256 digest still
+    // describes the original graph content.
+    const reviewFile = JSON.parse(readFileSync(join(dir, "transaction-reviews.json"), "utf8")) as {
+      entries: Array<{ baseFingerprint: string; baseDigest?: string }>;
+    };
+    expect(reviewFile.entries[0]?.baseDigest).toMatch(/^[a-f0-9]{64}$/);
+    reviewFile.entries[0]!.baseFingerprint = winner.fingerprint;
+    writeFileSync(join(dir, "transaction-reviews.json"), JSON.stringify(reviewFile), { mode: 0o600 });
+
+    expect(() => commitTransactionReview(dir, begun.transactionId, previewed.preview.previewFingerprint))
+      .toThrow(/project content changed since the reviewed base/i);
     expect(loadProject(dir).graph.screens[1]?.nodes[3]?.intent.label).toBe("Human");
   });
 
