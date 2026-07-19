@@ -432,6 +432,18 @@ export function browserProjectCatalog(): BrowserProjectCatalogDatabase {
             transaction.abort();
             return { ok: false, code: "missing", message: "This project no longer exists in the browser catalog." };
           }
+          const others = (await requestResult(store.getAll())) as unknown[];
+          const collides = others.some((value) => {
+            const record = value as { id?: unknown; name?: unknown; archivedAt?: unknown };
+            return record.id !== id
+              && !record.archivedAt
+              && typeof record.name === "string"
+              && record.name.trim().toLowerCase() === trimmed.toLowerCase();
+          });
+          if (collides) {
+            transaction.abort();
+            return { ok: false, code: "conflict", message: `Another project is already named “${trimmed}”. Choose a distinct name.` };
+          }
           const graph = structuredClone(current.graph);
           graph.product.name = trimmed;
           const project = nextCatalogProject(current, graph, current.workspace, now);

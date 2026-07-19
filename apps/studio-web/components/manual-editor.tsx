@@ -445,7 +445,7 @@ export function ManualEditor({
     previousMobilePanel.current = mobilePanel;
     if (mobilePanel) {
       const panelId = mobilePanel === "structure" ? "editor-structure-panel" : "editor-inspector-panel";
-      requestAnimationFrame(() => {
+      const focusFrame = requestAnimationFrame(() => {
         const panel = document.getElementById(panelId);
         const close = panel?.querySelector<HTMLElement>('button[aria-label^="Close"]');
         const first = panel?.querySelector<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled)');
@@ -469,7 +469,10 @@ export function ManualEditor({
         }
       };
       window.addEventListener("keydown", trapFocus);
-      return () => window.removeEventListener("keydown", trapFocus);
+      return () => {
+        cancelAnimationFrame(focusFrame);
+        window.removeEventListener("keydown", trapFocus);
+      };
     }
     if (previous === "structure") structureTriggerRef.current?.focus();
     if (previous === "inspector") inspectorTriggerRef.current?.focus();
@@ -478,15 +481,21 @@ export function ManualEditor({
   useEffect(() => {
     const previous = previousInsertOpen.current;
     previousInsertOpen.current = insertOpen;
-    if (insertOpen) requestAnimationFrame(() => document.querySelector<HTMLElement>('[role="menu"][aria-label="Insert semantic component"] [role="menuitem"]')?.focus());
-    else if (previous) insertTriggerRef.current?.focus();
+    if (insertOpen) {
+      const frame = requestAnimationFrame(() => document.querySelector<HTMLElement>('[role="menu"][aria-label="Insert semantic component"] [role="menuitem"]')?.focus());
+      return () => cancelAnimationFrame(frame);
+    }
+    if (previous) insertTriggerRef.current?.focus();
   }, [insertOpen]);
 
   useEffect(() => {
     const previous = previousZoomOpen.current;
     previousZoomOpen.current = zoomMenuOpen;
-    if (zoomMenuOpen) requestAnimationFrame(() => document.querySelector<HTMLElement>('[role="menu"][aria-label="Choose zoom level"] [role="menuitem"]')?.focus());
-    else if (previous) zoomTriggerRef.current?.focus();
+    if (zoomMenuOpen) {
+      const frame = requestAnimationFrame(() => document.querySelector<HTMLElement>('[role="menu"][aria-label="Choose zoom level"] [role="menuitem"]')?.focus());
+      return () => cancelAnimationFrame(frame);
+    }
+    if (previous) zoomTriggerRef.current?.focus();
   }, [zoomMenuOpen]);
 
   const beginPanelResize = (side: "rail" | "inspector") => (event: React.PointerEvent<HTMLDivElement>) => {

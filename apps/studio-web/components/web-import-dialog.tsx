@@ -99,7 +99,9 @@ function sandboxSource(html: string, css: string): { source: string; removed: nu
   viewport.content = "width=device-width,initial-scale=1";
   parsed.head.append(viewport);
   const authoredStyle = parsed.createElement("style");
-  authoredStyle.textContent = css.replaceAll("</style", "<\\/style");
+  // The closing-tag escape must be case-insensitive: `</STYLE` closes the
+  // element just as `</style` does.
+  authoredStyle.textContent = css.replace(/<\/style/gi, "<\\/style");
   parsed.head.append(authoredStyle);
   return { source: `<!doctype html>${parsed.documentElement.outerHTML}`, removed };
 }

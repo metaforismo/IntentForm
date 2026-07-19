@@ -6,6 +6,24 @@ interface QuotaEntry {
 const sessions = new Map<string, QuotaEntry>();
 let globalEntry: QuotaEntry = { date: "", count: 0 };
 
+/* The session key contains a client-supplied header, so an attacker rotating
+   it must never grow this map without bound. Stale-date entries go first;
+   after that the oldest tracked sessions are dropped (the global daily
+   budget still caps total spend either way). */
+const MAX_TRACKED_SESSIONS = 5_000;
+
+function pruneSessions(date: string): void {
+  if (sessions.size < MAX_TRACKED_SESSIONS) return;
+  for (const [key, entry] of sessions) {
+    if (entry.date !== date) sessions.delete(key);
+  }
+  while (sessions.size >= MAX_TRACKED_SESSIONS) {
+    const oldest = sessions.keys().next().value;
+    if (oldest === undefined) break;
+    sessions.delete(oldest);
+  }
+}
+
 const today = () => new Date().toISOString().slice(0, 10);
 
 const limitFromEnv = (name: string, fallback: number) => {
@@ -35,6 +53,7 @@ export function consumeQuota(sessionId: string): { allowed: boolean; remaining: 
 
   session.count += 1;
   globalEntry.count += 1;
+  pruneSessions(date);
   sessions.set(sessionId, session);
   return { allowed: true, remaining: sessionLimit - session.count };
 }

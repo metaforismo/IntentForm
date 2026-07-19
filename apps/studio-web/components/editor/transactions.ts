@@ -350,7 +350,9 @@ export function editorTransactionError(error: unknown): string {
     : error instanceof Error
       ? error.message
       : "The semantic transaction was invalid";
-  const concise = raw.replace(/\s+/g, " ").trim().slice(0, 240).replace(/[.!?]+$/, "")
+  const bounded = raw.replace(/\s+/g, " ").trim().slice(0, 240);
+  const boundedLast = bounded.charCodeAt(bounded.length - 1);
+  const concise = (boundedLast >= 0xd800 && boundedLast <= 0xdbff ? bounded.slice(0, -1) : bounded).replace(/[.!?]+$/, "")
     || "The semantic transaction was invalid";
   return `Edit rejected: ${concise}. No changes were saved.`;
 }

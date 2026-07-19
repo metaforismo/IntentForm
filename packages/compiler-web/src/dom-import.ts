@@ -74,7 +74,13 @@ export interface DomImportProjection {
 
 const finite = (value: number, fallback = 0) => Number.isFinite(value) ? value : fallback;
 const bounded = (value: number, minimum: number, maximum: number) => Math.min(maximum, Math.max(minimum, finite(value)));
-const text = (value: string, maximum: number) => value.replace(/[\u0000-\u001f\u007f\u2028-\u202e\u2066-\u2069]+/g, " ").replace(/\s+/g, " ").trim().slice(0, maximum);
+const truncateGrapheme = (value: string, maximum: number): string => {
+  const sliced = value.slice(0, maximum);
+  const last = sliced.charCodeAt(sliced.length - 1);
+  // Never cut a surrogate pair in half at the truncation boundary.
+  return last >= 0xd800 && last <= 0xdbff ? sliced.slice(0, -1) : sliced;
+};
+const text = (value: string, maximum: number) => truncateGrapheme(value.replace(/[\u0000-\u001f\u007f\u2028-\u202e\u2066-\u2069]+/g, " ").replace(/\s+/g, " ").trim(), maximum);
 
 function closestToken(tokens: Record<string, number>, value: number, fallback: string): { key: string; exact: boolean } {
   const entries = Object.entries(tokens);

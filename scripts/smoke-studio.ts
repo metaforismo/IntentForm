@@ -590,6 +590,12 @@ try {
 
       await page.getByRole("button", { name: "Project actions for Catalog Beta" }).click();
       await page.getByRole("menuitem", { name: "Rename" }).click();
+      await page.getByLabel("Rename Catalog Beta").fill("Catalog Alpha");
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await page.getByRole("alert").getByText(/already named .*Catalog Alpha/i).waitFor();
+      await page.getByRole("button", { name: "Dismiss launcher error" }).click();
+      await page.getByRole("button", { name: "Project actions for Catalog Beta" }).click();
+      await page.getByRole("menuitem", { name: "Rename" }).click();
       await page.getByLabel("Rename Catalog Beta").fill("Catalog Beta Renamed");
       await page.getByRole("button", { name: "Save", exact: true }).click();
       await page.getByRole("button", { name: /^Catalog Beta Renamed/ }).waitFor();

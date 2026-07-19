@@ -29,5 +29,8 @@ export function formatImportChangeValue(value: unknown, maximum = 180): string {
   const serialized = typeof value === "string" ? value : JSON.stringify(value);
   const normalized = (serialized ?? String(value)).replace(/\s+/g, " ").trim();
   if (normalized.length <= maximum) return normalized;
-  return `${normalized.slice(0, Math.max(0, maximum - 1))}…`;
+  const sliced = normalized.slice(0, Math.max(0, maximum - 1));
+  const last = sliced.charCodeAt(sliced.length - 1);
+  // Never cut a surrogate pair in half at the truncation boundary.
+  return `${last >= 0xd800 && last <= 0xdbff ? sliced.slice(0, -1) : sliced}…`;
 }
