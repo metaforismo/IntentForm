@@ -137,7 +137,9 @@ export function OutputsStage({
     const html = output.files.find((file) => file.path === `html/${webScreen.id}.html`)?.content;
     const css = output.files.find((file) => file.path === "html/styles.css")?.content;
     if (!html || !css) return null;
-    return html.replace('<link rel="stylesheet" href="./styles.css">', `<style>${css.replaceAll("</style", "<\\/style")}</style>`);
+    // The closing-tag escape must be case-insensitive: `</STYLE` closes the
+    // element just as `</style` does.
+    return html.replace('<link rel="stylesheet" href="./styles.css">', `<style>${css.replace(/<\/style/gi, "<\\/style")}</style>`);
   }, [output, outputTarget, webScreen]);
 
   const [parity, setParity] = useState<ParityState>({ status: "not-run" });
@@ -210,8 +212,15 @@ export function OutputsStage({
 
   const paritySource = useMemo(() => {
     if (parity.status !== "running" || !webPreviewSource) return null;
+    // Never probe a different screen than the one the run was started for.
+    if (webScreen?.id !== parity.screenId) return null;
     return injectParityProbe(webPreviewSource, parity.nonce, parity.active.frameId);
-  }, [parity, webPreviewSource]);
+  }, [parity, webPreviewSource, webScreen?.id]);
+
+  useEffect(() => {
+    if (parity.status !== "running") return;
+    if (webScreen?.id !== parity.screenId) setParity({ status: "not-run" });
+  }, [parity, webScreen?.id]);
 
   const parityIsStale = parity.status === "complete"
     && (parity.report.fingerprint !== output?.fingerprint || parity.report.screenId !== webScreen?.id);
@@ -327,7 +336,7 @@ export function OutputsStage({
       return (
         <div className="grid gap-2">
           <span>Not run for the current graph. The check renders the compiled document at {parityViewports.map((viewport) => viewport.label).join(", ") || "each web frame"} and measures every stable node.</span>
-          <button type="button" data-testid="run-runtime-parity" onClick={runRuntimeParity} disabled={!webPreviewSource} className="w-fit rounded-[5px] bg-[var(--accent-deep)] px-2.5 py-1 font-semibold text-white disabled:opacity-40">Run runtime parity</button>
+          <button type="button" data-testid="run-runtime-parity" onClick={runRuntimeParity} disabled={!webPreviewSource || parityViewports.length === 0} className="w-fit rounded-[5px] bg-[var(--accent-deep)] px-2.5 py-1 font-semibold text-white disabled:opacity-40">Run runtime parity</button>
         </div>
       );
     }
@@ -350,7 +359,7 @@ export function OutputsStage({
           <span className="hidden font-mono lg:inline" aria-live="polite">{outputTarget === "react" && reactOutput ? `${previewStatus === "ready" ? "Current" : previewStatus === "error" ? "Failed" : "Syncing"} · ${reactOutput.fingerprint}` : output ? `Generated · ${output.fingerprint}` : "Not generated"}</span>
           <span data-testid="code-build-state" data-state={build.state} className="inline-flex items-center gap-1.5 px-1 font-semibold"><span aria-hidden="true" className={`size-1.5 rounded-full ${build.state === "current" ? "bg-[var(--success)]" : build.state === "failed" ? "bg-[var(--danger)]" : "bg-[var(--warn)]"}`} />{build.label}</span>
           {build.canCancel ? <button type="button" disabled={localPreviews.pendingTarget === previewTarget} onClick={() => void localPreviews.mutate("cancel", previewTarget)} className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-[var(--warn)]/35 px-2.5 text-[10px] font-semibold text-[var(--warn)] hover:bg-[var(--warn-soft)] disabled:opacity-40">Cancel build</button> : <button type="button" disabled={!build.canStart} onClick={() => void localPreviews.mutate(previewEvidence ? "restart" : "start", previewTarget)} className="inline-flex h-7 items-center gap-1 rounded-[5px] bg-[var(--accent-deep)] px-2.5 text-[10px] font-semibold text-white hover:brightness-105 disabled:opacity-40"><Play size={11} /> {previewEvidence ? "Rebuild" : "Build"}</button>}
-          {outputTarget === "web" ? <button type="button" onClick={runRuntimeParity} disabled={!webPreviewSource || parity.status === "running"} title="Measure the rendered document against semantic intent" className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-[var(--line)] bg-[var(--field)] px-2 text-[10px] font-semibold hover:bg-[var(--hover)] disabled:opacity-40"><CheckCircle size={11} /> {parity.status === "running" ? "Measuring…" : "Runtime parity"}</button> : null}
+          {outputTarget === "web" ? <button type="button" onClick={runRuntimeParity} disabled={!webPreviewSource || parityViewports.length === 0 || parity.status === "running"} title="Measure the rendered document against semantic intent" className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-[var(--line)] bg-[var(--field)] px-2 text-[10px] font-semibold hover:bg-[var(--hover)] disabled:opacity-40"><CheckCircle size={11} /> {parity.status === "running" ? "Measuring…" : "Runtime parity"}</button> : null}
           {outputTarget === "web" ? <button type="button" onClick={() => setWebImportOpen(true)} className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-[var(--line)] bg-[var(--field)] px-2 text-[10px] font-semibold hover:bg-[var(--hover)]"><UploadSimple size={11} /> Import HTML/CSS</button> : null}
           <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-[var(--line)]" />
           <button type="button" disabled={!selectedCode} onClick={copyGeneratedFile} aria-label={copied ? `Copied ${outputTarget} file` : "Copy file"} title={selectedCode && output ? `Copy ${outputTarget} · ${selectedCode.path} · ${output.fingerprint}` : "Copy file"} className="grid size-7 place-items-center rounded-[5px] text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)] disabled:opacity-40">{copied ? <CheckCircle size={12} className="text-[var(--success)]" /> : <Copy size={12} />}</button>

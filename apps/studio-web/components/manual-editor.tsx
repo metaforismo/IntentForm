@@ -1358,34 +1358,48 @@ export function ManualEditor({
     commitDraft(draft, `Set ${target.title} as the prototype start screen.`);
   }, [commitDraft, graph]);
 
+  /* Rapid prototype navigation must not queue stale fitScreen frames that
+     land out of order and snap the camera back; only the latest wins. */
+  const prototypeFitFrame = useRef<number | null>(null);
+  const scheduleFitScreen = useCallback((screenId: string) => {
+    if (prototypeFitFrame.current !== null) cancelAnimationFrame(prototypeFitFrame.current);
+    prototypeFitFrame.current = requestAnimationFrame(() => {
+      prototypeFitFrame.current = null;
+      canvasApi.current?.fitScreen(screenId, true);
+    });
+  }, []);
+  useEffect(() => () => {
+    if (prototypeFitFrame.current !== null) cancelAnimationFrame(prototypeFitFrame.current);
+  }, []);
+
   useEffect(() => {
     if (previewMode && !previewWasOpen.current) {
       previewOriginScreen.current = selectedScreen;
       previewHistory.current = [];
       if (selectedScreen !== graph.prototype.startScreenId) {
         onSelectScreen(graph.prototype.startScreenId);
-        requestAnimationFrame(() => canvasApi.current?.fitScreen(graph.prototype.startScreenId, true));
+        scheduleFitScreen(graph.prototype.startScreenId);
       }
     } else if (!previewMode && previewWasOpen.current) {
       const origin = previewOriginScreen.current;
       if (selectedScreen === graph.prototype.startScreenId && origin !== selectedScreen && graph.screens.some((item) => item.id === origin)) {
         onSelectScreen(origin);
-        requestAnimationFrame(() => canvasApi.current?.fitScreen(origin, true));
+        scheduleFitScreen(origin);
       }
     }
     previewWasOpen.current = previewMode;
-  }, [graph.prototype.startScreenId, graph.screens, onSelectScreen, previewMode, selectedScreen]);
+  }, [graph.prototype.startScreenId, graph.screens, onSelectScreen, previewMode, scheduleFitScreen, selectedScreen]);
 
   const runPrototypeAction = useCallback((action: SemanticNode["prototypeActions"][number], sourceScreenId: string) => {
     if (action.type === "navigate" || action.type === "open-overlay") {
       if (!action.targetScreenId) return;
       previewHistory.current.push(sourceScreenId);
       onSelectScreen(action.targetScreenId);
-      requestAnimationFrame(() => canvasApi.current?.fitScreen(action.targetScreenId!, true));
+      scheduleFitScreen(action.targetScreenId);
     } else if (action.type === "back" || action.type === "close-overlay") {
       const target = previewHistory.current.pop() ?? graph.prototype.startScreenId;
       onSelectScreen(target);
-      requestAnimationFrame(() => canvasApi.current?.fitScreen(target, true));
+      scheduleFitScreen(target);
     } else if (action.type === "change-state" && action.state) {
       setVisualStateByScreen((current) => ({ ...current, [sourceScreenId]: action.state! }));
     } else if (action.type === "scroll-to" && action.targetNodeId) {
@@ -1394,7 +1408,7 @@ export function ManualEditor({
       window.open(action.url, "_blank", "noopener,noreferrer");
     }
     onNotice(`${action.type.replaceAll("-", " ")} · ${action.transition.type}${action.transition.durationMs ? ` · ${action.transition.durationMs}ms` : ""}`);
-  }, [graph.prototype.startScreenId, onNotice, onSelectScreen]);
+  }, [graph.prototype.startScreenId, onNotice, onSelectScreen, scheduleFitScreen]);
 
   const createReviewThread = useCallback((anchor: SemanticInterfaceGraph["reviewThreads"][number]["anchor"], body: string) => {
     const draft = structuredClone(graph);

@@ -379,6 +379,10 @@ export function browserProjectCatalog(): BrowserProjectCatalogDatabase {
               transaction.abort();
               return { ok: false, code: "missing", message: "This project no longer exists in the browser catalog." };
             }
+            if (current.archivedAt) {
+              transaction.abort();
+              return { ok: false, code: "conflict", message: "This project was archived in another window. Restore it or keep these edits as a copy." };
+            }
             if (current.revision !== expectedRevision) {
               transaction.abort();
               return { ok: false, code: "conflict", message: "This project changed in another window. Reopen it before saving." };

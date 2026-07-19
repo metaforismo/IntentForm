@@ -773,6 +773,40 @@ try {
       if (await reloadedLabel.inputValue() !== "Window one commit") {
         throw new Error("Conflict reload did not adopt the other window's committed revision");
       }
+
+      // Archiving in another window must surface as an explicit archived
+      // conflict with a restore path — never silent saves into the archive.
+      await catalogPage.getByRole("button", { name: "Project actions for Concurrent Catalog" }).click();
+      await catalogPage.getByRole("menuitem", { name: "Archive" }).click();
+      await catalogPage.getByRole("button", { name: /^Concurrent Catalog/ }).waitFor({ state: "detached" });
+
+      await reloadedLabel.fill("Post archive edit");
+      await reloadedLabel.press("Enter");
+      await secondPage.waitForTimeout(900);
+      await secondPage.getByTestId("catalog-conflict-actions").waitFor();
+      await secondPage.getByRole("status").getByText(/archived in another window/i).waitFor();
+      await secondPage.getByRole("button", { name: "Restore project" }).click();
+      await secondPage.getByTestId("catalog-conflict-actions").waitFor({ state: "detached" });
+      await catalogPage.getByRole("button", { name: /^Concurrent Catalog/ }).waitFor();
+      const restoredState = await secondPage.evaluate(async ({ id, nodeId }) => {
+        const database = await new Promise<IDBDatabase>((resolve, reject) => {
+          const request = indexedDB.open("intentform-project-catalog", 1);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        const project = await new Promise<{ archivedAt?: string | null; graph: { screens: Array<{ nodes: Array<{ id: string; intent?: { label?: string } }> }> } }>((resolve, reject) => {
+          const request = database.transaction("projects", "readonly").objectStore("projects").get(id);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        database.close();
+        return {
+          archivedAt: project.archivedAt ?? null,
+          label: project.graph.screens.flatMap((screen) => screen.nodes).find((node) => node.id === nodeId)?.intent?.label,
+        };
+      }, identity);
+      if (restoredState.archivedAt !== null) throw new Error("Restore did not clear the archived state");
+      if (restoredState.label !== "Post archive edit") throw new Error(`Restore did not persist the pending edit: ${restoredState.label}`);
       await catalogPage.close();
       await secondPage.close();
     },

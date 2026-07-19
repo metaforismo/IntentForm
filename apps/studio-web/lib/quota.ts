@@ -11,11 +11,17 @@ let globalEntry: QuotaEntry = { date: "", count: 0 };
    after that the oldest tracked sessions are dropped (the global daily
    budget still caps total spend either way). */
 const MAX_TRACKED_SESSIONS = 5_000;
+let lastSweepDate = "";
 
 function pruneSessions(date: string): void {
   if (sessions.size < MAX_TRACKED_SESSIONS) return;
-  for (const [key, entry] of sessions) {
-    if (entry.date !== date) sessions.delete(key);
+  // The full stale-date sweep runs at most once per day, so a client
+  // rotating its session header cannot force an O(cap) scan per request.
+  if (lastSweepDate !== date) {
+    lastSweepDate = date;
+    for (const [key, entry] of sessions) {
+      if (entry.date !== date) sessions.delete(key);
+    }
   }
   while (sessions.size >= MAX_TRACKED_SESSIONS) {
     const oldest = sessions.keys().next().value;

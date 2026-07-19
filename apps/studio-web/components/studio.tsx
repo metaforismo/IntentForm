@@ -419,10 +419,24 @@ export function Studio() {
   /* A revision conflict from another window is recoverable in place: adopt
      the other window's revision, or keep this window's edits as a new
      project. Both paths leave the catalog head untouched until chosen. */
-  const resolveCatalogConflict = async (resolution: "reload" | "copy") => {
+  const resolveCatalogConflict = async (resolution: "reload" | "copy" | "restore") => {
     const conflict = catalogConflict;
     if (!conflict) return;
     setCatalogConflict(null);
+    if (resolution === "restore") {
+      const restored = await browserProjectCatalog().archive(conflict.id, false);
+      if (!restored.ok) {
+        setNotice(restored.message);
+        setCatalogConflict(conflict);
+        return;
+      }
+      catalogProjectRef.current = restored.project;
+      setCatalogProject(restored.project);
+      setCatalogSaveState("dirty");
+      setNotice(`Restored ${restored.project.name} from the archive. Your edits in this window will save to it.`);
+      void flushCatalogSave();
+      return;
+    }
     if (resolution === "reload") {
       const restored = conflict.graph;
       const restoredWorkspace = normalizeWorkspaceState(restored, conflict.workspace);
@@ -613,7 +627,7 @@ export function Studio() {
   }, [catalogProject, catalogSavedSnapshot, draftReady]);
 
   useEffect(() => {
-    if (/failed|could not|invalid|quota|unavailable|rejected|ignored|unsupported|changed in another window/i.test(notice)) setNoticeOpen(true);
+    if (/failed|could not|invalid|quota|unavailable|rejected|ignored|unsupported|(changed|archived) in another window/i.test(notice)) setNoticeOpen(true);
   }, [notice]);
 
   useEffect(() => {
@@ -1455,9 +1469,13 @@ export function Studio() {
                   <div role="status" aria-live="polite" className="border-b border-[var(--line)] p-3 text-[12px] leading-relaxed text-[var(--ink)]">{notice}</div>
                   {catalogConflict ? (
                     <div className="border-b border-[var(--line)] p-2.5" data-testid="catalog-conflict-actions">
-                      <p className="text-[10.5px] leading-relaxed text-[var(--muted)]">Another window saved revision r{catalogConflict.revision}. Choose how to continue; nothing is overwritten until you decide.</p>
+                      <p className="text-[10.5px] leading-relaxed text-[var(--muted)]">{catalogConflict.archivedAt
+                        ? "This project was archived in another window. Choose how to continue; nothing is overwritten until you decide."
+                        : `Another window saved revision r${catalogConflict.revision}. Choose how to continue; nothing is overwritten until you decide.`}</p>
                       <div className="mt-2 flex flex-wrap gap-1.5">
-                        <button type="button" onClick={() => void resolveCatalogConflict("reload")} className="inline-flex h-7 items-center rounded-[5px] bg-[var(--accent-deep)] px-2.5 text-[10.5px] font-semibold text-white hover:brightness-105">Reload latest revision</button>
+                        {catalogConflict.archivedAt
+                          ? <button type="button" onClick={() => void resolveCatalogConflict("restore")} className="inline-flex h-7 items-center rounded-[5px] bg-[var(--accent-deep)] px-2.5 text-[10.5px] font-semibold text-white hover:brightness-105">Restore project</button>
+                          : <button type="button" onClick={() => void resolveCatalogConflict("reload")} className="inline-flex h-7 items-center rounded-[5px] bg-[var(--accent-deep)] px-2.5 text-[10.5px] font-semibold text-white hover:brightness-105">Reload latest revision</button>}
                         <button type="button" onClick={() => void resolveCatalogConflict("copy")} className="inline-flex h-7 items-center rounded-[5px] border border-[var(--line)] px-2.5 text-[10.5px] font-semibold text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]">Save my edits as a copy</button>
                       </div>
                     </div>
