@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowRight, ClockCounterClockwise, FileArrowUp, FolderOpen, HardDrives, Robot, SlidersHorizontal } from "@phosphor-icons/react";
+import { ArrowRight, Check, ClockCounterClockwise, Copy, FileArrowUp, FolderOpen, HardDrives, Robot, SlidersHorizontal } from "@phosphor-icons/react";
+import { useEffect, useRef, useState } from "react";
 import type { BrowserCatalogProject } from "../lib/browser-project-catalog";
 import type { CatalogFilters, CatalogSort } from "../lib/launcher-model";
 import type { LauncherPreferences } from "../lib/launcher-preferences";
@@ -41,8 +42,89 @@ export function LauncherHome({ projects, bridge, storageEstimate, onOpen, onOpen
   </div>;
 }
 
+const AGENT_CLIENTS = [
+  { id: "codex", label: "Codex", transport: "stdio", command: "pnpm mcp:install --client codex --print" },
+  { id: "claude", label: "Claude Code", transport: "stdio", command: "pnpm mcp:install --client claude --print" },
+  { id: "opencode", label: "OpenCode", transport: "stdio", command: "pnpm mcp:install --client opencode --print" },
+  { id: "pi", label: "Pi", transport: "stdio", command: "pnpm mcp:install --client pi --print" },
+  { id: "generic", label: "Generic MCP", transport: "loopback HTTP", command: "INTENTFORM_MCP_TOKEN=<32+ chars> pnpm mcp:http" },
+] as const;
+
+const FIRST_SAFE_TASK = `Inspect the selected primary action.
+Propose a compact-safe placement.
+Do not change text or colors.`;
+
+function CopyValue({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<number | null>(null);
+  useEffect(() => () => { if (timer.current !== null) window.clearTimeout(timer.current); }, []);
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={() => {
+        void navigator.clipboard.writeText(value).then(() => {
+          setCopied(true);
+          if (timer.current !== null) window.clearTimeout(timer.current);
+          timer.current = window.setTimeout(() => setCopied(false), 1400);
+        }).catch(() => setCopied(false));
+      }}
+      className="inline-flex h-6 shrink-0 items-center gap-1 rounded-[4px] border border-[var(--if-border)] px-1.5 text-[9.5px] font-semibold text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)] hover:text-[var(--if-text)]"
+    >
+      {copied ? <Check size={10} /> : <Copy size={10} />}{copied ? "Copied" : "Copy"}
+    </button>
+  );
+}
+
 export function LauncherAgents({ bridge }: { bridge: BridgeStatus }) {
-  return <section className="max-w-4xl" aria-labelledby="agents-title"><div className="mb-4"><h2 id="agents-title" className="text-[13px] font-medium">Connected agents</h2><p className="mt-1 text-[11px] text-[var(--if-text-secondary)]">Local MCP clients receive semantic project access only; no arbitrary shell, filesystem escape, or outbound network authority.</p></div><div className="grid gap-3 sm:grid-cols-2">{["Codex", "Claude Code", "OpenCode", "Pi", "Generic MCP"].map((client, index) => <article key={client} className="rounded-lg border border-[var(--if-border)] bg-[var(--if-panel)] p-4"><div className="flex items-center justify-between"><strong className="text-[12px] font-medium">{client}</strong><span className={`size-2 rounded-full ${index === 0 && bridge === "available" ? "bg-[var(--if-green)]" : "bg-[var(--if-text-tertiary)]"}`} /></div><p className="mt-2 text-[10px] text-[var(--if-text-secondary)]">{index === 0 && bridge === "available" ? "Available through the current local bridge · reviewed writes" : "Not connected · installer configuration available in the project workspace"}</p></article>)}</div></section>;
+  return (
+    <section className="max-w-4xl" aria-labelledby="agents-title">
+      <div className="mb-4">
+        <h2 id="agents-title" className="text-[13px] font-medium">Connected agents</h2>
+        <p className="mt-1 text-[11px] text-[var(--if-text-secondary)]">Humans and agents edit the same validated semantic graph. New MCP connections are read-only; writes require <code className="font-mono text-[10px]">INTENTFORM_MCP_PERMISSION=write</code> and every accepted change stays fingerprint-bound and reversible.</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {AGENT_CLIENTS.map((client) => {
+          const connected = client.id === "codex" && bridge === "available";
+          return (
+            <article key={client.id} className="rounded-lg border border-[var(--if-border)] bg-[var(--if-panel)] p-3.5">
+              <div className="flex items-center justify-between gap-2">
+                <strong className="text-[12px] font-medium">{client.label}</strong>
+                <span className="inline-flex items-center gap-1.5 text-[9.5px] text-[var(--if-text-secondary)]">
+                  <span className={`size-2 rounded-full ${connected ? "bg-[var(--if-green)]" : "bg-[var(--if-text-tertiary)]"}`} />
+                  {connected ? "Configured · reviewed writes" : "Not configured"}
+                </span>
+              </div>
+              <p className="mt-1.5 text-[10px] text-[var(--if-text-secondary)]">{client.transport} · prints the exact configuration plan without changing your client; add <code className="font-mono">--apply</code> after review.</p>
+              <div className="mt-2.5 flex items-center gap-1.5">
+                <code className="min-w-0 flex-1 truncate rounded-[4px] border border-[var(--if-border-subtle)] bg-[var(--if-panel-alt)] px-2 py-1.5 font-mono text-[9.5px] text-[var(--if-text)]">{client.command}</code>
+                <CopyValue value={client.command} label={`Copy ${client.label} setup command`} />
+              </div>
+            </article>
+          );
+        })}
+        <article className="rounded-lg border border-[var(--if-border)] bg-[var(--if-panel)] p-3.5">
+          <div className="flex items-center justify-between gap-2">
+            <strong className="text-[12px] font-medium">First safe task</strong>
+            <CopyValue value={FIRST_SAFE_TASK} label="Copy the first safe agent task" />
+          </div>
+          <p className="mt-1.5 text-[10px] text-[var(--if-text-secondary)]">Paste into a connected agent. The proposal arrives as a previewable transaction you commit or reject in Studio.</p>
+          <pre className="mt-2.5 whitespace-pre-wrap rounded-[4px] border border-[var(--if-border-subtle)] bg-[var(--if-panel-alt)] px-2 py-1.5 font-mono text-[9.5px] leading-relaxed text-[var(--if-text)]">{FIRST_SAFE_TASK}</pre>
+        </article>
+      </div>
+      <section className="mt-4 rounded-lg border border-[var(--if-border)] bg-[var(--if-panel)] p-3.5" aria-labelledby="agents-troubleshooting-title">
+        <h3 id="agents-troubleshooting-title" className="text-[11px] font-medium">Troubleshooting</h3>
+        <ul className="mt-2 grid gap-1.5 text-[10px] leading-relaxed text-[var(--if-text-secondary)] sm:grid-cols-2">
+          <li><strong className="font-medium text-[var(--if-text)]">Agent bridge {bridge}.</strong> Browser-only projects have no MCP endpoint; open a local .intentform project (desktop app or repository checkout) to expose one.</li>
+          <li><strong className="font-medium text-[var(--if-text)]">Connection test is read-only.</strong> Ask the agent to call intentform_describe_project; it reports the project and fingerprint without changing anything.</li>
+          <li><strong className="font-medium text-[var(--if-text)]">Writes are rejected?</strong> The server defaults to read-only. Set INTENTFORM_MCP_PERMISSION=write in the client environment after reviewing the plan.</li>
+          <li><strong className="font-medium text-[var(--if-text)]">HTTP transport refuses connections?</strong> It binds to 127.0.0.1 only and requires INTENTFORM_MCP_TOKEN (32–512 chars) as a bearer token.</li>
+          <li><strong className="font-medium text-[var(--if-text)]">Wrong project opens?</strong> Pass --project /absolute/path to the installer, or set INTENTFORM_PROJECT_DIR for the server process.</li>
+          <li><strong className="font-medium text-[var(--if-text)]">Stale fingerprint conflicts?</strong> That is the concurrency guard working: the agent re-reads the project and proposes against the current fingerprint.</li>
+        </ul>
+      </section>
+    </section>
+  );
 }
 
 export function LauncherBuilds({ projects, onOpen }: { projects: BrowserCatalogProject[]; onOpen(project: BrowserCatalogProject): void }) {

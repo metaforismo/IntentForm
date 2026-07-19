@@ -236,7 +236,28 @@ export function AgentActivityPanel({
   };
 
   if (!enabled) {
-    return <p className="p-4 text-[11px] leading-relaxed text-[var(--muted)]">Open a local .intentform project to review MCP access and proposed transactions.</p>;
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto p-3">
+        <div className="rounded-[6px] border border-[var(--line)] bg-[var(--field)] p-3">
+          <h3 className="text-[11px] font-semibold">No agent endpoint for this project</h3>
+          <p className="mt-1.5 text-[10.5px] leading-relaxed text-[var(--muted)]">Browser-only projects have no local MCP endpoint. Open a local .intentform project — through the desktop app or a repository checkout — and this panel reviews every proposed transaction before it can touch the graph.</p>
+        </div>
+        <div className="mt-3 rounded-[6px] border border-[var(--line)] p-3">
+          <h4 className="text-[10px] font-semibold uppercase tracking-[.1em] text-[var(--faint)]">Connect a client</h4>
+          <p className="mt-1.5 text-[10.5px] leading-relaxed text-[var(--muted)]">From the repository root, print a configuration plan without changing your client:</p>
+          <pre className="mt-2 overflow-x-auto rounded-[4px] border border-[var(--line)] bg-[var(--chip)] px-2 py-1.5 font-mono text-[9.5px] leading-relaxed">{`pnpm mcp:install --client codex --print
+pnpm mcp:install --client claude --print
+pnpm mcp:install --client opencode --print`}</pre>
+          <p className="mt-2 text-[10px] leading-relaxed text-[var(--faint)]">New connections are read-only; semantic writes require INTENTFORM_MCP_PERMISSION=write and arrive here as previewable, fingerprint-bound transactions.</p>
+        </div>
+        <div className="mt-3 rounded-[6px] border border-[var(--line)] p-3">
+          <h4 className="text-[10px] font-semibold uppercase tracking-[.1em] text-[var(--faint)]">First safe task</h4>
+          <pre className="mt-2 whitespace-pre-wrap rounded-[4px] border border-[var(--line)] bg-[var(--chip)] px-2 py-1.5 font-mono text-[9.5px] leading-relaxed">{`Inspect the selected primary action.
+Propose a compact-safe placement.
+Do not change text or colors.`}</pre>
+        </div>
+      </div>
+    );
   }
 
   return (
