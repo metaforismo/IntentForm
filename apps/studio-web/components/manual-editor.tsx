@@ -1566,7 +1566,7 @@ export function ManualEditor({
       }
       if (modifier && key === "k") {
         event.preventDefault();
-        setCommandOpen((open) => !open);
+        setInsertOpen(false); setZoomMenuOpen(false); setGuideMenuOpen(false); setCommandOpen((open) => !open);
         setCommandQuery("");
         return;
       }
@@ -1833,12 +1833,12 @@ export function ManualEditor({
           </div>
         ) : null}
         onTool={(nextTool) => { setTool(nextTool); if (nextTool === "comment") { setReviewOpen(true); setActiveReviewThreadId(null); } }}
-        onInsert={() => setInsertOpen((open) => !open)}
+        onInsert={() => { setZoomMenuOpen(false); setGuideMenuOpen(false); setInsertOpen((open) => !open); }}
         onUndo={onUndo}
         onRedo={onRedo}
         onStructure={() => toggleEditorPanel("structure")}
         onInspector={() => toggleEditorPanel("inspector")}
-        onCommands={() => { setCommandOpen((open) => !open); setCommandQuery(""); }}
+        onCommands={() => { setInsertOpen(false); setZoomMenuOpen(false); setGuideMenuOpen(false); setCommandOpen((open) => !open); setCommandQuery(""); }}
         onMinimalUi={() => { setMinimalUi((current) => !current); setMobilePanel(null); }}
       />
 
@@ -2005,7 +2005,7 @@ export function ManualEditor({
             >
               <Stack size={13} /> Layers
             </button>
-            <button type="button" aria-label="Open command menu" title="Commands · ⌘K" aria-expanded={commandOpen} onClick={() => { setCommandOpen((open) => !open); setCommandQuery(""); }} className={floatingButton}>
+            <button type="button" aria-label="Open command menu" title="Commands · ⌘K" aria-expanded={commandOpen} onClick={() => { setInsertOpen(false); setZoomMenuOpen(false); setGuideMenuOpen(false); setCommandOpen((open) => !open); setCommandQuery(""); }} className={floatingButton}>
               <Command size={13} /> <span className="hidden 2xl:inline">Commands</span><kbd className="ml-0.5 hidden rounded border border-[var(--line)] bg-[var(--chip)] px-1 font-mono text-[10px] text-[var(--faint)] 2xl:inline">⌘K</kbd>
             </button>
           </div>
@@ -2032,7 +2032,7 @@ export function ManualEditor({
             <button type="button" aria-label="Redo" disabled={!canRedo} onClick={onRedo} className="grid size-7 place-items-center rounded-[5px] text-[var(--muted)] hover:bg-[var(--hover)] disabled:opacity-25"><ArrowClockwise size={13} /></button>
             <span className="mx-1 h-4 w-px bg-[var(--line)]" />
             <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
-              <button ref={insertTriggerRef} type="button" aria-label="Insert component" aria-expanded={insertOpen} onClick={() => setInsertOpen((open) => !open)} className={`grid size-7 place-items-center rounded-[5px] ${insertOpen ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
+              <button ref={insertTriggerRef} type="button" aria-label="Insert component" aria-expanded={insertOpen} onClick={() => { setZoomMenuOpen(false); setGuideMenuOpen(false); setInsertOpen((open) => !open); }} className={`grid size-7 place-items-center rounded-[5px] ${insertOpen ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
                 <Plus size={13} weight="bold" />
               </button>
               {insertOpen ? (
@@ -2154,7 +2154,7 @@ export function ManualEditor({
             ) : null}
             {!comparisonMode ? <>
             <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
-              <button type="button" aria-label="Guide settings" aria-expanded={guideMenuOpen} title="Rulers and guides" onClick={() => setGuideMenuOpen((open) => !open)} className={`grid size-7 place-items-center rounded-md ${guideMenuOpen || (guidePreferences.visible && screenGuides.length) ? "bg-[var(--if-blue-soft)] text-[var(--if-blue-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}><Ruler size={12} /></button>
+              <button type="button" aria-label="Guide settings" aria-expanded={guideMenuOpen} title="Rulers and guides" onClick={() => { setInsertOpen(false); setZoomMenuOpen(false); setGuideMenuOpen((open) => !open); }} className={`grid size-7 place-items-center rounded-md ${guideMenuOpen || (guidePreferences.visible && screenGuides.length) ? "bg-[var(--if-blue-soft)] text-[var(--if-blue-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}><Ruler size={12} /></button>
               {guideMenuOpen ? <>
                 <button type="button" aria-label="Close guide settings" onClick={() => setGuideMenuOpen(false)} className="fixed inset-0 z-[2] cursor-default" tabIndex={-1} />
                 <div role="dialog" aria-label="Rulers and guides" className="menu-pop absolute bottom-9 right-0 z-[3] w-72 p-2">
@@ -2175,7 +2175,7 @@ export function ManualEditor({
             <button type="button" aria-label="Fit canvas" title="Fit board · 0" onClick={() => canvasApi.current?.fitAll(true)} className="hidden size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] sm:grid"><ArrowsOutSimple size={12} /></button>
             <button type="button" aria-label="Zoom out" onClick={() => canvasApi.current?.zoomBy(0.8)} className="hidden size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] sm:grid"><Minus size={11} /></button>
             <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
-              <button ref={zoomTriggerRef} type="button" aria-label="Zoom level" aria-expanded={zoomMenuOpen} onClick={() => setZoomMenuOpen((open) => !open)} className="min-h-7 w-12 rounded-md text-center font-mono text-[11px] text-[var(--t-strong)] hover:bg-[var(--hover)]">{zoomPct}%</button>
+              <button ref={zoomTriggerRef} type="button" aria-label="Zoom level" aria-expanded={zoomMenuOpen} onClick={() => { setInsertOpen(false); setGuideMenuOpen(false); setZoomMenuOpen((open) => !open); }} className="min-h-7 w-12 rounded-md text-center font-mono text-[11px] text-[var(--t-strong)] hover:bg-[var(--hover)]">{zoomPct}%</button>
               {zoomMenuOpen ? (
                 <div role="menu" aria-label="Choose zoom level" className="menu-pop absolute bottom-9 right-0 z-[3] w-36 p-1">
                   {([
