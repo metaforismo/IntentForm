@@ -739,7 +739,9 @@ try {
       await secondLabel.fill("Window two stale");
       await secondLabel.press("Enter");
       await secondPage.waitForTimeout(900);
-      await secondPage.getByRole("button", { name: "Show workspace status" }).click();
+      // The conflict notice auto-opens the workspace status popover with
+      // recovery actions; clicking the toggle here would close it again.
+      await secondPage.getByTestId("catalog-conflict-actions").waitFor();
       await secondPage.getByRole("status").getByText(/changed in another window/i).waitFor();
 
       const storedLabel = await firstPage.evaluate(async ({ id, nodeId }) => {
@@ -757,6 +759,14 @@ try {
         return project.graph.screens.flatMap((screen) => screen.nodes).find((node) => node.id === nodeId)?.intent?.label;
       }, identity);
       if (storedLabel !== "Window one commit") throw new Error(`Stale window overwrote the catalog head: ${storedLabel}`);
+
+      await secondPage.getByRole("button", { name: "Reload latest revision" }).click();
+      await secondPage.getByTestId("catalog-conflict-actions").waitFor({ state: "detached" });
+      await secondPage.getByTestId(`layer-${identity.nodeId}`).click();
+      const reloadedLabel = secondPage.getByTestId("semantic-inspector").getByLabel("Label", { exact: true });
+      if (await reloadedLabel.inputValue() !== "Window one commit") {
+        throw new Error("Conflict reload did not adopt the other window's committed revision");
+      }
       await catalogPage.close();
       await secondPage.close();
     },

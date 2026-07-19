@@ -246,12 +246,61 @@ function decodeHtmlEntities(value: string): string {
   });
 }
 
+const lineBreakClosers = new Set(["div", "h1", "h2", "h3", "h4", "h5", "h6", "li", "p", "section"]);
+
+/* A regex tag-stripper corrupts legal HTML whose quoted attributes contain
+   ">" (URLs, data-* values). This tokenizer walks tags character by
+   character and honors quotes, comments, and raw script/style content. */
+function textFromMarkup(html: string): string {
+  let out = "";
+  let index = 0;
+  while (index < html.length) {
+    const char = html[index]!;
+    if (char !== "<") {
+      out += char;
+      index += 1;
+      continue;
+    }
+    if (html.startsWith("<!--", index)) {
+      const end = html.indexOf("-->", index + 4);
+      index = end === -1 ? html.length : end + 3;
+      continue;
+    }
+    const tagMatch = /^<\s*(\/?)\s*([a-z][a-z0-9-]*)/i.exec(html.slice(index));
+    let cursor = index + 1;
+    let quote: '"' | "'" | null = null;
+    while (cursor < html.length) {
+      const current = html[cursor]!;
+      if (quote) {
+        if (current === quote) quote = null;
+      } else if (current === '"' || current === "'") {
+        quote = current;
+      } else if (current === ">") {
+        break;
+      }
+      cursor += 1;
+    }
+    index = cursor >= html.length ? html.length : cursor + 1;
+    if (!tagMatch) continue;
+    const closing = tagMatch[1] === "/";
+    const name = tagMatch[2]!.toLowerCase();
+    if (!closing && (name === "script" || name === "style")) {
+      const rawEnd = html.toLowerCase().indexOf(`</${name}`, index);
+      if (rawEnd === -1) {
+        index = html.length;
+      } else {
+        const closeTagEnd = html.indexOf(">", rawEnd);
+        index = closeTagEnd === -1 ? html.length : closeTagEnd + 1;
+      }
+      continue;
+    }
+    if (name === "br" || (closing && lineBreakClosers.has(name))) out += "\n";
+  }
+  return out;
+}
+
 export function plainTextFromHtml(html: string): { text: string; diagnostics: ClipboardDiagnostic[] } {
-  const text = decodeHtmlEntities(html
-    .replace(/<(script|style)\b[^>]*>[\s\S]*?(?:<\/\1>|$)/gi, "")
-    .replace(/<br\s*\/?\s*>/gi, "\n")
-    .replace(/<\/(?:div|h[1-6]|li|p|section)>/gi, "\n")
-    .replace(/<[^>]+>/g, ""))
+  const text = decodeHtmlEntities(textFromMarkup(html))
     .replace(/\r/g, "")
     .replace(/[\t ]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")

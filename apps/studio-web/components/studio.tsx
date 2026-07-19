@@ -66,6 +66,7 @@ import {
   type JudgeStepId,
 } from "../lib/judge-mode";
 import { ManualEditor, type WorkflowStage } from "./manual-editor";
+import { shouldCoalesceCommit, type CommitStamp } from "./editor/commit-coalescing";
 import { reconcileGraphSelection } from "./editor/direct-manipulation";
 import { editorProfiles, type DeviceId, type VisualState } from "./editor/support";
 import { compileStudioTarget } from "./target-compilation";
@@ -194,8 +195,9 @@ export function Studio() {
   const [catalogSaveState, setCatalogSaveState] = useState<"saved" | "dirty" | "saving" | "error">("saved");
   const [workspace, setWorkspace] = useState<BrowserWorkspaceState>(() => defaultWorkspaceState(demoGraph));
   const [judgeSession, setJudgeSession] = useState<JudgeSession | null>(null);
+  const [catalogConflict, setCatalogConflict] = useState<BrowserCatalogProject | null>(null);
   const [pendingTabClose, setPendingTabClose] = useState<BrowserDocumentTab | null>(null);
-  const lastCommit = useRef({ at: 0, notice: "" });
+  const lastCommit = useRef<CommitStamp>({ at: 0, notice: "", anchor: "" });
   const copyResetTimer = useRef<number | null>(null);
   const graphRef = useRef(graph);
   graphRef.current = graph;
@@ -391,7 +393,11 @@ export function Studio() {
       );
       if (!saved.ok) {
         setCatalogSaveState("error");
-        setNoticeText(saved.message);
+        setNotice(saved.message);
+        if (saved.code === "conflict") {
+          const latest = await browserProjectCatalog().get(current.id);
+          if (latest && catalogProjectRef.current?.id === current.id) setCatalogConflict(latest);
+        }
         return false;
       }
       catalogProjectRef.current = saved.project;
@@ -408,6 +414,50 @@ export function Studio() {
       setNoticeText("The durable project save was interrupted. The previous revision remains intact.");
     });
     return next;
+  };
+
+  /* A revision conflict from another window is recoverable in place: adopt
+     the other window's revision, or keep this window's edits as a new
+     project. Both paths leave the catalog head untouched until chosen. */
+  const resolveCatalogConflict = async (resolution: "reload" | "copy") => {
+    const conflict = catalogConflict;
+    if (!conflict) return;
+    setCatalogConflict(null);
+    if (resolution === "reload") {
+      const restored = conflict.graph;
+      const restoredWorkspace = normalizeWorkspaceState(restored, conflict.workspace);
+      const activeDocument = restoredWorkspace.openTabs.find((tab) => tab.id === restoredWorkspace.activeTabId);
+      const activeScreenId = activeDocument?.kind === "screen" ? activeDocument.screenId : restored.screens[0]?.id;
+      const nextScreen = restored.screens.find((screen) => screen.id === activeScreenId) ?? restored.screens[0];
+      setGraph(restored);
+      setBaseline(restored);
+      catalogProjectRef.current = conflict;
+      setCatalogProject(conflict);
+      setCatalogSavedGraph(restored);
+      setCatalogSavedSnapshot(stableSerialize(restored));
+      setCatalogSaveState("saved");
+      setWorkspace(restoredWorkspace);
+      setHistory([]);
+      setFuture([]);
+      lastCommit.current = { at: 0, notice: "", anchor: "" };
+      setSelectedScreen(nextScreen?.id ?? "");
+      setSelectedNodeId(nextScreen?.nodes[0]?.id ?? null);
+      setNotice(`Reloaded ${conflict.name} at revision r${conflict.revision} from the other window.`);
+      return;
+    }
+    const created = await browserProjectCatalog().create(structuredClone(graphRef.current), { projectType, source: "created" });
+    if (!created.ok) {
+      setNotice(created.message);
+      setCatalogConflict(conflict);
+      return;
+    }
+    setActiveBrowserProject(window.localStorage, created.project.id);
+    catalogProjectRef.current = created.project;
+    setCatalogProject(created.project);
+    setCatalogSavedGraph(created.project.graph);
+    setCatalogSavedSnapshot(stableSerialize(created.project.graph));
+    setCatalogSaveState("saved");
+    setNotice(`Saved this window's edits as a separate project. ${conflict.name} keeps the other window's revision.`);
   };
 
   useEffect(() => {
@@ -563,7 +613,7 @@ export function Studio() {
   }, [catalogProject, catalogSavedSnapshot, draftReady]);
 
   useEffect(() => {
-    if (/failed|could not|invalid|quota|unavailable|rejected|ignored|unsupported/i.test(notice)) setNoticeOpen(true);
+    if (/failed|could not|invalid|quota|unavailable|rejected|ignored|unsupported|changed in another window/i.test(notice)) setNoticeOpen(true);
   }, [notice]);
 
   useEffect(() => {
@@ -767,20 +817,17 @@ export function Studio() {
   };
 
   useEffect(() => () => activeRequest.current?.controller.abort(), []);
-  /* Rapid identical edits (dragging a color token) coalesce into one undo
-     step instead of flooding the history. */
   const commitGraph = (nextGraph: SemanticInterfaceGraph, nextNotice: string) => {
     const validated = parseGraph(nextGraph);
-    const now = Date.now();
-    const coalesce = lastCommit.current.notice === nextNotice && now - lastCommit.current.at < 900;
-    if (!coalesce) {
+    const stamp = { at: Date.now(), notice: nextNotice, anchor: `${selectedScreen}:${selectedNodeId ?? ""}` };
+    if (!shouldCoalesceCommit(lastCommit.current, stamp)) {
       setHistory((items) => [...items.slice(-39), graph]);
       setFuture([]);
       setNotice(nextNotice);
     } else {
       setNoticeText(nextNotice);
     }
-    lastCommit.current = { at: now, notice: nextNotice };
+    lastCommit.current = stamp;
     setGraph(validated);
   };
 
@@ -811,7 +858,7 @@ export function Studio() {
     setFuture((items) => [graph, ...items].slice(0, 40));
     setGraph(previous);
     reconcileSelection(previous);
-    lastCommit.current = { at: 0, notice: "" };
+    lastCommit.current = { at: 0, notice: "", anchor: "" };
     setNotice("Undid the last semantic edit.");
   };
 
@@ -822,7 +869,7 @@ export function Studio() {
     setHistory((items) => [...items.slice(-39), graph]);
     setGraph(next);
     reconcileSelection(next);
-    lastCommit.current = { at: 0, notice: "" };
+    lastCommit.current = { at: 0, notice: "", anchor: "" };
     setNotice("Restored the semantic edit.");
   };
 
@@ -834,7 +881,7 @@ export function Studio() {
       reconcileSelection(catalogSavedGraph);
       setHistory([]);
       setFuture([]);
-      lastCommit.current = { at: 0, notice: "" };
+      lastCommit.current = { at: 0, notice: "", anchor: "" };
       setMenuOpen(false);
       setNotice("Reverted the workspace to the last saved revision.");
       return;
@@ -849,7 +896,7 @@ export function Studio() {
     setFuture([]);
     setSelectedScreen("payment-request");
     setSelectedNodeId("payment-request.amount");
-    lastCommit.current = { at: 0, notice: "" };
+    lastCommit.current = { at: 0, notice: "", anchor: "" };
     setMenuOpen(false);
     setNotice("Reset the workspace to the verified sample project.");
   };
@@ -946,7 +993,7 @@ export function Studio() {
         const nextScreen = nextGraph.screens.find((screen) => screen.id === selectedScreen) ?? nextGraph.screens[0];
         setSelectedScreen(nextScreen?.id ?? "");
         setSelectedNodeId(nextScreen?.nodes[0]?.id ?? null);
-        lastCommit.current = { at: 0, notice: "" };
+        lastCommit.current = { at: 0, notice: "", anchor: "" };
         setNotice(result.seeded
           ? "Initialized .intentform/graph.json from the verified sample and opened it."
           : "Opened the local .intentform project. Agent edits are now on the board.");
@@ -1406,6 +1453,15 @@ export function Studio() {
               {noticeOpen ? (
                 <div ref={noticeContent} role="region" aria-label="Workspace status" className="menu-pop absolute right-0 top-10 z-[6] w-[min(320px,calc(100vw-24px))] overflow-hidden">
                   <div role="status" aria-live="polite" className="border-b border-[var(--line)] p-3 text-[12px] leading-relaxed text-[var(--ink)]">{notice}</div>
+                  {catalogConflict ? (
+                    <div className="border-b border-[var(--line)] p-2.5" data-testid="catalog-conflict-actions">
+                      <p className="text-[10.5px] leading-relaxed text-[var(--muted)]">Another window saved revision r{catalogConflict.revision}. Choose how to continue; nothing is overwritten until you decide.</p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <button type="button" onClick={() => void resolveCatalogConflict("reload")} className="inline-flex h-7 items-center rounded-[5px] bg-[var(--accent-deep)] px-2.5 text-[10.5px] font-semibold text-white hover:brightness-105">Reload latest revision</button>
+                        <button type="button" onClick={() => void resolveCatalogConflict("copy")} className="inline-flex h-7 items-center rounded-[5px] border border-[var(--line)] px-2.5 text-[10.5px] font-semibold text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]">Save my edits as a copy</button>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="flex flex-wrap items-center gap-1 border-b border-[var(--line)] p-2"><DesktopControl /><EcosystemControl /><ModeBadge mode={mode} model={model} trace={lastTrace} /></div>
                   {activity.length > 1 ? (
                     <div className="max-h-56 overflow-auto p-1.5">
