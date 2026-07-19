@@ -40,9 +40,16 @@ export function DesktopControl() {
   useEffect(() => {
     const desktop = window.intentformDesktop;
     if (!desktop) return;
+    let active = true;
     setApi(desktop);
-    void desktop.snapshot().then(setSnapshot).catch((cause) => setError(cause instanceof Error ? cause.message : "Desktop status failed."));
-    return desktop.onChanged(setSnapshot);
+    void desktop.snapshot()
+      .then((value) => { if (active) setSnapshot(value); })
+      .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "Desktop status failed."); });
+    const unsubscribe = desktop.onChanged(setSnapshot);
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {

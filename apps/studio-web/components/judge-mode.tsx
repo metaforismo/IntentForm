@@ -57,20 +57,26 @@ export function JudgeModePanel({ session, onSelectStep, onAdvance, onReset, onEx
   const active = judgeSteps[activeIndex] ?? judgeSteps[0]!;
   const finished = session.completed.length === judgeSteps.length;
 
-  const refreshReadiness = async () => {
+  const refreshReadiness = async (signal?: AbortSignal) => {
     setReadinessError(false);
     try {
-      const response = await fetch("/api/readiness", { cache: "no-store" });
+      const response = await fetch("/api/readiness", { cache: "no-store", ...(signal ? { signal } : {}) });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      setReadiness(await response.json() as ReadinessResponse);
-    } catch {
+      const payload = await response.json() as ReadinessResponse;
+      if (signal?.aborted) return;
+      setReadiness(payload);
+    } catch (caught) {
+      if (caught instanceof DOMException && caught.name === "AbortError") return;
+      if (signal?.aborted) return;
       setReadinessError(true);
     }
   };
 
   useEffect(() => {
     if (!readinessOpen || readiness || readinessError) return;
-    void refreshReadiness();
+    const controller = new AbortController();
+    void refreshReadiness(controller.signal);
+    return () => controller.abort();
   }, [readiness, readinessError, readinessOpen]);
 
   return (

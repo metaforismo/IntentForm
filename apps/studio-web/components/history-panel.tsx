@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowsMerge, ClockCounterClockwise, GitBranch, WarningCircle } from "@phosphor-icons/react";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 interface HistoryBranch {
   name: string;
@@ -63,11 +63,15 @@ export function HistoryPanel({ enabled, onProjectChanged }: { enabled: boolean; 
   const [mergePreview, setMergePreview] = useState<MergePreview | null>(null);
   const [operationPreview, setOperationPreview] = useState<MergePreview | null>(null);
 
+  const refreshSequence = useRef(0);
+
   const refresh = useCallback(async (signal?: AbortSignal) => {
     if (!enabled) return;
+    const sequence = ++refreshSequence.current;
     try {
       const response = await fetch("/api/project/history", { cache: "no-store", ...(signal ? { signal } : {}) });
       const payload: unknown = await response.json();
+      if (sequence !== refreshSequence.current) return;
       if (!response.ok || !payload || typeof payload !== "object" || !("operations" in payload) || !Array.isArray(payload.operations)) {
         throw new Error(errorMessage(payload, "Operation history is unavailable."));
       }
@@ -75,6 +79,7 @@ export function HistoryPanel({ enabled, onProjectChanged }: { enabled: boolean; 
       setError(null);
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return;
+      if (sequence !== refreshSequence.current) return;
       setError(caught instanceof Error ? caught.message : "Operation history is unavailable.");
     }
   }, [enabled]);
@@ -89,7 +94,7 @@ export function HistoryPanel({ enabled, onProjectChanged }: { enabled: boolean; 
     }
     const controller = new AbortController();
     void refresh(controller.signal);
-    const interval = window.setInterval(() => void refresh(), 4_000);
+    const interval = window.setInterval(() => void refresh(controller.signal), 4_000);
     return () => {
       controller.abort();
       window.clearInterval(interval);

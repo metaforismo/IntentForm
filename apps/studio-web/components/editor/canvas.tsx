@@ -425,10 +425,14 @@ export function CanvasStage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* Frames are laid out in array order, so adding, removing, or reordering
+     them moves frame positions and needs a refit; ordinary edits inside a
+     frame must never move the camera. */
+  const frameLayoutKey = frames.map((entry) => entry.screen.id).join("|");
   useEffect(() => {
     fitScreenRef.current(selectedScreenRef.current, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile.id, frames.length]);
+  }, [profile.id, frameLayoutKey]);
 
   const previousSelectedScreen = useRef(selectedScreen);
   useEffect(() => {

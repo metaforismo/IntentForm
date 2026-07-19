@@ -124,9 +124,10 @@ export function AgentActivityPanel({
     return () => { mounted.current = false; };
   }, []);
 
-  const refresh = useCallback(async () => {
-    const result = await fetch("/api/project/agent-activity", { cache: "no-store" });
+  const refresh = useCallback(async (signal?: AbortSignal) => {
+    const result = await fetch("/api/project/agent-activity", { cache: "no-store", ...(signal ? { signal } : {}) });
     const payload = await result.json() as AgentActivityResponse | { error?: string };
+    if (signal?.aborted || !mounted.current) return;
     if (!result.ok || !("policy" in payload) || !Array.isArray(payload.entries) || !Array.isArray(payload.reviews)) {
       throw new Error("error" in payload && payload.error ? payload.error : "Agent activity is unavailable.");
     }
@@ -141,7 +142,9 @@ export function AgentActivityPanel({
       return;
     }
     let active = true;
-    void refresh().catch((refreshError) => {
+    const controller = new AbortController();
+    void refresh(controller.signal).catch((refreshError) => {
+      if (refreshError instanceof DOMException && refreshError.name === "AbortError") return;
       if (active) setError(refreshError instanceof Error ? refreshError.message : "Agent activity is unavailable.");
     });
     const stream = new EventSource("/api/project/agent-activity?stream=1");
@@ -162,6 +165,7 @@ export function AgentActivityPanel({
     };
     return () => {
       active = false;
+      controller.abort();
       stream.close();
     };
   }, [enabled, refresh]);
