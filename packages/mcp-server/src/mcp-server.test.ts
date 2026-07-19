@@ -100,8 +100,13 @@ describe("IntentForm agent project store", () => {
       required: ["expectedSourceFingerprint"],
       additionalProperties: false,
     });
-    expect(byName.get("intentform_preview_patch")?.inputSchema)
-      .toEqual(byName.get("intentform_apply_patch")?.inputSchema);
+    expect(byName.get("intentform_preview_patch")?.inputSchema).toMatchObject({ required: ["patch"] });
+    expect(byName.get("intentform_apply_patch")?.inputSchema).toMatchObject({
+      required: ["patch", "expectedFingerprint"],
+    });
+    expect(byName.get("intentform_replace_graph")?.inputSchema).toMatchObject({
+      required: ["graph", "reason", "expectedFingerprint"],
+    });
     expect(byName.get("intentform_search_components")?.inputSchema).toMatchObject({ additionalProperties: false });
     expect(byName.get("intentform_component_schema")?.inputSchema).toMatchObject({ additionalProperties: false });
     expect(byName.get("intentform_instantiate_component")?.inputSchema).toMatchObject({
@@ -371,7 +376,7 @@ describe("IntentForm agent project store", () => {
   it("describes a disabled compiler target without throwing or fabricating a fingerprint", () => {
     const graph = structuredClone(demoGraph);
     graph.platforms.find((platform) => platform.target === "react")!.enabled = false;
-    replaceGraph(dir, graph, "disable React output");
+    replaceGraph(dir, graph, "disable React output", loadProject(dir).fingerprint);
 
     const summary = describeProject(dir);
     expect(summary.outputs.react).toEqual({
@@ -481,7 +486,7 @@ describe("IntentForm agent project store", () => {
       id: "edit.test",
       rationale: "Keep the confirm action reachable on compact devices",
       operations: [{ op: "set-placement", target: "payment-request.confirm", compact: "persistent-bottom", regular: "inline" }],
-    });
+    }, loadProject(dir).fingerprint);
     expect(result.changes).toEqual([
       expect.objectContaining({ path: "payment-request.confirm.layout.placement" }),
     ]);
@@ -524,7 +529,7 @@ describe("IntentForm agent project store", () => {
     expect(loadProject(dir)).toMatchObject({ fingerprint: before.fingerprint, graph: before.graph });
     expect(projectRevisions(dir).revisions).toEqual([]);
 
-    const applied = applyPatch(dir, patch);
+    const applied = applyPatch(dir, patch, before.fingerprint);
     expect(applied.fingerprint).toBe(preview.previewFingerprint);
     expect(applied.changes).toEqual(preview.changes);
   });
@@ -549,7 +554,7 @@ describe("IntentForm agent project store", () => {
           index: 1,
         },
       ],
-    });
+    }, loadProject(dir).fingerprint);
     const graph = loadProject(dir).graph;
     const moved = findGraphNodeLocation(graph, "layout-lab.grid-a");
 
@@ -575,7 +580,7 @@ describe("IntentForm agent project store", () => {
         screenId: "layout-lab",
         parent: "layout-lab.grid",
       }],
-    })).toThrow(/descendants/);
+    }, loadProject(dir).fingerprint)).toThrow(/descendants/);
     expect(projectRevisions(dir).revisions).toHaveLength(0);
     expect(findGraphNodeLocation(loadProject(dir).graph, "layout-lab.adaptive")?.parent).toBeNull();
   });
@@ -591,7 +596,7 @@ describe("IntentForm agent project store", () => {
         field: "recipientName",
         value: "Elena Serra",
       }],
-    });
+    }, loadProject(dir).fingerprint);
 
     expect(result.changes).toContainEqual({
       path: "fixtures.payment-request.failed.data.recipientName",
@@ -607,7 +612,7 @@ describe("IntentForm agent project store", () => {
       id: "edit.bad",
       rationale: "invalid",
       operations: [{ op: "set-label", target: "missing.node", label: "Nope" }],
-    })).toThrow(/Patch target not found/);
+    }, loadProject(dir).fingerprint)).toThrow(/Patch target not found/);
     expect(projectRevisions(dir).revisions).toHaveLength(0);
     expect(loadProject(dir).graph).toEqual(demoGraph);
   });
@@ -623,16 +628,62 @@ describe("IntentForm agent project store", () => {
         field: "recipientName",
         value: false,
       }],
-    })).toThrow(/Invalid string value/);
+    }, loadProject(dir).fingerprint)).toThrow(/Invalid string value/);
     expect(projectRevisions(dir).revisions).toHaveLength(0);
     expect(loadProject(dir).graph).toEqual(demoGraph);
   });
 
+  it("rejects a stale patch fingerprint instead of silently rebasing onto a concurrent edit", () => {
+    const base = loadProject(dir);
+    applyPatch(dir, {
+      id: "human.concurrent",
+      rationale: "Concurrent Studio edit",
+      operations: [{ op: "set-label", target: "payment-request.confirm", label: "Human label" }],
+    }, base.fingerprint);
+
+    expect(() => applyPatch(dir, {
+      id: "agent.stale",
+      rationale: "Agent patch computed against the stale graph",
+      operations: [{ op: "set-label", target: "payment-request.confirm", label: "Agent label" }],
+    }, base.fingerprint)).toThrow(/fingerprint conflict/i);
+    expect(projectRevisions(dir).revisions).toHaveLength(1);
+    expect(findGraphNodeLocation(loadProject(dir).graph, "payment-request.confirm")?.node.intent.label).toBe("Human label");
+  });
+
+  it("rejects a stale replace-graph fingerprint instead of overwriting a concurrent edit", () => {
+    const base = loadProject(dir);
+    applyPatch(dir, {
+      id: "human.concurrent-replace",
+      rationale: "Concurrent Studio edit",
+      operations: [{ op: "set-label", target: "payment-request.confirm", label: "Human label" }],
+    }, base.fingerprint);
+
+    expect(() => replaceGraph(dir, structuredClone(demoGraph), "agent replace from stale read", base.fingerprint))
+      .toThrow(/fingerprint conflict/i);
+    expect(findGraphNodeLocation(loadProject(dir).graph, "payment-request.confirm")?.node.intent.label).toBe("Human label");
+  });
+
+  it("requires expectedFingerprint at the MCP tool layer for both write tools", () => {
+    const byName = new Map(toolDefinitions.map((tool) => [tool.name, tool]));
+    const context = { ownerId: "test-owner", signal: new AbortController().signal, transport: "stdio" as const };
+    const patchArgs = {
+      patch: {
+        id: "agent.missing-fingerprint",
+        rationale: "Must be rejected without a fingerprint",
+        operations: [{ op: "set-label", target: "payment-request.confirm", label: "Nope" }],
+      },
+    };
+    expect(() => byName.get("intentform_apply_patch")!.run(patchArgs, context))
+      .toThrow(/requires expectedFingerprint/i);
+    expect(() => byName.get("intentform_replace_graph")!.run({ graph: structuredClone(demoGraph), reason: "no fingerprint" }, context))
+      .toThrow(/requires expectedFingerprint/i);
+  });
+
   it("rejects invalid replacement graphs and accepts valid ones with a diff", () => {
-    expect(() => replaceGraph(dir, { schemaVersion: "0.2.0" }, "broken")).toThrow();
+    expect(() => replaceGraph(dir, { schemaVersion: "0.2.0" }, "broken", loadProject(dir).fingerprint)).toThrow();
     const themed = structuredClone(demoGraph);
     themed.tokens.modes.default!.values.colors["color.accent"] = "#7a4b9e";
-    const result = replaceGraph(dir, themed, "brand accent change");
+    const result = replaceGraph(dir, themed, "brand accent change", loadProject(dir).fingerprint);
     expect(result.changes).toEqual([
       { path: "tokens.modes.default.values.colors.color.accent", before: "#397461", after: "#7a4b9e" },
     ]);
@@ -678,7 +729,7 @@ describe("IntentForm agent project store", () => {
       contentMaxWidth: 1200,
       inlinePaddingToken: "space.20",
     };
-    replaceGraph(dir, graph, "enable responsive web");
+    replaceGraph(dir, graph, "enable responsive web", loadProject(dir).fingerprint);
     const described = describeProject(dir);
     expect(described.web).toEqual(expect.objectContaining({ strategy: "responsive-web" }));
     expect(described.outputs.web).toEqual(expect.objectContaining({ status: "generated" }));
@@ -696,7 +747,7 @@ describe("IntentForm agent project store", () => {
       id: "edit.label",
       rationale: "rename",
       operations: [{ op: "set-label", target: "payment-request.confirm", label: "Send request" }],
-    });
+    }, loadProject(dir).fingerprint);
     const revisions = projectRevisions(dir).revisions;
     const diff = diffAgainstRevision(dir, revisions[0]?.id);
     expect(diff.changes).toEqual([

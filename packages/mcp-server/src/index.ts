@@ -203,6 +203,12 @@ const PATCH_CONTRACT = `A GraphPatch is {"id": string, "rationale": string, "ope
 {"op":"set-label","target":nodeId,"label":string} · {"op":"set-placement","target":nodeId,"compact":"inline"|"persistent-bottom","regular":"inline"|"persistent-bottom"} · {"op":"set-purpose","target":nodeId,"purpose":string} · {"op":"set-emphasis","target":nodeId,"emphasis":"quiet"|"normal"|"strong"} · {"op":"set-gap-token","target":nodeId,"token":string} · {"op":"set-padding-token","target":nodeId,"token":string} · {"op":"set-layout","target":nodeId, ...layoutFields} · {"op":"set-web-layout","target":nodeId,"layout":typedWebLayout|null} · {"op":"move-node","target":nodeId,"screenId":screenId,"parent":nodeId|null,"index"?:number} · {"op":"set-color-token","token":colorTokenName,"value":"#rrggbb"} · {"op":"set-token-mode","mode":modeId} · {"op":"bind-asset","target":nodeId,"assetId":assetId,"variantId"?:variantId,"fit":"contain"|"cover"|"fill"|"none","focalPoint":{"x":0..1,"y":0..1},"decorative":boolean} · {"op":"clear-asset","target":nodeId} · {"op":"set-fixture-value","screenId":screenId,"state":"idle"|"loading"|"empty"|"failed"|"completed","field":contractField,"value":string|number|boolean} · {"op":"set-prototype-action","target":nodeId,"action":prototypeAction|null} · {"op":"add-review-thread","thread":reviewThread} · {"op":"reply-review-thread","threadId":threadId,"message":reviewMessage} · {"op":"resolve-review-thread","threadId":threadId,"resolvedAt":datetime|null,"resolvedBy":reviewAuthor|null}.
 Node IDs are stable; discover them with intentform_describe_project. The patch is schema-validated and rejected atomically if any operation is invalid.`;
 
+const EXPECTED_FINGERPRINT_SCHEMA = {
+  type: "string",
+  pattern: "^[a-f0-9]{8}$",
+  description: "The current project fingerprint, read from intentform_describe_project or the previous mutation result. The edit is rejected with a conflict error if the project changed after this fingerprint was read, so concurrent edits are surfaced instead of silently overwritten.",
+} satisfies Record<string, unknown>;
+
 const PATCH_INPUT_SCHEMA = {
   type: "object",
   properties: {
@@ -216,9 +222,24 @@ const PATCH_INPUT_SCHEMA = {
       },
       required: ["id", "rationale", "operations"],
     },
+    expectedFingerprint: EXPECTED_FINGERPRINT_SCHEMA,
   },
   required: ["patch"],
 } satisfies Record<string, unknown>;
+
+const APPLY_PATCH_INPUT_SCHEMA = {
+  ...PATCH_INPUT_SCHEMA,
+  required: ["patch", "expectedFingerprint"],
+} satisfies Record<string, unknown>;
+
+function requiredFingerprint(value: unknown, tool: string): string {
+  if (typeof value !== "string" || !/^[a-f0-9]{8}$/.test(value)) {
+    throw new Error(
+      `${tool} requires expectedFingerprint. Read the current project fingerprint with intentform_describe_project (or reuse the fingerprint returned by your previous mutation) and pass it so a concurrent edit is reported as a conflict instead of being silently overwritten.`,
+    );
+  }
+  return value;
+}
 
 export const toolDefinitions: ToolDefinition[] = [
   {
@@ -390,26 +411,36 @@ export const toolDefinitions: ToolDefinition[] = [
     name: "intentform_preview_patch",
     description: `Preview a typed semantic transaction without writing the project. Returns the exact semantic diff, candidate graph fingerprint, and fresh compact verification that intentform_apply_patch would commit. ${PATCH_CONTRACT}`,
     inputSchema: PATCH_INPUT_SCHEMA,
-    run: (args) => previewPatch(projectDir, args.patch),
+    run: (args) => previewPatch(
+      projectDir,
+      args.patch,
+      typeof args.expectedFingerprint === "string" ? args.expectedFingerprint : undefined,
+    ),
   },
   {
     name: "intentform_apply_patch",
-    description: `Apply a typed semantic patch to the project graph. Preferred way to edit: smallest change, schema-validated, revisioned, and re-verified. ${PATCH_CONTRACT} Returns the semantic diff, the new fingerprint and the compact-scenario verification findings.`,
-    inputSchema: PATCH_INPUT_SCHEMA,
-    run: (args) => applyPatch(projectDir, args.patch),
+    description: `Apply a typed semantic patch to the project graph. Preferred way to edit: smallest change, schema-validated, revisioned, fingerprint-checked, and re-verified. Requires expectedFingerprint; a stale fingerprint is rejected as a conflict so concurrent human edits are never silently overwritten. ${PATCH_CONTRACT} Returns the semantic diff, the new fingerprint and the compact-scenario verification findings.`,
+    inputSchema: APPLY_PATCH_INPUT_SCHEMA,
+    run: (args) => applyPatch(projectDir, args.patch, requiredFingerprint(args.expectedFingerprint, "intentform_apply_patch")),
   },
   {
     name: "intentform_replace_graph",
-    description: "Replace the entire Semantic Interface Graph (current schemaVersion 0.11.0). Use for structural edits a typed operation cannot express. Recursive hierarchy, components, token modes, licensed assets, locked ecosystem dependencies, prototype actions, anchored review threads, logical device profiles, responsive-web and Expo profiles, node-count and layout constraints are fully validated; invalid graphs are rejected without side effects. Returns the semantic diff and fresh verification findings.",
+    description: "Replace the entire Semantic Interface Graph (current schemaVersion 0.11.0). Use for structural edits a typed operation cannot express. Requires expectedFingerprint; a stale fingerprint is rejected as a conflict so concurrent edits are never silently overwritten. Recursive hierarchy, components, token modes, licensed assets, locked ecosystem dependencies, prototype actions, anchored review threads, logical device profiles, responsive-web and Expo profiles, node-count and layout constraints are fully validated; invalid graphs are rejected without side effects. Returns the semantic diff and fresh verification findings.",
     inputSchema: {
       type: "object",
       properties: {
         graph: { type: "object", description: "Complete SemanticInterfaceGraph JSON" },
         reason: { type: "string", description: "Why the graph changed (stored in the revision log)" },
+        expectedFingerprint: EXPECTED_FINGERPRINT_SCHEMA,
       },
-      required: ["graph", "reason"],
+      required: ["graph", "reason", "expectedFingerprint"],
     },
-    run: (args) => replaceGraph(projectDir, args.graph, String(args.reason ?? "agent edit")),
+    run: (args) => replaceGraph(
+      projectDir,
+      args.graph,
+      String(args.reason ?? "agent edit"),
+      requiredFingerprint(args.expectedFingerprint, "intentform_replace_graph"),
+    ),
   },
   {
     name: "intentform_verify",

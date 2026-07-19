@@ -640,11 +640,11 @@ export function verifyProjectRemoteEvidence(
 export function applyPatch(
   dir: string,
   patchInput: unknown,
-  expectedFingerprint?: string,
+  expectedFingerprint: string,
 ): MutationResult {
   const patch = graphPatchSchema.parse(patchInput);
   const { graph, fingerprint } = loadProject(dir);
-  if (expectedFingerprint !== undefined && fingerprint !== expectedFingerprint) {
+  if (fingerprint !== expectedFingerprint) {
     throw new Error(`Project fingerprint conflict: expected ${expectedFingerprint}, current ${fingerprint}.`);
   }
   const after = applyGraphPatch(graph, patch);
@@ -830,8 +830,16 @@ export function previewPatch(dir: string, patchInput: unknown, expectedFingerpri
   };
 }
 
-export function replaceGraph(dir: string, graphInput: unknown, reason: string): MutationResult {
+export function replaceGraph(
+  dir: string,
+  graphInput: unknown,
+  reason: string,
+  expectedFingerprint: string,
+): MutationResult {
   const { graph, fingerprint } = loadProject(dir);
+  if (fingerprint !== expectedFingerprint) {
+    throw new Error(`Project fingerprint conflict: expected ${expectedFingerprint}, current ${fingerprint}.`);
+  }
   const after = parseGraph(graphInput);
   return commit(dir, graph, after, reason, fingerprint);
 }
