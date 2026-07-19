@@ -1105,6 +1105,14 @@ try {
       }
       const compiledFrame = responsiveWebFrame.contentFrame();
       await compiledFrame.locator("main[data-screen-id='home']").waitFor();
+
+      await page.getByRole("button", { name: "Runtime parity" }).click();
+      const paritySummary = page.getByTestId("runtime-parity-summary");
+      await paritySummary.waitFor({ timeout: 30_000 });
+      const summaryText = await paritySummary.textContent();
+      if (!/nodes matched/.test(summaryText ?? "")) throw new Error(`Runtime parity did not produce a node summary: ${summaryText}`);
+      await page.getByTestId("runtime-parity-report").getByText(/measured in the real rendered document/i).waitFor();
+
       await page.getByRole("treeitem", { name: "src/styles.css", exact: true }).click();
       const generatedSource = page.getByRole("region", { name: "Generated source" });
       const sourceSearch = page.getByLabel("Search generated code");
@@ -1157,6 +1165,9 @@ try {
       await importDialog.getByRole("button", { name: "Replace screen with reviewed import" }).click();
       await importDialog.waitFor({ state: "detached" });
       await page.getByTestId("responsive-web-preview").locator("iframe").contentFrame().getByText("Browser oracle", { exact: true }).waitFor();
+      // The reviewed import changed the graph, so the earlier parity report
+      // must present itself as stale instead of pretending to be current.
+      await page.getByText("stale · graph changed", { exact: true }).waitFor();
       await page.getByRole("button", { name: "Design canvas" }).click();
       await page.getByTestId("canvas-node-web-import.1").waitFor();
       await page.getByRole("button", { name: "Undo" }).click();

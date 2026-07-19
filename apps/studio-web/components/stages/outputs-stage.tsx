@@ -31,8 +31,32 @@ import { PhonePreview } from "./phone-preview";
 import { SourceViewer } from "./source-viewer";
 import { sourceLanguage, sourceNodeReferences } from "./source-viewer-model";
 import { buildPresentation, localPreviewTarget, matchingCodeLineNumbers, usableLocalPreview } from "./workspace-model";
+import {
+  compareRuntimeParity,
+  injectParityProbe,
+  parityExpectations,
+  parseParityProbeMessage,
+  summarizeParityReport,
+  type RuntimeParityFrameReport,
+  type RuntimeParityReport,
+  type RuntimeParityViewport,
+} from "../../lib/runtime-parity";
 
-type EvidenceTab = "build" | "layout" | "accessibility" | "design-quality" | "screenshot" | "logs";
+type EvidenceTab = "build" | "layout" | "accessibility" | "design-quality" | "parity" | "screenshot" | "logs";
+
+type ParityState =
+  | { status: "not-run" }
+  | {
+      status: "running";
+      nonce: string;
+      screenId: string;
+      fingerprint: string;
+      queue: RuntimeParityViewport[];
+      active: RuntimeParityViewport;
+      collected: RuntimeParityFrameReport[];
+    }
+  | { status: "complete"; report: RuntimeParityReport }
+  | { status: "error"; message: string };
 
 interface OutputsStageProps {
   outputTarget: OutputTarget;
@@ -116,6 +140,82 @@ export function OutputsStage({
     return html.replace('<link rel="stylesheet" href="./styles.css">', `<style>${css.replaceAll("</style", "<\\/style")}</style>`);
   }, [output, outputTarget, webScreen]);
 
+  const [parity, setParity] = useState<ParityState>({ status: "not-run" });
+  const parityFrame = useRef<HTMLIFrameElement>(null);
+
+  const parityViewports = useMemo((): RuntimeParityViewport[] => {
+    if (!graph.web) return [];
+    return graph.web.frames.slice(0, 4).map((frame) => ({
+      frameId: frame.id,
+      label: frame.label,
+      width: frame.width ?? frame.maxWidth ?? frame.minWidth ?? graph.web!.contentMaxWidth,
+      height: frame.height ?? 900,
+    }));
+  }, [graph.web]);
+
+  const runRuntimeParity = () => {
+    if (!output || !webScreen || !webPreviewSource || parityViewports.length === 0) return;
+    const [first, ...rest] = parityViewports;
+    setParity({
+      status: "running",
+      nonce: crypto.randomUUID(),
+      screenId: webScreen.id,
+      fingerprint: output.fingerprint,
+      queue: rest,
+      active: first!,
+      collected: [],
+    });
+    setEvidenceTab("parity");
+    setEvidenceOpen(true);
+  };
+
+  useEffect(() => {
+    if (parity.status !== "running") return;
+    const expectations = parityExpectations(graph, parity.screenId);
+    const receive = (event: MessageEvent<unknown>) => {
+      if (event.source !== parityFrame.current?.contentWindow) return;
+      const message = parseParityProbeMessage(event.data, parity.nonce);
+      if (!message || message.frameId !== parity.active.frameId) return;
+      const frameReport = compareRuntimeParity(expectations, message.measurements, {
+        ...parity.active,
+        width: message.viewport.width,
+        height: message.viewport.height,
+      });
+      const collected = [...parity.collected, frameReport];
+      const [next, ...queue] = parity.queue;
+      if (next) {
+        setParity({ ...parity, active: next, queue, collected });
+        return;
+      }
+      setParity({
+        status: "complete",
+        report: {
+          screenId: parity.screenId,
+          fingerprint: parity.fingerprint,
+          completedAt: new Date().toISOString(),
+          frames: collected,
+        },
+      });
+    };
+    window.addEventListener("message", receive);
+    const timeout = window.setTimeout(
+      () => setParity({ status: "error", message: `The ${parity.active.label} runtime probe did not report back.` }),
+      10_000,
+    );
+    return () => {
+      window.removeEventListener("message", receive);
+      window.clearTimeout(timeout);
+    };
+  }, [graph, parity]);
+
+  const paritySource = useMemo(() => {
+    if (parity.status !== "running" || !webPreviewSource) return null;
+    return injectParityProbe(webPreviewSource, parity.nonce, parity.active.frameId);
+  }, [parity, webPreviewSource]);
+
+  const parityIsStale = parity.status === "complete"
+    && (parity.report.fingerprint !== output?.fingerprint || parity.report.screenId !== webScreen?.id);
+
   useEffect(() => setActiveMatchIndex(0), [codeQuery, selectedCode?.path]);
 
   const sendPreview = useCallback(() => {
@@ -189,6 +289,48 @@ export function OutputsStage({
   };
 
   const evidenceContent = () => {
+    if (evidenceTab === "parity") {
+      if (outputTarget !== "web") return <div>Runtime parity compares the compiled web document against semantic intent. Switch to the web target to run it.</div>;
+      if (parity.status === "running") return <div role="status" aria-live="polite">Measuring the rendered {parity.active.label} runtime…</div>;
+      if (parity.status === "error") return <div role="alert" className="grid gap-2"><span className="text-[var(--danger)]">{parity.message}</span><button type="button" onClick={runRuntimeParity} className="w-fit rounded-[5px] border border-[var(--line)] px-2.5 py-1 font-semibold hover:bg-[var(--hover)]">Retry</button></div>;
+      if (parity.status === "complete") {
+        const findings = parity.report.frames.flatMap((frame) => frame.findings.map((finding) => ({ finding, frame })));
+        return (
+          <div className="grid gap-2" data-testid="runtime-parity-report">
+            <div className="flex flex-wrap items-center gap-2">
+              <strong data-testid="runtime-parity-summary">{summarizeParityReport(parity.report)}</strong>
+              {parityIsStale ? <span className="rounded-[4px] bg-[var(--warn-soft)] px-1.5 py-0.5 font-mono text-[9px] font-semibold text-[var(--warn)]">stale · graph changed</span> : <span className="font-mono text-[9px] text-[var(--faint)]">graph {parity.report.fingerprint}</span>}
+              <button type="button" onClick={runRuntimeParity} className="rounded-[5px] border border-[var(--line)] px-2 py-0.5 text-[10px] font-semibold hover:bg-[var(--hover)]">Re-run</button>
+            </div>
+            <span className="text-[var(--faint)]">Existence, order, accessible names, roles, WCAG 2.2 target size, overflow, and compact reachability measured in the real rendered document per frame. Pixel geometry is shown as evidence, not judged: canvas-to-runtime layout fidelity is tracked separately.</span>
+            {findings.length ? (
+              <div className="divide-y divide-[var(--line)] border-t border-[var(--line)]">
+                {findings.map(({ finding, frame }, index) => (
+                  <button
+                    key={`${finding.nodeId}:${finding.code}:${frame.viewport.frameId}:${index}`}
+                    type="button"
+                    onClick={() => onInspectNode(finding.nodeId)}
+                    className="grid w-full grid-cols-[14px_minmax(0,1fr)] items-start gap-2 py-2 text-left hover:bg-[var(--hover)]"
+                  >
+                    <Warning size={12} weight="fill" className={`mt-0.5 ${finding.severity === "error" ? "text-[var(--danger)]" : "text-[var(--warn)]"}`} />
+                    <span className="min-w-0">
+                      <span className="block text-[10.5px] text-[var(--ink)]">{finding.message}</span>
+                      <span className="mt-0.5 block truncate font-mono text-[9px] text-[var(--faint)]">{finding.nodeId} · {frame.viewport.label}{finding.measured ? ` · ${finding.measured.width}×${finding.measured.height} at ${finding.measured.x},${finding.measured.y}` : ""}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : <span className="flex items-center gap-1.5 text-[var(--success)]"><CheckCircle size={12} weight="fill" /> The rendered runtime preserves the semantic intent on every measured frame.</span>}
+          </div>
+        );
+      }
+      return (
+        <div className="grid gap-2">
+          <span>Not run for the current graph. The check renders the compiled document at {parityViewports.map((viewport) => viewport.label).join(", ") || "each web frame"} and measures every stable node.</span>
+          <button type="button" data-testid="run-runtime-parity" onClick={runRuntimeParity} disabled={!webPreviewSource} className="w-fit rounded-[5px] bg-[var(--accent-deep)] px-2.5 py-1 font-semibold text-white disabled:opacity-40">Run runtime parity</button>
+        </div>
+      );
+    }
     if (evidenceTab === "build") return <div className="grid gap-1"><strong>{previewEvidence ? `${previewEvidence.phase} · ${previewEvidence.evidence}` : "Not run"}</strong><span>Freshness: {outputFreshness}. Build status: {previewEvidence?.buildStatus ?? "not-run"}.</span></div>;
     if (evidenceTab === "accessibility") return <div>Open Verify for the current target, device, visual state, and WCAG profile matrix.</div>;
     if (evidenceTab === "layout") return <div className="font-mono">graph {previewEvidence?.expectedBinding.graphDigest ?? "not-bound"} · compiler {previewEvidence?.expectedBinding.compilerFingerprint ?? output?.fingerprint ?? "not-generated"}</div>;
@@ -211,6 +353,7 @@ export function OutputsStage({
           {build.canCancel ? <button type="button" disabled={localPreviews.pendingTarget === previewTarget} onClick={() => void localPreviews.mutate("cancel", previewTarget)} className="inline-flex h-7 items-center gap-1 rounded border border-[var(--warn)]/35 px-2.5 font-semibold text-[var(--warn)] disabled:opacity-40">Cancel build</button> : <button type="button" disabled={!build.canStart} onClick={() => void localPreviews.mutate(previewEvidence ? "restart" : "start", previewTarget)} className="inline-flex h-7 items-center gap-1 rounded bg-[var(--accent-deep)] px-2.5 font-semibold text-white disabled:opacity-40"><Play size={11} /> {previewEvidence ? "Rebuild" : "Build"}</button>}
           <button type="button" disabled={!selectedCode} onClick={copyGeneratedFile} title={selectedCode && output ? `Copy ${outputTarget} · ${selectedCode.path} · ${output.fingerprint}` : undefined} className="inline-flex h-7 items-center gap-1 rounded border border-[var(--line)] px-2 font-semibold disabled:opacity-40">{copied ? <CheckCircle size={11} /> : <Copy size={11} />}{copied ? `Copied ${outputTarget}` : "Copy file"}</button>
           <button type="button" disabled={!selectedCode} onClick={openGeneratedFile} className="inline-flex h-7 items-center gap-1 rounded border border-[var(--line)] px-2 font-semibold disabled:opacity-40"><ArrowSquareOut size={11} /> Open externally</button>
+          {outputTarget === "web" ? <button type="button" onClick={runRuntimeParity} disabled={!webPreviewSource || parity.status === "running"} title="Measure the rendered document against semantic intent" className="inline-flex h-7 items-center gap-1 rounded border border-[var(--line)] px-2 font-semibold disabled:opacity-40"><CheckCircle size={11} /> {parity.status === "running" ? "Measuring…" : "Runtime parity"}</button> : null}
           {outputTarget === "web" ? <button type="button" onClick={() => setWebImportOpen(true)} className="inline-flex h-7 items-center gap-1 rounded border border-[var(--line)] px-2 font-semibold"><UploadSimple size={11} /> Import HTML/CSS</button> : null}
           <button type="button" aria-expanded={projectDrawerOpen} onClick={() => setProjectDrawerOpen((open) => !open)} className="h-7 rounded border border-[var(--line)] px-2 font-semibold">History</button>
         </div>
@@ -243,9 +386,21 @@ export function OutputsStage({
 
       <section className="col-span-full border-t border-[var(--line)] bg-[var(--panel)]" aria-label="Output evidence">
         <button type="button" aria-expanded={evidenceOpen} onClick={() => setEvidenceOpen((open) => !open)} className="flex h-9 w-full items-center justify-between px-3 text-[10px] font-semibold text-[var(--muted)] hover:bg-[var(--hover)]"><span>Evidence and diagnostics · {output?.diagnostics.length ?? 0} compiler findings</span>{evidenceOpen ? <CaretDown size={12} /> : <CaretRight size={12} />}</button>
-        {evidenceOpen ? <div className="grid min-h-[180px] grid-cols-[140px_minmax(0,1fr)] border-t border-[var(--line)]"><div role="tablist" aria-label="Evidence category" className="border-r border-[var(--line)] p-1">{(["build", "layout", "accessibility", "design-quality", "screenshot", "logs"] as const).map((tab) => <button key={tab} type="button" role="tab" aria-selected={evidenceTab === tab} onClick={() => setEvidenceTab(tab)} className={`block min-h-8 w-full rounded px-2 text-left text-[10px] capitalize ${evidenceTab === tab ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>{tab.replace("-", " ")}</button>)}</div><div role="tabpanel" className="p-4 text-[10px] leading-relaxed text-[var(--muted)]">{evidenceContent()}{output?.diagnostics.length ? <div className="mt-3 border-t border-[var(--line)] pt-3">{output.diagnostics.map((diagnostic) => <p key={`${diagnostic.path}:${diagnostic.message}`}><strong>{diagnostic.path}</strong> · {diagnostic.message}</p>)}</div> : null}</div></div> : null}
+        {evidenceOpen ? <div className="grid min-h-[180px] grid-cols-[140px_minmax(0,1fr)] border-t border-[var(--line)]"><div role="tablist" aria-label="Evidence category" className="border-r border-[var(--line)] p-1">{(["build", "layout", "accessibility", "design-quality", "parity", "screenshot", "logs"] as const).map((tab) => <button key={tab} type="button" role="tab" aria-selected={evidenceTab === tab} onClick={() => setEvidenceTab(tab)} className={`block min-h-8 w-full rounded px-2 text-left text-[10px] capitalize ${evidenceTab === tab ? "bg-[var(--accent-soft)] text-[var(--accent-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>{tab.replace("-", " ")}</button>)}</div><div role="tabpanel" className="p-4 text-[10px] leading-relaxed text-[var(--muted)]">{evidenceContent()}{output?.diagnostics.length ? <div className="mt-3 border-t border-[var(--line)] pt-3">{output.diagnostics.map((diagnostic) => <p key={`${diagnostic.path}:${diagnostic.message}`}><strong>{diagnostic.path}</strong> · {diagnostic.message}</p>)}</div> : null}</div></div> : null}
       </section>
       {projectDrawerOpen ? <><button type="button" aria-label="Close project history" onClick={() => setProjectDrawerOpen(false)} className="absolute inset-0 z-[4] bg-[var(--backdrop)]/40" /><aside className="absolute inset-y-0 right-0 z-[5] w-[min(390px,92vw)] overflow-auto border-l border-[var(--line)] bg-[var(--panel)] p-3 shadow-[-20px_0_50px_-32px_var(--shadow-strong)]" aria-label="Project history drawer"><div className="mb-2 flex items-center justify-between"><strong className="text-[11px] text-[var(--ink)]">Project history</strong><button type="button" aria-label="Close history drawer" onClick={() => setProjectDrawerOpen(false)} className="rounded px-2 py-1 text-[10px] text-[var(--muted)] hover:bg-[var(--hover)]">Close</button></div><HistoryPanel enabled={localPreviews.enabled} onProjectChanged={onLocalProjectChanged} /></aside></> : null}
+      {parity.status === "running" && paritySource ? (
+        <iframe
+          ref={parityFrame}
+          key={`${parity.nonce}:${parity.active.frameId}`}
+          title="Runtime parity probe"
+          aria-hidden="true"
+          tabIndex={-1}
+          sandbox="allow-scripts"
+          srcDoc={paritySource}
+          style={{ position: "absolute", left: -100_000, top: 0, width: parity.active.width, height: parity.active.height, border: 0, visibility: "hidden" }}
+        />
+      ) : null}
       <WebImportDialog open={webImportOpen} graph={graph} screenId={selectedScreen} onClose={() => setWebImportOpen(false)} onApply={(projection) => { onApplyWebImport(projection); setWebImportOpen(false); }} />
     </div>
   );
