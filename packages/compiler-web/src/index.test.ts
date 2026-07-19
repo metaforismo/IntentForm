@@ -58,6 +58,9 @@ describe("responsive web compiler", () => {
     expect(css).toContain("@media (forced-colors: active)");
     expect(css).toContain("@media (prefers-reduced-motion: reduce)");
     expect(css).toContain("min-height: 44px");
+    // Inputs must not keep their intrinsic UA width: an unconstrained input
+    // sizes its grid track past the node's flex box and overlaps siblings.
+    expect(css).toContain(".if-field input { width: 100%; min-width: 0;");
     expect(first.files.find((file) => file.path === "index.html")!.content).toContain('lang="en" dir="auto"');
     const app = first.files.find((file) => file.path === "src/app.tsx")!.content;
     expect(app).toContain("Skip to content");
