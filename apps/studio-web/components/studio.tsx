@@ -1687,7 +1687,7 @@ export function Studio() {
       ) : null}
       {pendingTabClose ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-[var(--backdrop)] p-4">
-          <section data-testid="dirty-tab-dialog" role="alertdialog" aria-modal="true" aria-labelledby="dirty-tab-title" aria-describedby="dirty-tab-description" className="menu-pop w-full max-w-md rounded-[10px] p-4 shadow-[var(--if-shadow-dialog)]">
+          <section data-testid="dirty-tab-dialog" role="alertdialog" aria-modal="true" aria-labelledby="dirty-tab-title" aria-describedby="dirty-tab-description" className="menu-pop w-full max-w-md rounded-[8px] p-4 shadow-[var(--if-shadow-dialog)]">
             <span className="grid size-8 place-items-center rounded-[6px] bg-[var(--warn-soft)] text-[var(--warn)]"><Warning size={16} weight="fill" /></span>
             <h2 id="dirty-tab-title" className="mt-3 text-[15px] font-[550] leading-[21px]">Save changes before closing?</h2>
             <p id="dirty-tab-description" className="mt-2 text-[12px] leading-relaxed text-[var(--muted)]">{pendingTabClose.title} has project changes that are not yet committed to the durable catalog.</p>
@@ -1712,7 +1712,7 @@ export function Studio() {
       ) : null}
       {resetConfirmOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-[var(--backdrop)] p-4" onPointerDown={(event) => { if (event.target === event.currentTarget) cancelProjectReset(); }}>
-          <section ref={resetDialog} data-testid="reset-project-dialog" role="alertdialog" aria-modal="true" aria-labelledby="reset-project-title" aria-describedby="reset-project-description" className="menu-pop w-full max-w-md rounded-[10px] p-4 shadow-[var(--if-shadow-dialog)]">
+          <section ref={resetDialog} data-testid="reset-project-dialog" role="alertdialog" aria-modal="true" aria-labelledby="reset-project-title" aria-describedby="reset-project-description" className="menu-pop w-full max-w-md rounded-[8px] p-4 shadow-[var(--if-shadow-dialog)]">
             <span className="grid size-8 place-items-center rounded-[6px] bg-[var(--danger-soft)] text-[var(--danger)]"><ArrowsCounterClockwise size={16} weight="bold" /></span>
             <h2 id="reset-project-title" className="mt-3 text-[15px] font-[550] leading-[21px] tracking-[-.02em]">Reset this workspace?</h2>
             <p id="reset-project-description" className="mt-2 text-[12px] leading-relaxed text-[var(--muted)]">{revertsToSavedRevision

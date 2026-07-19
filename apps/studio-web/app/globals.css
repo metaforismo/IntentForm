@@ -43,7 +43,7 @@
   --app-bg: var(--if-app); --canvas-bg: var(--if-canvas); --panel: var(--if-panel); --panel-bg: var(--if-panel); --panel-raised: var(--if-raised);
   --control-bg: var(--if-panel-alt); --control-hover: var(--if-hover); --control-active: var(--if-pressed);
   --border: var(--if-border); --border-strong: var(--if-border-strong); --text: var(--if-text); --text-secondary: var(--if-text-secondary); --text-muted: var(--if-text-secondary);
-  --selection: var(--if-blue); --selection-soft: var(--if-blue-soft); --focus: var(--if-blue); --success: var(--if-green); --warning: var(--if-amber);
+  --selection: var(--if-blue); --selection-soft: var(--if-blue-soft); --focus: var(--if-blue); --success: var(--if-green); --success-soft: var(--if-green-soft); --warning: var(--if-amber);
   --canvas: var(--if-canvas); --board: var(--if-canvas); --board-dot: rgb(70 70 70 / 18%); --workspace: var(--if-panel); --surface: var(--if-panel); --surface-strong: var(--if-raised);
   --field: var(--if-input); --chrome: var(--if-panel); --chip: var(--if-panel-alt); --hover: var(--if-hover); --inset: var(--if-panel-alt);
   --ink: var(--if-text); --t-strong: var(--if-text); --muted: var(--if-text-secondary); --faint: var(--if-text-secondary);

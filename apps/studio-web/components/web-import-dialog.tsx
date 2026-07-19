@@ -249,7 +249,7 @@ export function WebImportDialog({ open, graph, screenId, onClose, onApply }: Web
 
   return (
     <div className="fixed inset-0 z-[80] grid place-items-center bg-[var(--backdrop)] p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="web-import-title" className="grid max-h-[min(860px,94vh)] w-[min(1040px,96vw)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-[12px] border border-[var(--line-strong)] bg-[var(--panel)] shadow-2xl">
+      <section role="dialog" aria-modal="true" aria-labelledby="web-import-title" className="grid max-h-[min(860px,94vh)] w-[min(1040px,96vw)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-[8px] border border-[var(--line-strong)] bg-[var(--panel)] shadow-2xl">
         <header className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3">
           <div><h2 id="web-import-title" className="text-sm font-semibold text-[var(--ink)]">Import HTML/CSS</h2><p className="mt-0.5 text-[10px] text-[var(--muted)]">Scripts and network requests are blocked. The browser computes layout; only supported typed properties enter the graph.</p></div>
           <button type="button" onClick={onClose} className="h-7 rounded px-2 text-[10px] text-[var(--muted)] hover:bg-[var(--hover)]">Close</button>

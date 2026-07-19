@@ -835,7 +835,7 @@ export function LayersPanel({
           </section>
           <div className="grid gap-2 p-2">
             {graph.components.map((definition) => (
-              <article key={definition.id} className="rounded-xl border border-[var(--line)] bg-[var(--field)] p-2.5">
+              <article key={definition.id} className="rounded-[6px] border border-[var(--line)] bg-[var(--field)] p-2.5">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <strong className="block truncate text-[12px] font-semibold text-[var(--ink)]">{definition.name}</strong>
@@ -895,7 +895,7 @@ export function LayersPanel({
               </article>
             ))}
             {graph.components.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-[var(--line-strong)] px-3 py-8 text-center text-[11px] leading-relaxed text-[var(--muted)]">This project has no local component definitions yet.</div>
+              <div className="rounded-[6px] border border-dashed border-[var(--line-strong)] px-3 py-8 text-center text-[11px] leading-relaxed text-[var(--muted)]">This project has no local component definitions yet.</div>
             ) : null}
           </div>
         </div>

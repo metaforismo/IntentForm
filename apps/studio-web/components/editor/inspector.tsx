@@ -379,7 +379,7 @@ export function Inspector({
 
           {componentDefinition && componentInstance && componentContext ? (
             <Section title="Component instance">
-              <div className="rounded-xl border border-[var(--line)] bg-[var(--field)] p-2.5">
+              <div className="rounded-[6px] border border-[var(--line)] bg-[var(--field)] p-2.5">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <strong className="block truncate text-[12px] font-semibold text-[var(--ink)]">{componentDefinition.name}</strong>
