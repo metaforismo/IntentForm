@@ -1543,10 +1543,9 @@ export function Studio() {
           <AnimatePresence mode="wait">
             <motion.div
               key={stage}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ type: "spring", stiffness: 120, damping: 20 }}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0, transition: { duration: 0.12, ease: "easeOut" } }}
+              exit={{ opacity: 0, transition: { duration: 0.06, ease: "easeIn" } }}
               className={stage === "canvas" ? "h-full" : stage === "outputs" || stage === "verify" ? "h-full overflow-hidden p-2 md:p-3" : "h-full overflow-auto p-5 md:p-8"}
             >
               {stage === "canvas" ? (

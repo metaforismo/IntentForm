@@ -652,6 +652,11 @@ export function Launcher() {
       ? project.source === "local" && !project.archivedAt
       : showArchived || !project.archivedAt);
   const activeProjects = (projects ?? []).filter((project) => !project.archivedAt);
+  const sectionHasAnyProject = (projects ?? []).some((project) => section === "archive"
+    ? Boolean(project.archivedAt)
+    : section === "files"
+      ? project.source === "local" && !project.archivedAt
+      : showArchived || !project.archivedAt);
   const recentProjects = section === "recents" || section === "home"
     ? visibleProjects.filter((project) => !project.archivedAt).slice(0, section === "home" ? 6 : 12)
     : visibleProjects;
@@ -732,7 +737,7 @@ export function Launcher() {
 
           {section === "settings" ? <LauncherSettings preferences={preferences} projects={projects ?? []} storageEstimate={storageEstimate} onChange={setPreferences} /> : null}
 
-          {["projects", "files", "archive"].includes(section) ? <ProjectOrganizationControls sort={preferences.sort} filters={filters} projectTypes={projectTypeOptions} onSort={(sort) => setPreferences((current) => ({ ...current, sort }))} onFilters={setFilters} /> : null}
+          {["projects", "files", "archive"].includes(section) && sectionHasAnyProject ? <ProjectOrganizationControls sort={preferences.sort} filters={filters} projectTypes={projectTypeOptions} onSort={(sort) => setPreferences((current) => ({ ...current, sort }))} onFilters={setFilters} /> : null}
 
           {showRecents ? <section aria-labelledby="recent-projects-title">
             <div className="mb-4 flex items-center justify-between gap-3">
@@ -759,7 +764,7 @@ export function Launcher() {
                   onRelink={() => relinkLocalProject(project)}
                 />)}
               </div>
-            ) : <div className="max-w-[560px] rounded-lg border border-dashed border-[var(--if-border)] px-5 py-6"><strong className="text-[13px] font-medium">{projectQuery.trim() ? `No project matches “${projectQuery.trim()}”` : section === "files" ? "No desktop-linked projects yet" : section === "archive" || showArchived ? "No archived projects" : "No recent projects"}</strong><p className="mt-1 text-[11px] text-[var(--if-text-secondary)]">{section === "files" ? "Files lists projects opened from a local .intentform folder through the desktop bridge; browser-only projects stay under Projects." : "Create a project, open a local file, or start from a working example."}</p><div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => setView("new")} className="h-8 rounded-md bg-[var(--if-blue)] px-3 text-[11px] font-medium text-white">New project</button><button type="button" onClick={() => importInput.current?.click()} className="h-8 rounded-md border border-[var(--if-border)] px-3 text-[11px] font-medium">Open project</button><button type="button" onClick={() => selectSection("examples")} className="h-8 rounded-md px-3 text-[11px] font-medium text-[var(--if-blue-text)] hover:bg-[var(--if-hover)]">Explore examples</button></div></div>}
+            ) : <div className="max-w-[560px] rounded-lg border border-dashed border-[var(--if-border)] px-5 py-6"><strong className="text-[13px] font-medium">{projectQuery.trim() ? `No project matches “${projectQuery.trim()}”` : section === "files" ? "No desktop-linked projects yet" : section === "archive" || showArchived ? "No archived projects" : "No recent projects"}</strong><p className="mt-1 text-[11px] text-[var(--if-text-secondary)]">{section === "files" ? "Files lists projects opened from a local .intentform folder through the desktop bridge; browser-only projects stay under Projects." : section === "archive" || showArchived ? "Archiving hides a project from Projects without deleting it. Use Archive in a project card menu; restore it from here at any time." : "Create a project, open a local file, or start from a working example."}</p><div className="mt-4 flex flex-wrap gap-2">{section === "archive" || showArchived ? <button type="button" onClick={() => selectSection("projects")} className="h-8 rounded-md border border-[var(--if-border)] px-3 text-[11px] font-medium">View projects</button> : <><button type="button" onClick={() => setView("new")} className="h-8 rounded-md bg-[var(--if-blue)] px-3 text-[11px] font-medium text-white">New project</button><button type="button" onClick={() => importInput.current?.click()} className="h-8 rounded-md border border-[var(--if-border)] px-3 text-[11px] font-medium">Open project</button><button type="button" onClick={() => selectSection("examples")} className="h-8 rounded-md px-3 text-[11px] font-medium text-[var(--if-blue-text)] hover:bg-[var(--if-hover)]">Explore examples</button></>}</div></div>}
           </section> : null}
 
           {showExamples ? <section aria-labelledby="example-projects-title" className={showRecents ? "mt-10 border-t border-[var(--if-border-subtle)] pt-7" : ""}>

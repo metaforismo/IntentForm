@@ -372,7 +372,7 @@ export function OutputsStage({
       <main className="grid min-h-0 grid-cols-1 xl:grid-cols-[minmax(320px,42fr)_180px_minmax(360px,58fr)]">
         <section className="relative min-h-[360px] border-b border-[var(--line)] xl:min-h-0 xl:border-b-0 xl:border-r" aria-label="Compiled preview">
           {outputFreshness === "stale" ? <div role="status" className="absolute inset-x-3 top-3 z-[2] flex items-center gap-2 rounded border border-[var(--warn)]/30 bg-[var(--panel)] px-3 py-2 text-[10px] text-[var(--warn)]"><Warning size={12} /> Preview evidence does not match the current graph fingerprint.</div> : null}
-          {outputTarget === "web" ? <label className="absolute bottom-3 left-3 right-3 z-[2] flex items-center gap-2 rounded bg-[var(--panel)]/90 px-2 py-1 text-[9px] text-[var(--muted)]">Preview width<input type="range" min={45} max={100} value={previewWidth} onChange={(event) => setPreviewWidth(Number(event.target.value))} className="if-range flex-1 accent-[var(--accent)]" /><span>{previewWidth}%</span></label> : null}
+          {outputTarget === "web" ? <label className="absolute bottom-3 left-3 right-3 z-[2] flex items-center gap-2 rounded border border-[var(--line)] bg-[var(--panel)] px-2 py-1 text-[9px] text-[var(--muted)] shadow-sm">Preview width<input type="range" min={45} max={100} value={previewWidth} onChange={(event) => setPreviewWidth(Number(event.target.value))} className="if-range flex-1 accent-[var(--accent)]" /><span>{previewWidth}%</span></label> : null}
           {renderPreview()}
         </section>
 

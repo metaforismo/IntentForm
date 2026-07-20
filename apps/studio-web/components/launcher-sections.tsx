@@ -144,7 +144,7 @@ export function LauncherBuilds({ projects, onOpen }: { projects: BrowserCatalogP
                   <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     {targets.length ? targets.map((platform) => (
                       <span key={platform.target} className="inline-flex items-center gap-1.5 rounded-[4px] border border-[var(--if-border-subtle)] bg-[var(--if-panel-alt)] px-1.5 py-0.5 text-[9px] text-[var(--if-text-secondary)]">
-                        <span aria-hidden="true" className="size-1.5 rounded-full bg-[var(--if-amber)]" />{TARGET_LABELS[platform.target] ?? platform.target} · not run
+                        <span aria-hidden="true" className="size-1.5 rounded-full bg-[var(--if-text-tertiary)]" />{TARGET_LABELS[platform.target] ?? platform.target} · not run
                       </span>
                     )) : <span className="text-[9px] text-[var(--if-text-tertiary)]">No enabled target</span>}
                   </span>
