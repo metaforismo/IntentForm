@@ -274,6 +274,8 @@ IntentForm had a semantic-graph and compiler foundation before the submission pe
 
 The public demo video is **not published yet**; it will be linked here after the owner records and approves the final sub-three-minute walkthrough. No Devpost submission or release is performed by repository automation.
 
+The recording-ready [submission video run of show](docs/submission-video.md) maps each claim to the exact product state that should be visible, with timing, voiceover, capture checks, and the required Codex/GPT-5.6 explanation.
+
 ## Contributing
 
 Keep changes narrow, deterministic, reversible, and test-backed.
