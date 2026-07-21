@@ -92,6 +92,20 @@ pnpm dev
 
 Open `http://127.0.0.1:3000`, create a project or copy an example, then enter Studio. Core editing, compilation, deterministic replay, and local agent workflows require no account, hosted service, model call, or paid MCP allowance.
 
+Supported and verified paths:
+
+- **Browser Studio:** current Chromium on macOS, Linux, and Windows; the hosted Judge Mode above is the fastest test path and needs no account.
+- **Desktop Studio:** the packaged Electron app is build-, signature-, sandbox-, and launch-verified on macOS arm64. The packager targets the current host platform, but Windows and Linux desktop bundles are not yet claimed as release-verified.
+- **Generated targets:** React and responsive Web run in current browsers; Expo exports are checked for iOS and Android; SwiftUI build and Simulator render evidence require macOS with Xcode.
+
+To build the desktop package for the current host after installing dependencies:
+
+```bash
+pnpm package:desktop
+```
+
+The bundle is written under `output/desktop/`. For agent installation and a safe read-only connection test, follow [`packages/mcp-server/README.md`](packages/mcp-server/README.md).
+
 Focused checks:
 
 ```bash
@@ -242,7 +256,9 @@ IntentForm was developed for the 2026 OpenAI Build Week Developer Tools track. T
 - **Deterministic code** owns migrations, fingerprints, diffs, compilers, evidence binding, history, and rollback. GPT-5.6 does not emit the production source files.
 - **Human decisions** retained authority over product scope, interaction and visual direction, architecture boundaries, acceptance criteria, transaction approval, and every external publication step.
 
-The dated Git history preserves the build sequence from the canonical graph and compilers through the professional editor, durable catalog, Judge Mode, exact Code/Verify journeys, and Aster showcase. The public demo video is **not published yet**; it will be linked here after the owner records and approves the final sub-three-minute walkthrough. No Devpost submission or release is performed by repository automation.
+IntentForm had a semantic-graph and compiler foundation before the submission period. The dated public Git history distinguishes that foundation from the material Build Week extension: the full Design/Code/Verify product experience, durable local project catalog and recovery, responsive and native proof paths, Judge Mode, Aster Sound showcase, MCP transaction review and stale-write protection, Runtime Parity Inspector, desktop packaging, accessibility and viewport hardening, and the expanded deterministic test/evidence matrix were implemented or substantially extended during the event.
+
+The public demo video is **not published yet**; it will be linked here after the owner records and approves the final sub-three-minute walkthrough. No Devpost submission or release is performed by repository automation.
 
 ## Contributing
 

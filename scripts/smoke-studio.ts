@@ -474,9 +474,17 @@ try {
       }
       const webPreview = showcaseWebFrame.contentFrame();
       await webPreview.locator("main[data-screen-id='player']").waitFor();
+      await showcasePage.waitForFunction(() => {
+        const surface = document.querySelector('[data-stage-surface="outputs"]');
+        return surface && getComputedStyle(surface).opacity === "1";
+      });
       await showcasePage.screenshot({ path: join(root, "output/playwright/aster-sound-code.png"), fullPage: true });
       await showcasePage.getByRole("button", { name: "Verification" }).click();
       await showcasePage.getByRole("heading", { name: /Verification ·/ }).waitFor();
+      await showcasePage.waitForFunction(() => {
+        const surface = document.querySelector('[data-stage-surface="verify"]');
+        return surface && getComputedStyle(surface).opacity === "1";
+      });
       await showcasePage.screenshot({ path: join(root, "output/playwright/aster-sound-verify.png"), fullPage: true });
     },
   });
@@ -486,6 +494,9 @@ try {
     allowPageError: (error) => Boolean(remoteOrigin)
       && error.message.includes("Failed to read the 'cookie' property from 'Document'")
       && error.message.includes("sandboxed and lacks the 'allow-same-origin' flag"),
+    allowRequestFailure: (request) => request.method() === "GET"
+      && request.failure()?.errorText === "net::ERR_ABORTED"
+      && new URL(request.url()).pathname === "/brand/intentform-mark.png",
     run: async (judgePage) => {
       await judgePage.route("**/api/readiness", (route) => route.fulfill({
         status: 200,
@@ -545,6 +556,11 @@ try {
       await judgePage.getByRole("button", { name: "Exit Judge Mode" }).click();
       await judgePage.waitForURL(`${origin}/`);
       await judgePage.getByRole("heading", { name: "Home", level: 1 }).waitFor();
+      const brandMark = judgePage.locator('aside img[src="/brand/intentform-mark.png"]');
+      await brandMark.waitFor();
+      if (!await brandMark.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)) {
+        throw new Error("Launcher brand asset did not load after leaving Judge Mode");
+      }
     },
   });
 
@@ -1725,10 +1741,12 @@ try {
       await page.screenshot({ path: join(root, "output/playwright/studio-active-preview.png"), fullPage: true });
       await page.getByRole("button", { name: "Design canvas" }).click();
       await page.getByTestId("canvas-viewport").waitFor();
-      if (await page.getByTestId("canvas-node-home.balance").count() !== 1
-        || await page.getByTestId("canvas-node-receipt.summary").count() !== 1) {
-        throw new Error("The board did not render every semantic screen as a frame");
-      }
+      await page.getByRole("button", { name: /^Good evening/ }).first().click();
+      await page.getByTestId("canvas-node-home.balance").waitFor();
+      await page.getByRole("button", { name: /^Request sent/ }).first().click();
+      await page.getByTestId("canvas-node-receipt.summary").waitFor();
+      await page.getByRole("button", { name: /^Request payment/ }).first().click();
+      await page.getByTestId("canvas-node-payment-request.recipient").waitFor();
 
       await page.getByTestId("canvas-node-payment-request.recipient").click();
       const keyboardContextNode = page.getByTestId("canvas-node-payment-request.recipient");

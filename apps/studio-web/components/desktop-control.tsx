@@ -69,10 +69,18 @@ export function DesktopControl() {
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     };
+    const handleFocusIn = (event: FocusEvent) => {
+      const target = event.target instanceof Node ? event.target : null;
+      if (!target || dialogRef.current?.contains(target)) return;
+      closeRef.current?.focus();
+    };
     document.addEventListener("keydown", handleKeyDown);
-    requestAnimationFrame(() => closeRef.current?.focus());
+    document.addEventListener("focusin", handleFocusIn);
+    const focusFrame = requestAnimationFrame(() => closeRef.current?.focus());
     return () => {
+      cancelAnimationFrame(focusFrame);
       document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("focusin", handleFocusIn);
       previouslyFocused?.focus();
     };
   }, [open]);
