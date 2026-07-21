@@ -76,6 +76,20 @@ For the richer product tour, open **Examples → Aster Sound**. It includes orig
 
 ![Aster Sound review thread with a fingerprint-bound Codex transaction linked to the selected playback flow](docs/assets/readme/agent-review.png)
 
+## Submission gallery
+
+These captures come from the public production build at a 1440 × 960 viewport. They are unretouched 3:2 product evidence prepared for the Devpost gallery; each frame is also kept in the repository so judges can inspect the exact source revision behind it.
+
+| Semantic editing | Responsive intent |
+| --- | --- |
+| ![Verdant Pay semantic Design workspace with layers, compact canvas, inspector, and Judge Mode](docs/assets/devpost/01-semantic-design-workspace.png) | ![One semantic graph projected across desktop, tablet, and compact phone frames](docs/assets/devpost/02-responsive-intent-comparison.png) |
+| **Deterministic React output** | **Evidence-bound verification** |
+| ![Generated React source beside its running projection and compiler diagnostics](docs/assets/devpost/03-deterministic-react-output.png) | ![Verification workspace separating semantic findings from missing build evidence](docs/assets/devpost/04-evidence-bound-verification.png) |
+| **Exact semantic evidence** | **Local-first project launcher** |
+| ![Compact reachability finding with exact node, property path, viewport, and expected relation](docs/assets/devpost/05-exact-semantic-evidence.png) | ![Local-first launcher with a durable Aster Sound project and private activity](docs/assets/devpost/06-local-first-project-launcher.png) |
+| **Aster Sound workspace** | **Focused product showcase** |
+| ![Aster Sound responsive web project with graph-native artwork, layers, and semantic inspector](docs/assets/devpost/07-aster-multidevice-workspace.png) | ![Minimal Aster Sound canvas showing synchronized Library and Collection screens](docs/assets/devpost/08-aster-product-showcase.png) |
+
 ## Quick start
 
 Requirements:
