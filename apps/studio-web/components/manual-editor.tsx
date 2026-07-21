@@ -179,6 +179,7 @@ interface ManualEditorProps {
   onRedo(): void;
   onOpenStage(stage: WorkflowStage): void;
   onResetProject(): void;
+  resetProjectLabel: string;
   onExportGraph(): void;
 }
 
@@ -314,6 +315,7 @@ export function ManualEditor({
   onRedo,
   onOpenStage,
   onResetProject,
+  resetProjectLabel,
   onExportGraph,
 }: ManualEditorProps) {
   const [tool, setTool] = useState<EditorTool>("select");
@@ -443,7 +445,7 @@ export function ManualEditor({
     previousMobilePanel.current = mobilePanel;
     if (mobilePanel) {
       const panelId = mobilePanel === "structure" ? "editor-structure-panel" : "editor-inspector-panel";
-      requestAnimationFrame(() => {
+      const focusFrame = requestAnimationFrame(() => {
         const panel = document.getElementById(panelId);
         const close = panel?.querySelector<HTMLElement>('button[aria-label^="Close"]');
         const first = panel?.querySelector<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled)');
@@ -467,7 +469,10 @@ export function ManualEditor({
         }
       };
       window.addEventListener("keydown", trapFocus);
-      return () => window.removeEventListener("keydown", trapFocus);
+      return () => {
+        cancelAnimationFrame(focusFrame);
+        window.removeEventListener("keydown", trapFocus);
+      };
     }
     if (previous === "structure") structureTriggerRef.current?.focus();
     if (previous === "inspector") inspectorTriggerRef.current?.focus();
@@ -476,15 +481,21 @@ export function ManualEditor({
   useEffect(() => {
     const previous = previousInsertOpen.current;
     previousInsertOpen.current = insertOpen;
-    if (insertOpen) requestAnimationFrame(() => document.querySelector<HTMLElement>('[role="menu"][aria-label="Insert semantic component"] [role="menuitem"]')?.focus());
-    else if (previous) insertTriggerRef.current?.focus();
+    if (insertOpen) {
+      const frame = requestAnimationFrame(() => document.querySelector<HTMLElement>('[role="menu"][aria-label="Insert semantic component"] [role="menuitem"]')?.focus());
+      return () => cancelAnimationFrame(frame);
+    }
+    if (previous) insertTriggerRef.current?.focus();
   }, [insertOpen]);
 
   useEffect(() => {
     const previous = previousZoomOpen.current;
     previousZoomOpen.current = zoomMenuOpen;
-    if (zoomMenuOpen) requestAnimationFrame(() => document.querySelector<HTMLElement>('[role="menu"][aria-label="Choose zoom level"] [role="menuitem"]')?.focus());
-    else if (previous) zoomTriggerRef.current?.focus();
+    if (zoomMenuOpen) {
+      const frame = requestAnimationFrame(() => document.querySelector<HTMLElement>('[role="menu"][aria-label="Choose zoom level"] [role="menuitem"]')?.focus());
+      return () => cancelAnimationFrame(frame);
+    }
+    if (previous) zoomTriggerRef.current?.focus();
   }, [zoomMenuOpen]);
 
   const beginPanelResize = (side: "rail" | "inspector") => (event: React.PointerEvent<HTMLDivElement>) => {
@@ -1347,34 +1358,48 @@ export function ManualEditor({
     commitDraft(draft, `Set ${target.title} as the prototype start screen.`);
   }, [commitDraft, graph]);
 
+  /* Rapid prototype navigation must not queue stale fitScreen frames that
+     land out of order and snap the camera back; only the latest wins. */
+  const prototypeFitFrame = useRef<number | null>(null);
+  const scheduleFitScreen = useCallback((screenId: string) => {
+    if (prototypeFitFrame.current !== null) cancelAnimationFrame(prototypeFitFrame.current);
+    prototypeFitFrame.current = requestAnimationFrame(() => {
+      prototypeFitFrame.current = null;
+      canvasApi.current?.fitScreen(screenId, true);
+    });
+  }, []);
+  useEffect(() => () => {
+    if (prototypeFitFrame.current !== null) cancelAnimationFrame(prototypeFitFrame.current);
+  }, []);
+
   useEffect(() => {
     if (previewMode && !previewWasOpen.current) {
       previewOriginScreen.current = selectedScreen;
       previewHistory.current = [];
       if (selectedScreen !== graph.prototype.startScreenId) {
         onSelectScreen(graph.prototype.startScreenId);
-        requestAnimationFrame(() => canvasApi.current?.fitScreen(graph.prototype.startScreenId, true));
+        scheduleFitScreen(graph.prototype.startScreenId);
       }
     } else if (!previewMode && previewWasOpen.current) {
       const origin = previewOriginScreen.current;
       if (selectedScreen === graph.prototype.startScreenId && origin !== selectedScreen && graph.screens.some((item) => item.id === origin)) {
         onSelectScreen(origin);
-        requestAnimationFrame(() => canvasApi.current?.fitScreen(origin, true));
+        scheduleFitScreen(origin);
       }
     }
     previewWasOpen.current = previewMode;
-  }, [graph.prototype.startScreenId, graph.screens, onSelectScreen, previewMode, selectedScreen]);
+  }, [graph.prototype.startScreenId, graph.screens, onSelectScreen, previewMode, scheduleFitScreen, selectedScreen]);
 
   const runPrototypeAction = useCallback((action: SemanticNode["prototypeActions"][number], sourceScreenId: string) => {
     if (action.type === "navigate" || action.type === "open-overlay") {
       if (!action.targetScreenId) return;
       previewHistory.current.push(sourceScreenId);
       onSelectScreen(action.targetScreenId);
-      requestAnimationFrame(() => canvasApi.current?.fitScreen(action.targetScreenId!, true));
+      scheduleFitScreen(action.targetScreenId);
     } else if (action.type === "back" || action.type === "close-overlay") {
       const target = previewHistory.current.pop() ?? graph.prototype.startScreenId;
       onSelectScreen(target);
-      requestAnimationFrame(() => canvasApi.current?.fitScreen(target, true));
+      scheduleFitScreen(target);
     } else if (action.type === "change-state" && action.state) {
       setVisualStateByScreen((current) => ({ ...current, [sourceScreenId]: action.state! }));
     } else if (action.type === "scroll-to" && action.targetNodeId) {
@@ -1383,7 +1408,7 @@ export function ManualEditor({
       window.open(action.url, "_blank", "noopener,noreferrer");
     }
     onNotice(`${action.type.replaceAll("-", " ")} · ${action.transition.type}${action.transition.durationMs ? ` · ${action.transition.durationMs}ms` : ""}`);
-  }, [graph.prototype.startScreenId, onNotice, onSelectScreen]);
+  }, [graph.prototype.startScreenId, onNotice, onSelectScreen, scheduleFitScreen]);
 
   const createReviewThread = useCallback((anchor: SemanticInterfaceGraph["reviewThreads"][number]["anchor"], body: string) => {
     const draft = structuredClone(graph);
@@ -1482,12 +1507,13 @@ export function ManualEditor({
   });
   keyActions.current = {
     escape: () => {
-      if (commandOpen || shortcutsOpen || insertOpen || zoomMenuOpen || mobilePanel) {
+      if (commandOpen || shortcutsOpen || insertOpen || zoomMenuOpen || guideMenuOpen || mobilePanel) {
         setCommandOpen(false);
         setCommandQuery("");
         setShortcutsOpen(false);
         setInsertOpen(false);
         setZoomMenuOpen(false);
+        setGuideMenuOpen(false);
         setMobilePanel(null);
         return;
       }
@@ -1540,7 +1566,7 @@ export function ManualEditor({
       }
       if (modifier && key === "k") {
         event.preventDefault();
-        setCommandOpen((open) => !open);
+        setInsertOpen(false); setZoomMenuOpen(false); setGuideMenuOpen(false); setCommandOpen((open) => !open);
         setCommandQuery("");
         return;
       }
@@ -1737,7 +1763,7 @@ export function ManualEditor({
     { label: "Open verification", section: "Workflow", icon: ShieldCheck, action: () => onOpenStage("verify") },
     { label: "Open proof report", section: "Workflow", icon: FileText, action: () => onOpenStage("report") },
     { label: "Export graph as JSON", section: "Project", icon: DownloadSimple, action: onExportGraph },
-    { label: "Reset to verified sample", section: "Project", icon: ArrowsCounterClockwise, action: onResetProject },
+    { label: resetProjectLabel, section: "Project", icon: ArrowsCounterClockwise, action: onResetProject },
   ];
 
   if (!screen) return null;
@@ -1807,12 +1833,12 @@ export function ManualEditor({
           </div>
         ) : null}
         onTool={(nextTool) => { setTool(nextTool); if (nextTool === "comment") { setReviewOpen(true); setActiveReviewThreadId(null); } }}
-        onInsert={() => setInsertOpen((open) => !open)}
+        onInsert={() => { setZoomMenuOpen(false); setGuideMenuOpen(false); setInsertOpen((open) => !open); }}
         onUndo={onUndo}
         onRedo={onRedo}
         onStructure={() => toggleEditorPanel("structure")}
         onInspector={() => toggleEditorPanel("inspector")}
-        onCommands={() => { setCommandOpen((open) => !open); setCommandQuery(""); }}
+        onCommands={() => { setInsertOpen(false); setZoomMenuOpen(false); setGuideMenuOpen(false); setCommandOpen((open) => !open); setCommandQuery(""); }}
         onMinimalUi={() => { setMinimalUi((current) => !current); setMobilePanel(null); }}
       />
 
@@ -1979,7 +2005,7 @@ export function ManualEditor({
             >
               <Stack size={13} /> Layers
             </button>
-            <button type="button" aria-label="Open command menu" title="Commands · ⌘K" aria-expanded={commandOpen} onClick={() => { setCommandOpen((open) => !open); setCommandQuery(""); }} className={floatingButton}>
+            <button type="button" aria-label="Open command menu" title="Commands · ⌘K" aria-expanded={commandOpen} onClick={() => { setInsertOpen(false); setZoomMenuOpen(false); setGuideMenuOpen(false); setCommandOpen((open) => !open); setCommandQuery(""); }} className={floatingButton}>
               <Command size={13} /> <span className="hidden 2xl:inline">Commands</span><kbd className="ml-0.5 hidden rounded border border-[var(--line)] bg-[var(--chip)] px-1 font-mono text-[10px] text-[var(--faint)] 2xl:inline">⌘K</kbd>
             </button>
           </div>
@@ -2006,7 +2032,7 @@ export function ManualEditor({
             <button type="button" aria-label="Redo" disabled={!canRedo} onClick={onRedo} className="grid size-7 place-items-center rounded-[5px] text-[var(--muted)] hover:bg-[var(--hover)] disabled:opacity-25"><ArrowClockwise size={13} /></button>
             <span className="mx-1 h-4 w-px bg-[var(--line)]" />
             <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
-              <button ref={insertTriggerRef} type="button" aria-label="Insert component" aria-expanded={insertOpen} onClick={() => setInsertOpen((open) => !open)} className={`grid size-7 place-items-center rounded-[5px] ${insertOpen ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
+              <button ref={insertTriggerRef} type="button" aria-label="Insert component" aria-expanded={insertOpen} onClick={() => { setZoomMenuOpen(false); setGuideMenuOpen(false); setInsertOpen((open) => !open); }} className={`grid size-7 place-items-center rounded-[5px] ${insertOpen ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}>
                 <Plus size={13} weight="bold" />
               </button>
               {insertOpen ? (
@@ -2128,7 +2154,7 @@ export function ManualEditor({
             ) : null}
             {!comparisonMode ? <>
             <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
-              <button type="button" aria-label="Guide settings" aria-expanded={guideMenuOpen} title="Rulers and guides" onClick={() => setGuideMenuOpen((open) => !open)} className={`grid size-7 place-items-center rounded-md ${guideMenuOpen || (guidePreferences.visible && screenGuides.length) ? "bg-[var(--if-blue-soft)] text-[var(--if-blue-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}><Ruler size={12} /></button>
+              <button type="button" aria-label="Guide settings" aria-expanded={guideMenuOpen} title="Rulers and guides" onClick={() => { setInsertOpen(false); setZoomMenuOpen(false); setGuideMenuOpen((open) => !open); }} className={`grid size-7 place-items-center rounded-md ${guideMenuOpen || (guidePreferences.visible && screenGuides.length) ? "bg-[var(--if-blue-soft)] text-[var(--if-blue-text)]" : "text-[var(--muted)] hover:bg-[var(--hover)]"}`}><Ruler size={12} /></button>
               {guideMenuOpen ? <>
                 <button type="button" aria-label="Close guide settings" onClick={() => setGuideMenuOpen(false)} className="fixed inset-0 z-[2] cursor-default" tabIndex={-1} />
                 <div role="dialog" aria-label="Rulers and guides" className="menu-pop absolute bottom-9 right-0 z-[3] w-72 p-2">
@@ -2149,7 +2175,7 @@ export function ManualEditor({
             <button type="button" aria-label="Fit canvas" title="Fit board · 0" onClick={() => canvasApi.current?.fitAll(true)} className="hidden size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] sm:grid"><ArrowsOutSimple size={12} /></button>
             <button type="button" aria-label="Zoom out" onClick={() => canvasApi.current?.zoomBy(0.8)} className="hidden size-7 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--hover)] sm:grid"><Minus size={11} /></button>
             <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
-              <button ref={zoomTriggerRef} type="button" aria-label="Zoom level" aria-expanded={zoomMenuOpen} onClick={() => setZoomMenuOpen((open) => !open)} className="min-h-7 w-12 rounded-md text-center font-mono text-[11px] text-[var(--t-strong)] hover:bg-[var(--hover)]">{zoomPct}%</button>
+              <button ref={zoomTriggerRef} type="button" aria-label="Zoom level" aria-expanded={zoomMenuOpen} onClick={() => { setInsertOpen(false); setGuideMenuOpen(false); setZoomMenuOpen((open) => !open); }} className="min-h-7 w-12 rounded-md text-center font-mono text-[11px] text-[var(--t-strong)] hover:bg-[var(--hover)]">{zoomPct}%</button>
               {zoomMenuOpen ? (
                 <div role="menu" aria-label="Choose zoom level" className="menu-pop absolute bottom-9 right-0 z-[3] w-36 p-1">
                   {([

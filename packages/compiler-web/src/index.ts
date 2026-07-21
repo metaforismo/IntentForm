@@ -529,10 +529,11 @@ button, a { touch-action: manipulation; }
 .if-layout { display: contents; }
 .if-card, .if-section, .if-status, .if-field { display: grid; gap: 10px; }
 .if-address { font-style: normal; }
-.if-field input { min-height: 44px; max-width: 100%; }
-.if-action { min-height: 44px; cursor: pointer; }
+.if-field { min-width: 0; }
+.if-field input { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid color-mix(in oklab, var(--if-ink) 18%, transparent); border-radius: 10px; color: inherit; background: var(--if-surface); }
+.if-action { min-height: 44px; padding: 12px 18px; border: 0; border-radius: 10px; font-weight: 650; cursor: pointer; }
 .if-action-primary { color: white; background: var(--if-accent); }
-.if-action-secondary { color: inherit; background: transparent; }
+.if-action-secondary { color: color-mix(in oklab, var(--if-accent) 55%, var(--if-ink)); background: color-mix(in oklab, var(--if-accent) 12%, transparent); }
 .if-media { display: grid; margin: 0; }
 .if-media img, .if-media video { display: block; width: 100%; height: 100%; }
 .if-media audio { width: 100%; }

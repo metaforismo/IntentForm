@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowRight, ClockCounterClockwise, FileArrowUp, FolderOpen, HardDrives, Robot, SlidersHorizontal } from "@phosphor-icons/react";
+import { ArrowRight, Check, ClockCounterClockwise, Copy, FileArrowUp, FolderOpen, HardDrives, Robot, SlidersHorizontal } from "@phosphor-icons/react";
+import { useEffect, useRef, useState } from "react";
 import type { BrowserCatalogProject } from "../lib/browser-project-catalog";
 import type { CatalogFilters, CatalogSort } from "../lib/launcher-model";
 import type { LauncherPreferences } from "../lib/launcher-preferences";
@@ -41,17 +42,236 @@ export function LauncherHome({ projects, bridge, storageEstimate, onOpen, onOpen
   </div>;
 }
 
-export function LauncherAgents({ bridge }: { bridge: BridgeStatus }) {
-  return <section className="max-w-4xl" aria-labelledby="agents-title"><div className="mb-4"><h2 id="agents-title" className="text-[13px] font-medium">Connected agents</h2><p className="mt-1 text-[11px] text-[var(--if-text-secondary)]">Local MCP clients receive semantic project access only; no arbitrary shell, filesystem escape, or outbound network authority.</p></div><div className="grid gap-3 sm:grid-cols-2">{["Codex", "Claude Code", "OpenCode", "Pi", "Generic MCP"].map((client, index) => <article key={client} className="rounded-lg border border-[var(--if-border)] bg-[var(--if-panel)] p-4"><div className="flex items-center justify-between"><strong className="text-[12px] font-medium">{client}</strong><span className={`size-2 rounded-full ${index === 0 && bridge === "available" ? "bg-[var(--if-green)]" : "bg-[var(--if-text-tertiary)]"}`} /></div><p className="mt-2 text-[10px] text-[var(--if-text-secondary)]">{index === 0 && bridge === "available" ? "Available through the current local bridge · reviewed writes" : "Not connected · installer configuration available in the project workspace"}</p></article>)}</div></section>;
+const AGENT_CLIENTS = [
+  { id: "codex", label: "Codex", transport: "stdio", command: "pnpm mcp:install --client codex --print" },
+  { id: "claude", label: "Claude Code", transport: "stdio", command: "pnpm mcp:install --client claude --print" },
+  { id: "opencode", label: "OpenCode", transport: "stdio", command: "pnpm mcp:install --client opencode --print" },
+  { id: "pi", label: "Pi", transport: "stdio", command: "pnpm mcp:install --client pi --print" },
+  { id: "generic", label: "Generic MCP", transport: "loopback HTTP", command: "INTENTFORM_MCP_TOKEN=<32+ chars> pnpm mcp:http" },
+] as const;
+
+const FIRST_SAFE_TASK = `Inspect the selected primary action.
+Propose a compact-safe placement.
+Do not change text or colors.`;
+
+function CopyValue({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<number | null>(null);
+  useEffect(() => () => { if (timer.current !== null) window.clearTimeout(timer.current); }, []);
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={() => {
+        void navigator.clipboard.writeText(value).then(() => {
+          setCopied(true);
+          if (timer.current !== null) window.clearTimeout(timer.current);
+          timer.current = window.setTimeout(() => setCopied(false), 1400);
+        }).catch(() => setCopied(false));
+      }}
+      className="inline-flex h-6 shrink-0 items-center gap-1 rounded-[4px] border border-[var(--if-border)] px-1.5 text-[9.5px] font-semibold text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)] hover:text-[var(--if-text)]"
+    >
+      {copied ? <Check size={10} /> : <Copy size={10} />}{copied ? "Copied" : "Copy"}
+    </button>
+  );
 }
+
+export function LauncherAgents({ bridge }: { bridge: BridgeStatus }) {
+  return (
+    <section className="max-w-4xl" aria-labelledby="agents-title">
+      <div className="mb-4">
+        <h2 id="agents-title" className="text-[13px] font-medium">Connected agents</h2>
+        <p className="mt-1 text-[11px] text-[var(--if-text-secondary)]">Humans and agents edit the same validated semantic graph. New MCP connections are read-only; writes require <code className="font-mono text-[10px]">INTENTFORM_MCP_PERMISSION=write</code> and every accepted change stays fingerprint-bound and reversible.</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {AGENT_CLIENTS.map((client) => {
+          const connected = client.id === "codex" && bridge === "available";
+          return (
+            <article key={client.id} className="rounded-lg border border-[var(--if-border)] bg-[var(--if-panel)] p-3.5">
+              <div className="flex items-center justify-between gap-2">
+                <strong className="text-[12px] font-medium">{client.label}</strong>
+                <span className="inline-flex items-center gap-1.5 text-[9.5px] text-[var(--if-text-secondary)]">
+                  <span className={`size-2 rounded-full ${connected ? "bg-[var(--if-green)]" : "bg-[var(--if-text-tertiary)]"}`} />
+                  {connected ? "Configured · reviewed writes" : "Not configured"}
+                </span>
+              </div>
+              <p className="mt-1.5 text-[10px] text-[var(--if-text-secondary)]">{client.transport} · prints the exact configuration plan without changing your client; add <code className="font-mono">--apply</code> after review.</p>
+              <div className="mt-2.5 flex items-center gap-1.5">
+                <code className="min-w-0 flex-1 truncate rounded-[4px] border border-[var(--if-border-subtle)] bg-[var(--if-panel-alt)] px-2 py-1.5 font-mono text-[9.5px] text-[var(--if-text)]">{client.command}</code>
+                <CopyValue value={client.command} label={`Copy ${client.label} setup command`} />
+              </div>
+            </article>
+          );
+        })}
+        <article className="rounded-lg border border-[var(--if-border)] bg-[var(--if-panel)] p-3.5">
+          <div className="flex items-center justify-between gap-2">
+            <strong className="text-[12px] font-medium">First safe task</strong>
+            <CopyValue value={FIRST_SAFE_TASK} label="Copy the first safe agent task" />
+          </div>
+          <p className="mt-1.5 text-[10px] text-[var(--if-text-secondary)]">Paste into a connected agent. The proposal arrives as a previewable transaction you commit or reject in Studio.</p>
+          <pre className="mt-2.5 whitespace-pre-wrap rounded-[4px] border border-[var(--if-border-subtle)] bg-[var(--if-panel-alt)] px-2 py-1.5 font-mono text-[9.5px] leading-relaxed text-[var(--if-text)]">{FIRST_SAFE_TASK}</pre>
+        </article>
+      </div>
+      <section className="mt-4 rounded-lg border border-[var(--if-border)] bg-[var(--if-panel)] p-3.5" aria-labelledby="agents-troubleshooting-title">
+        <h3 id="agents-troubleshooting-title" className="text-[11px] font-medium">Troubleshooting</h3>
+        <ul className="mt-2 grid gap-1.5 text-[10px] leading-relaxed text-[var(--if-text-secondary)] sm:grid-cols-2">
+          <li><strong className="font-medium text-[var(--if-text)]">Agent bridge {bridge}.</strong> Browser-only projects have no MCP endpoint; open a local .intentform project (desktop app or repository checkout) to expose one.</li>
+          <li><strong className="font-medium text-[var(--if-text)]">Connection test is read-only.</strong> Ask the agent to call intentform_describe_project; it reports the project and fingerprint without changing anything.</li>
+          <li><strong className="font-medium text-[var(--if-text)]">Writes are rejected?</strong> The server defaults to read-only. Set INTENTFORM_MCP_PERMISSION=write in the client environment after reviewing the plan.</li>
+          <li><strong className="font-medium text-[var(--if-text)]">HTTP transport refuses connections?</strong> It binds to 127.0.0.1 only and requires INTENTFORM_MCP_TOKEN (32–512 chars) as a bearer token.</li>
+          <li><strong className="font-medium text-[var(--if-text)]">Wrong project opens?</strong> Pass --project /absolute/path to the installer, or set INTENTFORM_PROJECT_DIR for the server process.</li>
+          <li><strong className="font-medium text-[var(--if-text)]">Stale fingerprint conflicts?</strong> That is the concurrency guard working: the agent re-reads the project and proposes against the current fingerprint.</li>
+        </ul>
+      </section>
+    </section>
+  );
+}
+
+const TARGET_LABELS: Record<string, string> = { react: "React", web: "Web", expo: "Expo", swiftui: "SwiftUI", compose: "Compose" };
 
 export function LauncherBuilds({ projects, onOpen }: { projects: BrowserCatalogProject[]; onOpen(project: BrowserCatalogProject): void }) {
-  return <section className="max-w-5xl" aria-labelledby="builds-title"><div className="mb-4"><h2 id="builds-title" className="text-[13px] font-medium">Builds and verification</h2><p className="mt-1 text-[11px] text-[var(--if-text-secondary)]">Launcher status stays truthful: catalog projects have no verified build until evidence is produced in Code or Verify.</p></div>{projects.length ? <div className="overflow-hidden rounded-lg border border-[var(--if-border)] bg-[var(--if-panel)]">{projects.slice(0, 12).map((project) => <button key={project.id} type="button" onClick={() => onOpen(project)} className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-4 border-b border-[var(--if-border-subtle)] px-4 py-3 text-left last:border-b-0"><span className="min-w-0"><strong className="block truncate text-[11px] font-medium">{project.name}</strong><span className="text-[9px] text-[var(--if-text-secondary)]">{project.graph.platforms.filter((platform) => platform.enabled).map((platform) => platform.target).join(" · ") || "No enabled target"}</span></span><span className="rounded bg-[var(--if-panel-alt)] px-2 py-1 text-[9px] text-[var(--if-text-secondary)]">not run</span><ArrowRight size={13} /></button>)}</div> : <p className="rounded-lg border border-dashed border-[var(--if-border)] p-5 text-[11px] text-[var(--if-text-secondary)]">Create or import a project, then run a target build from Code.</p>}</section>;
+  return (
+    <section className="max-w-5xl" aria-labelledby="builds-title">
+      <div className="mb-4"><h2 id="builds-title" className="text-[13px] font-medium">Builds and verification</h2><p className="mt-1 text-[11px] text-[var(--if-text-secondary)]">Truthful per-target state: every target stays “not run” until evidence is produced in Code or Verify — generation is never presented as proof.</p></div>
+      {projects.length ? (
+        <div className="overflow-hidden rounded-lg border border-[var(--if-border)] bg-[var(--if-panel)]">
+          {projects.slice(0, 12).map((project) => {
+            const targets = project.graph.platforms.filter((platform) => platform.enabled);
+            return (
+              <button key={project.id} type="button" onClick={() => onOpen(project)} className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-[var(--if-border-subtle)] px-4 py-3 text-left last:border-b-0 hover:bg-[var(--if-hover)]">
+                <span className="min-w-0">
+                  <strong className="block truncate text-[11px] font-medium">{project.name}</strong>
+                  <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    {targets.length ? targets.map((platform) => (
+                      <span key={platform.target} className="inline-flex items-center gap-1.5 rounded-[4px] border border-[var(--if-border-subtle)] bg-[var(--if-panel-alt)] px-1.5 py-0.5 text-[9px] text-[var(--if-text-secondary)]">
+                        <span aria-hidden="true" className="size-1.5 rounded-full bg-[var(--if-text-tertiary)]" />{TARGET_LABELS[platform.target] ?? platform.target} · not run
+                      </span>
+                    )) : <span className="text-[9px] text-[var(--if-text-tertiary)]">No enabled target</span>}
+                  </span>
+                </span>
+                <span className="flex items-center gap-2 text-[9.5px] text-[var(--if-text-secondary)]">Open in Code <ArrowRight size={13} /></span>
+              </button>
+            );
+          })}
+        </div>
+      ) : <p className="rounded-lg border border-dashed border-[var(--if-border)] p-5 text-[11px] text-[var(--if-text-secondary)]">Create or import a project, then run a target build from Code.</p>}
+    </section>
+  );
 }
 
+const LEARN_GUIDES: Array<{ title: string; detail: string; steps: string[] }> = [
+  {
+    title: "60-second product tour",
+    detail: "Launcher → Design → Code → Verify",
+    steps: [
+      "Open Examples and choose Aster Sound — a complete responsive project.",
+      "On the Design canvas, click any layer; the Inspector names its exact semantic role.",
+      "Switch to Code: the same graph compiled to Web, React, Expo, and SwiftUI source.",
+      "Switch to Verify: findings carry evidence, an exact node, and a previewable repair.",
+    ],
+  },
+  {
+    title: "Create the first project",
+    detail: "Choose intent, targets, and a durable local start",
+    steps: [
+      "Press ⌘/Ctrl N or click New project.",
+      "Pick a project type — Application, Prototype, Component library, or Responsive web.",
+      "Name the product, audience, and first outcome; choose compiler targets.",
+      "Create. The project autosaves to the durable browser catalog on every edit.",
+    ],
+  },
+  {
+    title: "Work with components",
+    detail: "Definitions, variants, states, and instances",
+    steps: [
+      "Open the Components tab in the left dock to browse definitions.",
+      "Use the Insert menu (+) on the tool rail to place a semantic component instance.",
+      "Select an instance: the Inspector's Component section switches variant and state.",
+      "Overrides stay tracked — detach or reset them from the same section.",
+    ],
+  },
+  {
+    title: "Connect an agent",
+    detail: "Install an MCP client and review every write",
+    steps: [
+      "Open the Agents page and copy the installer command for your client.",
+      "Run it with --print first; re-run with --apply after reviewing the plan.",
+      "Connections start read-only; set INTENTFORM_MCP_PERMISSION=write for edits.",
+      "Proposals arrive in Ask agent as fingerprint-bound diffs you commit or reject.",
+    ],
+  },
+  {
+    title: "Generate and verify",
+    detail: "Separate generated output from observed evidence",
+    steps: [
+      "In Code, pick a target — files regenerate deterministically from the graph.",
+      "Build produces runtime evidence; without it, status stays honestly “not run”.",
+      "In Verify, open a finding: exact node, measurable evidence, responsible layer.",
+      "Preview repair shows the smallest typed change; Apply, then re-run to confirm.",
+    ],
+  },
+  {
+    title: "Responsive Web",
+    detail: "Frames, breakpoints, import, and runtime parity",
+    steps: [
+      "Create a Responsive web project; frames and breakpoints live in the Inspector.",
+      "Import HTML/CSS renders in a sandbox and becomes a reviewed semantic diff.",
+      "In Code (Web target), Runtime parity measures the real rendered document.",
+      "Each difference links to the exact node — edit intent, regenerate, re-run.",
+    ],
+  },
+  {
+    title: "Expo and SwiftUI",
+    detail: "Native projects with explicit diagnostics",
+    steps: [
+      "Enable Expo or SwiftUI targets when creating a project, or in the graph later.",
+      "Code shows readable native source; unsupported relations become diagnostics.",
+      "Local builds and Simulator evidence run through a desktop-linked project.",
+      "No production app ships an IntentForm runtime — output is plain native code.",
+    ],
+  },
+  {
+    title: "Keyboard shortcuts",
+    detail: "The essentials for fast editing",
+    steps: [
+      "⌘/Ctrl K — command palette · ? — full shortcut reference.",
+      "V — select tool · H — pan tool · Space — temporary pan.",
+      "⌘/Ctrl Z / ⇧⌘Z — undo and redo semantic edits.",
+      "⌘/Ctrl N — new project · ⌘/Ctrl O — import a project file.",
+    ],
+  },
+];
+
 export function LauncherLearn() {
-  const guides = [["60-second product tour", "Launcher → Design → Code → Verify"], ["Create the first project", "Choose intent, targets, and a durable local start"], ["Work with components", "Create definitions, variants, slots, and overrides"], ["Connect an agent", "Install an MCP client and review every write"], ["Generate and verify", "Separate generated output from observed evidence"], ["Responsive Web", "Import computed DOM/CSS and compile editable output"], ["Expo and SwiftUI", "Produce native projects with explicit diagnostics"], ["Keyboard shortcuts", "Cmd/Ctrl+K search · Cmd/Ctrl+N new · Cmd/Ctrl+O import"]] as const;
-  return <section className="max-w-5xl" aria-labelledby="learn-title"><div className="mb-4"><h2 id="learn-title" className="text-[13px] font-medium">Learn IntentForm</h2><p className="mt-1 text-[11px] text-[var(--if-text-secondary)]">Short local guides; no account or network request required.</p></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{guides.map(([title, detail]) => <article key={title} className="rounded-lg border border-[var(--if-border)] bg-[var(--if-panel)] p-4"><strong className="text-[12px] font-medium">{title}</strong><p className="mt-2 text-[10px] leading-relaxed text-[var(--if-text-secondary)]">{detail}</p></article>)}</div></section>;
+  const [openGuide, setOpenGuide] = useState<string | null>(null);
+  return (
+    <section className="max-w-5xl" aria-labelledby="learn-title">
+      <div className="mb-4"><h2 id="learn-title" className="text-[13px] font-medium">Learn IntentForm</h2><p className="mt-1 text-[11px] text-[var(--if-text-secondary)]">Short local guides; no account or network request required.</p></div>
+      <div className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {LEARN_GUIDES.map((guide) => {
+          const open = openGuide === guide.title;
+          return (
+            <article key={guide.title} className="overflow-hidden rounded-lg border border-[var(--if-border)] bg-[var(--if-panel)]">
+              <button type="button" aria-expanded={open} onClick={() => setOpenGuide(open ? null : guide.title)} className="flex w-full items-start justify-between gap-2 p-4 text-left hover:bg-[var(--if-hover)]">
+                <span><strong className="block text-[12px] font-medium">{guide.title}</strong><span className="mt-1 block text-[10px] leading-relaxed text-[var(--if-text-secondary)]">{guide.detail}</span></span>
+                <ArrowRight size={12} className={`mt-1 shrink-0 text-[var(--if-text-tertiary)] transition-transform ${open ? "rotate-90" : ""}`} />
+              </button>
+              {open ? (
+                <ol className="grid gap-2 border-t border-[var(--if-border-subtle)] p-4 pt-3">
+                  {guide.steps.map((step, index) => (
+                    <li key={step} className="grid grid-cols-[16px_minmax(0,1fr)] gap-2 text-[10.5px] leading-relaxed text-[var(--if-text-secondary)]">
+                      <span className="mt-px grid size-4 place-items-center rounded-full bg-[var(--if-panel-alt)] font-mono text-[8.5px] text-[var(--if-text-tertiary)]">{index + 1}</span>
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
 }
 
 export function LauncherSettings({ preferences, projects, storageEstimate, onChange }: { preferences: LauncherPreferences; projects: BrowserCatalogProject[]; storageEstimate: { usage: number; quota: number } | null; onChange(update: (current: LauncherPreferences) => LauncherPreferences): void }) {

@@ -4,6 +4,7 @@ import { previewPatch } from "./tools.ts";
 import { loadProject } from "./store.ts";
 import {
   commitTransactionReview,
+  projectGraphDigest,
   recordTransactionReview,
   rejectTransactionReview,
 } from "./transaction-reviews.ts";
@@ -99,6 +100,7 @@ export class SemanticTransactionService {
       createdAt: record.createdAt,
       expiresAt: record.expiresAt,
       baseFingerprint: record.baseFingerprint,
+      baseDigest: projectGraphDigest(projectDir),
       previewFingerprint: preview.previewFingerprint,
       patch,
       changes: preview.changes,

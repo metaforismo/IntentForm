@@ -379,6 +379,10 @@ export function browserProjectCatalog(): BrowserProjectCatalogDatabase {
               transaction.abort();
               return { ok: false, code: "missing", message: "This project no longer exists in the browser catalog." };
             }
+            if (current.archivedAt) {
+              transaction.abort();
+              return { ok: false, code: "conflict", message: "This project was archived in another window. Restore it or keep these edits as a copy." };
+            }
             if (current.revision !== expectedRevision) {
               transaction.abort();
               return { ok: false, code: "conflict", message: "This project changed in another window. Reopen it before saving." };
@@ -431,6 +435,18 @@ export function browserProjectCatalog(): BrowserProjectCatalogDatabase {
           if (!current) {
             transaction.abort();
             return { ok: false, code: "missing", message: "This project no longer exists in the browser catalog." };
+          }
+          const others = (await requestResult(store.getAll())) as unknown[];
+          const collides = others.some((value) => {
+            const record = value as { id?: unknown; name?: unknown; archivedAt?: unknown };
+            return record.id !== id
+              && !record.archivedAt
+              && typeof record.name === "string"
+              && record.name.trim().toLowerCase() === trimmed.toLowerCase();
+          });
+          if (collides) {
+            transaction.abort();
+            return { ok: false, code: "conflict", message: `Another project is already named “${trimmed}”. Choose a distinct name.` };
           }
           const graph = structuredClone(current.graph);
           graph.product.name = trimmed;

@@ -84,4 +84,13 @@ describe("editor clipboard transactions", () => {
     expect(plainTextFromHtml("<p>&#xD800;</p>").text).toBe("&#xD800;");
     expect(plainTextFromHtml("<img src=x>").diagnostics[0]?.code).toBe("clipboard.html.empty");
   });
+
+  it("keeps text intact when quoted attributes contain angle brackets", () => {
+    expect(plainTextFromHtml('<div data-x="a>b">Hello</div>').text).toBe("Hello");
+    expect(plainTextFromHtml('<a href="page?x=1&y=2>3">Link text</a> after').text).toBe("Link text after");
+    expect(plainTextFromHtml("<span title='5 > 4'>Compare</span>").text).toBe("Compare");
+    expect(plainTextFromHtml('<style media="a>b">.x{}</style>Visible').text).toBe("Visible");
+    expect(plainTextFromHtml('<!-- note with > inside -->Kept').text).toBe("Kept");
+    expect(plainTextFromHtml('<p title="unterminated>Tail').text).toBe("");
+  });
 });

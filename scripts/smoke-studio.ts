@@ -474,9 +474,17 @@ try {
       }
       const webPreview = showcaseWebFrame.contentFrame();
       await webPreview.locator("main[data-screen-id='player']").waitFor();
+      await showcasePage.waitForFunction(() => {
+        const surface = document.querySelector('[data-stage-surface="outputs"]');
+        return surface && getComputedStyle(surface).opacity === "1";
+      });
       await showcasePage.screenshot({ path: join(root, "output/playwright/aster-sound-code.png"), fullPage: true });
       await showcasePage.getByRole("button", { name: "Verification" }).click();
       await showcasePage.getByRole("heading", { name: /Verification ·/ }).waitFor();
+      await showcasePage.waitForFunction(() => {
+        const surface = document.querySelector('[data-stage-surface="verify"]');
+        return surface && getComputedStyle(surface).opacity === "1";
+      });
       await showcasePage.screenshot({ path: join(root, "output/playwright/aster-sound-verify.png"), fullPage: true });
     },
   });
@@ -486,6 +494,9 @@ try {
     allowPageError: (error) => Boolean(remoteOrigin)
       && error.message.includes("Failed to read the 'cookie' property from 'Document'")
       && error.message.includes("sandboxed and lacks the 'allow-same-origin' flag"),
+    allowRequestFailure: (request) => request.method() === "GET"
+      && request.failure()?.errorText === "net::ERR_ABORTED"
+      && new URL(request.url()).pathname === "/brand/intentform-mark.png",
     run: async (judgePage) => {
       await judgePage.route("**/api/readiness", (route) => route.fulfill({
         status: 200,
@@ -545,6 +556,11 @@ try {
       await judgePage.getByRole("button", { name: "Exit Judge Mode" }).click();
       await judgePage.waitForURL(`${origin}/`);
       await judgePage.getByRole("heading", { name: "Home", level: 1 }).waitFor();
+      const brandMark = judgePage.locator('aside img[src="/brand/intentform-mark.png"]');
+      await brandMark.waitFor();
+      if (!await brandMark.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)) {
+        throw new Error("Launcher brand asset did not load after leaving Judge Mode");
+      }
     },
   });
 
@@ -590,6 +606,12 @@ try {
 
       await page.getByRole("button", { name: "Project actions for Catalog Beta" }).click();
       await page.getByRole("menuitem", { name: "Rename" }).click();
+      await page.getByLabel("Rename Catalog Beta").fill("Catalog Alpha");
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await page.getByRole("alert").getByText(/already named .*Catalog Alpha/i).waitFor();
+      await page.getByRole("button", { name: "Dismiss launcher error" }).click();
+      await page.getByRole("button", { name: "Project actions for Catalog Beta" }).click();
+      await page.getByRole("menuitem", { name: "Rename" }).click();
       await page.getByLabel("Rename Catalog Beta").fill("Catalog Beta Renamed");
       await page.getByRole("button", { name: "Save", exact: true }).click();
       await page.getByRole("button", { name: /^Catalog Beta Renamed/ }).waitFor();
@@ -621,6 +643,7 @@ try {
       await page.getByRole("button", { name: /^Catalog Alpha/ }).click();
       await page.waitForURL(`${origin}/studio`);
       const documentTabs = page.getByRole("tablist", { name: "Open project documents" }).getByRole("tab");
+      await documentTabs.first().waitFor();
       if (await documentTabs.count() !== 1) throw new Error("A new project did not start with one real document tab");
       await page.getByRole("button", { name: "Open another document" }).click();
       if (await documentTabs.count() !== 2) throw new Error("Opening another document did not add a real tab");
@@ -738,7 +761,9 @@ try {
       await secondLabel.fill("Window two stale");
       await secondLabel.press("Enter");
       await secondPage.waitForTimeout(900);
-      await secondPage.getByRole("button", { name: "Show workspace status" }).click();
+      // The conflict notice auto-opens the workspace status popover with
+      // recovery actions; clicking the toggle here would close it again.
+      await secondPage.getByTestId("catalog-conflict-actions").waitFor();
       await secondPage.getByRole("status").getByText(/changed in another window/i).waitFor();
 
       const storedLabel = await firstPage.evaluate(async ({ id, nodeId }) => {
@@ -756,6 +781,48 @@ try {
         return project.graph.screens.flatMap((screen) => screen.nodes).find((node) => node.id === nodeId)?.intent?.label;
       }, identity);
       if (storedLabel !== "Window one commit") throw new Error(`Stale window overwrote the catalog head: ${storedLabel}`);
+
+      await secondPage.getByRole("button", { name: "Reload latest revision" }).click();
+      await secondPage.getByTestId("catalog-conflict-actions").waitFor({ state: "detached" });
+      await secondPage.getByTestId(`layer-${identity.nodeId}`).click();
+      const reloadedLabel = secondPage.getByTestId("semantic-inspector").getByLabel("Label", { exact: true });
+      if (await reloadedLabel.inputValue() !== "Window one commit") {
+        throw new Error("Conflict reload did not adopt the other window's committed revision");
+      }
+
+      // Archiving in another window must surface as an explicit archived
+      // conflict with a restore path — never silent saves into the archive.
+      await catalogPage.getByRole("button", { name: "Project actions for Concurrent Catalog" }).click();
+      await catalogPage.getByRole("menuitem", { name: "Archive" }).click();
+      await catalogPage.getByRole("button", { name: /^Concurrent Catalog/ }).waitFor({ state: "detached" });
+
+      await reloadedLabel.fill("Post archive edit");
+      await reloadedLabel.press("Enter");
+      await secondPage.waitForTimeout(900);
+      await secondPage.getByTestId("catalog-conflict-actions").waitFor();
+      await secondPage.getByRole("status").getByText(/archived in another window/i).waitFor();
+      await secondPage.getByRole("button", { name: "Restore project" }).click();
+      await secondPage.getByTestId("catalog-conflict-actions").waitFor({ state: "detached" });
+      await catalogPage.getByRole("button", { name: /^Concurrent Catalog/ }).waitFor();
+      const restoredState = await secondPage.evaluate(async ({ id, nodeId }) => {
+        const database = await new Promise<IDBDatabase>((resolve, reject) => {
+          const request = indexedDB.open("intentform-project-catalog", 1);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        const project = await new Promise<{ archivedAt?: string | null; graph: { screens: Array<{ nodes: Array<{ id: string; intent?: { label?: string } }> }> } }>((resolve, reject) => {
+          const request = database.transaction("projects", "readonly").objectStore("projects").get(id);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        database.close();
+        return {
+          archivedAt: project.archivedAt ?? null,
+          label: project.graph.screens.flatMap((screen) => screen.nodes).find((node) => node.id === nodeId)?.intent?.label,
+        };
+      }, identity);
+      if (restoredState.archivedAt !== null) throw new Error("Restore did not clear the archived state");
+      if (restoredState.label !== "Post archive edit") throw new Error(`Restore did not persist the pending edit: ${restoredState.label}`);
       await catalogPage.close();
       await secondPage.close();
     },
@@ -1094,6 +1161,14 @@ try {
       }
       const compiledFrame = responsiveWebFrame.contentFrame();
       await compiledFrame.locator("main[data-screen-id='home']").waitFor();
+
+      await page.getByRole("button", { name: "Runtime parity" }).click();
+      const paritySummary = page.getByTestId("runtime-parity-summary");
+      await paritySummary.waitFor({ timeout: 30_000 });
+      const summaryText = await paritySummary.textContent();
+      if (!/nodes matched/.test(summaryText ?? "")) throw new Error(`Runtime parity did not produce a node summary: ${summaryText}`);
+      await page.getByTestId("runtime-parity-report").getByText(/measured in the real rendered document/i).waitFor();
+
       await page.getByRole("treeitem", { name: "src/styles.css", exact: true }).click();
       const generatedSource = page.getByRole("region", { name: "Generated source" });
       const sourceSearch = page.getByLabel("Search generated code");
@@ -1146,6 +1221,9 @@ try {
       await importDialog.getByRole("button", { name: "Replace screen with reviewed import" }).click();
       await importDialog.waitFor({ state: "detached" });
       await page.getByTestId("responsive-web-preview").locator("iframe").contentFrame().getByText("Browser oracle", { exact: true }).waitFor();
+      // The reviewed import changed the graph, so the earlier parity report
+      // must present itself as stale instead of pretending to be current.
+      await page.getByText("stale · graph changed", { exact: true }).waitFor();
       await page.getByRole("button", { name: "Design canvas" }).click();
       await page.getByTestId("canvas-node-web-import.1").waitFor();
       await page.getByRole("button", { name: "Undo" }).click();
@@ -1663,10 +1741,12 @@ try {
       await page.screenshot({ path: join(root, "output/playwright/studio-active-preview.png"), fullPage: true });
       await page.getByRole("button", { name: "Design canvas" }).click();
       await page.getByTestId("canvas-viewport").waitFor();
-      if (await page.getByTestId("canvas-node-home.balance").count() !== 1
-        || await page.getByTestId("canvas-node-receipt.summary").count() !== 1) {
-        throw new Error("The board did not render every semantic screen as a frame");
-      }
+      await page.getByRole("button", { name: /^Good evening/ }).first().click();
+      await page.getByTestId("canvas-node-home.balance").waitFor();
+      await page.getByRole("button", { name: /^Request sent/ }).first().click();
+      await page.getByTestId("canvas-node-receipt.summary").waitFor();
+      await page.getByRole("button", { name: /^Request payment/ }).first().click();
+      await page.getByTestId("canvas-node-payment-request.recipient").waitFor();
 
       await page.getByTestId("canvas-node-payment-request.recipient").click();
       const keyboardContextNode = page.getByTestId("canvas-node-payment-request.recipient");
@@ -1915,7 +1995,7 @@ try {
       await surfacePage.getByRole("button", { name: "Native outputs" }).click();
       const codeWorkspace = surfacePage.getByTestId("code-workspace");
       await codeWorkspace.waitFor();
-      const activeTarget = codeWorkspace.getByRole("button", { name: "react", exact: true });
+      const activeTarget = codeWorkspace.getByRole("button", { name: "React", exact: true });
       if (await activeTarget.getAttribute("data-state") !== "active") throw new Error("Code target tabs do not use the shared active state");
 
       await surfacePage.getByRole("button", { name: "Verification" }).click();
@@ -2201,8 +2281,8 @@ try {
       await transactionPage.getByTestId(`layer-${insertedId}`).waitFor({ state: "detached" });
 
       await transactionPage.keyboard.press("Control+k");
-      await transactionPage.getByLabel("Search commands").fill("Reset to verified sample");
-      await transactionPage.getByRole("button", { name: "Reset to verified sample" }).click();
+      await transactionPage.getByLabel("Search commands").fill("Revert to saved revision");
+      await transactionPage.getByRole("button", { name: "Revert to saved revision" }).click();
       const resetDialog = transactionPage.getByRole("alertdialog", { name: "Reset this workspace?" });
       await resetDialog.waitFor();
       await transactionPage.waitForTimeout(200);
@@ -2219,8 +2299,8 @@ try {
       if (!await transactionPage.getByRole("button", { name: "IntentForm project menu" }).evaluate((element) => element === document.activeElement)) throw new Error("Reset cancellation did not restore focus to the project menu");
       await transactionPage.getByRole("button", { name: "Request payment 4", exact: true }).waitFor();
       await transactionPage.keyboard.press("Control+k");
-      await transactionPage.getByLabel("Search commands").fill("Reset to verified sample");
-      await transactionPage.getByRole("button", { name: "Reset to verified sample" }).click();
+      await transactionPage.getByLabel("Search commands").fill("Revert to saved revision");
+      await transactionPage.getByRole("button", { name: "Revert to saved revision" }).click();
       await transactionPage.getByRole("alertdialog", { name: "Reset this workspace?" }).getByRole("button", { name: "Reset workspace" }).click();
       await transactionPage.getByRole("button", { name: "Request payment 4", exact: true }).waitFor();
       await transactionPage.getByRole("button", { name: "Verification" }).click();

@@ -379,7 +379,7 @@ export function Inspector({
 
           {componentDefinition && componentInstance && componentContext ? (
             <Section title="Component instance">
-              <div className="rounded-xl border border-[var(--line)] bg-[var(--field)] p-2.5">
+              <div className="rounded-[6px] border border-[var(--line)] bg-[var(--field)] p-2.5">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <strong className="block truncate text-[12px] font-semibold text-[var(--ink)]">{componentDefinition.name}</strong>
@@ -489,10 +489,10 @@ export function Inspector({
                 {selectedNode.asset.fit === "cover" ? (
                   <div className="grid gap-2 rounded-lg border border-[var(--line)] bg-[var(--field)] p-2.5">
                     <label className="grid gap-1 text-[10px] font-medium text-[var(--muted)]">Horizontal focal point
-                      <input type="range" min={0} max={1} step={0.01} value={selectedNode.asset.focalPoint.x} disabled={Boolean(componentContext)} onChange={(event) => updateNode((node) => { if (node.asset) node.asset.focalPoint.x = Number(event.target.value); }, "Adjusted asset crop focal point.")} className="w-full accent-[var(--accent)]" />
+                      <input type="range" min={0} max={1} step={0.01} value={selectedNode.asset.focalPoint.x} disabled={Boolean(componentContext)} onChange={(event) => updateNode((node) => { if (node.asset) node.asset.focalPoint.x = Number(event.target.value); }, "Adjusted asset crop focal point.")} className="if-range w-full accent-[var(--accent)]" />
                     </label>
                     <label className="grid gap-1 text-[10px] font-medium text-[var(--muted)]">Vertical focal point
-                      <input type="range" min={0} max={1} step={0.01} value={selectedNode.asset.focalPoint.y} disabled={Boolean(componentContext)} onChange={(event) => updateNode((node) => { if (node.asset) node.asset.focalPoint.y = Number(event.target.value); }, "Adjusted asset crop focal point.")} className="w-full accent-[var(--accent)]" />
+                      <input type="range" min={0} max={1} step={0.01} value={selectedNode.asset.focalPoint.y} disabled={Boolean(componentContext)} onChange={(event) => updateNode((node) => { if (node.asset) node.asset.focalPoint.y = Number(event.target.value); }, "Adjusted asset crop focal point.")} className="if-range w-full accent-[var(--accent)]" />
                     </label>
                   </div>
                 ) : null}

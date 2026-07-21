@@ -44,7 +44,7 @@ Generated files are integration artifacts, not the source of truth. Every accept
 | Canvas | Infinite board, recursive layers, mixed selection, eight resize handles, rotation, snapping, keyboard movement, grouping, duplication, nested reparenting, conflict-safe inline text editing with IME/RTL support, context menus, clipboard and style clipboard, comments, flow preview, device chrome, and synchronized multi-device comparison |
 | Layout | Stack, frame, list, grid tracks and span, wrap, overlay, split, scroll, safe area, adaptive, and freeform relations with deterministic layout indexes |
 | Design systems | Components, instances, variants, states, slots, overrides, detach/reset, DTCG token modes, searchable token binding, licensed assets with integrity recovery, image placement, and SVG paint editing |
-| Web workflows | Responsive frames and breakpoints, generated DOM/CSS runtime, sandboxed HTML/CSS import through computed styles, explicit unsupported-property diagnostics, and source-to-canvas navigation |
+| Web workflows | Responsive frames and breakpoints, generated DOM/CSS runtime, sandboxed HTML/CSS import through computed styles, explicit unsupported-property diagnostics, runtime parity inspection, and source-to-canvas navigation |
 | Native output | Deterministic React, Web, Expo Router, and SwiftUI compilers with readable generated files and target capability diagnostics |
 | Agents | Local MCP resources and bounded tools, read-only default, exact file/page/selection scope, preview/commit/reject/revert transactions, semantic diffs, comments, history, checkpoints, and rollback |
 | Evidence | Unit and integration tests, accessibility profiles, Playwright production smoke, responsive runtime checks, Expo iOS/Android exports, SwiftUI builds and Simulator accessibility/screenshots, desktop packaging, and a 10,000-node benchmark |
@@ -91,6 +91,20 @@ pnpm dev
 ```
 
 Open `http://127.0.0.1:3000`, create a project or copy an example, then enter Studio. Core editing, compilation, deterministic replay, and local agent workflows require no account, hosted service, model call, or paid MCP allowance.
+
+Supported and verified paths:
+
+- **Browser Studio:** current Chromium on macOS, Linux, and Windows; the hosted Judge Mode above is the fastest test path and needs no account.
+- **Desktop Studio:** the packaged Electron app is build-, signature-, sandbox-, and launch-verified on macOS arm64. The packager targets the current host platform, but Windows and Linux desktop bundles are not yet claimed as release-verified.
+- **Generated targets:** React and responsive Web run in current browsers; Expo exports are checked for iOS and Android; SwiftUI build and Simulator render evidence require macOS with Xcode.
+
+To build the desktop package for the current host after installing dependencies:
+
+```bash
+pnpm package:desktop
+```
+
+The bundle is written under `output/desktop/`. For agent installation and a safe read-only connection test, follow [`packages/mcp-server/README.md`](packages/mcp-server/README.md).
 
 Focused checks:
 
@@ -153,6 +167,8 @@ IntentForm separates these states:
 5. Evidence verdict produced for the active target and profile.
 
 The Studio Code workspace provides a virtualized, syntax-aware source viewer with search, exact node links, copy context, and source-to-canvas navigation. Verify groups semantic, responsive, accessibility, browser, Expo, SwiftUI, and desktop evidence without pretending that one target proves another.
+
+The **Runtime Parity Inspector** answers "did the real rendered app preserve the semantic design intent?" with measurements instead of assumptions. A sandboxed probe renders the compiled web document at every declared frame and measures each stable node in the live DOM; existence, document order, accessible names and roles, WCAG 2.2 target sizes, horizontal overflow, and compact reachability of persistently placed actions are compared against the graph. Every finding links to the exact node on the canvas, reports are fingerprint-bound and flag themselves stale when the graph changes, and measured geometry is presented as evidence rather than judged — canvas-to-runtime pixel fidelity remains explicitly ongoing work, and the inspector never claims parity for targets it has not measured.
 
 CI runs typecheck, the complete test suite, the 10,000-node benchmark, production builds, Web runtime smoke, Expo exports for iOS and Android, the full Studio browser matrix, checked-in preview drift checks, SwiftUI native build/render evidence, and the hardened macOS desktop package. GitHub Actions are pinned to immutable commits.
 
@@ -240,7 +256,9 @@ IntentForm was developed for the 2026 OpenAI Build Week Developer Tools track. T
 - **Deterministic code** owns migrations, fingerprints, diffs, compilers, evidence binding, history, and rollback. GPT-5.6 does not emit the production source files.
 - **Human decisions** retained authority over product scope, interaction and visual direction, architecture boundaries, acceptance criteria, transaction approval, and every external publication step.
 
-The dated Git history preserves the build sequence from the canonical graph and compilers through the professional editor, durable catalog, Judge Mode, exact Code/Verify journeys, and Aster showcase. The public demo video is **not published yet**; it will be linked here after the owner records and approves the final sub-three-minute walkthrough. No Devpost submission or release is performed by repository automation.
+IntentForm had a semantic-graph and compiler foundation before the submission period. The dated public Git history distinguishes that foundation from the material Build Week extension: the full Design/Code/Verify product experience, durable local project catalog and recovery, responsive and native proof paths, Judge Mode, Aster Sound showcase, MCP transaction review and stale-write protection, Runtime Parity Inspector, desktop packaging, accessibility and viewport hardening, and the expanded deterministic test/evidence matrix were implemented or substantially extended during the event.
+
+The public demo video is **not published yet**; it will be linked here after the owner records and approves the final sub-three-minute walkthrough. No Devpost submission or release is performed by repository automation.
 
 ## Contributing
 

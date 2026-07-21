@@ -51,6 +51,7 @@ import {
   type ProjectType,
 } from "../lib/browser-project-catalog";
 import { hasUnsavedLocalChanges, serializedGraphFingerprint } from "../lib/project-save-state";
+import { stashBootNotice } from "../lib/boot-notice";
 import {
   JUDGE_SESSION_KEY,
   advanceJudgeSession,
@@ -65,6 +66,7 @@ import {
   type JudgeStepId,
 } from "../lib/judge-mode";
 import { ManualEditor, type WorkflowStage } from "./manual-editor";
+import { shouldCoalesceCommit, type CommitStamp } from "./editor/commit-coalescing";
 import { reconcileGraphSelection } from "./editor/direct-manipulation";
 import { editorProfiles, type DeviceId, type VisualState } from "./editor/support";
 import { compileStudioTarget } from "./target-compilation";
@@ -193,8 +195,10 @@ export function Studio() {
   const [catalogSaveState, setCatalogSaveState] = useState<"saved" | "dirty" | "saving" | "error">("saved");
   const [workspace, setWorkspace] = useState<BrowserWorkspaceState>(() => defaultWorkspaceState(demoGraph));
   const [judgeSession, setJudgeSession] = useState<JudgeSession | null>(null);
+  const [catalogConflict, setCatalogConflict] = useState<BrowserCatalogProject | null>(null);
   const [pendingTabClose, setPendingTabClose] = useState<BrowserDocumentTab | null>(null);
-  const lastCommit = useRef({ at: 0, notice: "" });
+  const lastCommit = useRef<CommitStamp>({ at: 0, notice: "", anchor: "" });
+  const copyResetTimer = useRef<number | null>(null);
   const graphRef = useRef(graph);
   graphRef.current = graph;
   const graphSnapshot = useMemo(() => stableSerialize(graph), [graph]);
@@ -228,6 +232,9 @@ export function Studio() {
 
   useEffect(() => {
     if (document.documentElement.dataset.theme === "dark") setThemeState("dark");
+    return () => {
+      if (copyResetTimer.current !== null) window.clearTimeout(copyResetTimer.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -386,7 +393,11 @@ export function Studio() {
       );
       if (!saved.ok) {
         setCatalogSaveState("error");
-        setNoticeText(saved.message);
+        setNotice(saved.message);
+        if (saved.code === "conflict") {
+          const latest = await browserProjectCatalog().get(current.id);
+          if (latest && catalogProjectRef.current?.id === current.id) setCatalogConflict(latest);
+        }
         return false;
       }
       catalogProjectRef.current = saved.project;
@@ -403,6 +414,64 @@ export function Studio() {
       setNoticeText("The durable project save was interrupted. The previous revision remains intact.");
     });
     return next;
+  };
+
+  /* A revision conflict from another window is recoverable in place: adopt
+     the other window's revision, or keep this window's edits as a new
+     project. Both paths leave the catalog head untouched until chosen. */
+  const resolveCatalogConflict = async (resolution: "reload" | "copy" | "restore") => {
+    const conflict = catalogConflict;
+    if (!conflict) return;
+    setCatalogConflict(null);
+    if (resolution === "restore") {
+      const restored = await browserProjectCatalog().archive(conflict.id, false);
+      if (!restored.ok) {
+        setNotice(restored.message);
+        setCatalogConflict(conflict);
+        return;
+      }
+      catalogProjectRef.current = restored.project;
+      setCatalogProject(restored.project);
+      setCatalogSaveState("dirty");
+      setNotice(`Restored ${restored.project.name} from the archive. Your edits in this window will save to it.`);
+      void flushCatalogSave();
+      return;
+    }
+    if (resolution === "reload") {
+      const restored = conflict.graph;
+      const restoredWorkspace = normalizeWorkspaceState(restored, conflict.workspace);
+      const activeDocument = restoredWorkspace.openTabs.find((tab) => tab.id === restoredWorkspace.activeTabId);
+      const activeScreenId = activeDocument?.kind === "screen" ? activeDocument.screenId : restored.screens[0]?.id;
+      const nextScreen = restored.screens.find((screen) => screen.id === activeScreenId) ?? restored.screens[0];
+      setGraph(restored);
+      setBaseline(restored);
+      catalogProjectRef.current = conflict;
+      setCatalogProject(conflict);
+      setCatalogSavedGraph(restored);
+      setCatalogSavedSnapshot(stableSerialize(restored));
+      setCatalogSaveState("saved");
+      setWorkspace(restoredWorkspace);
+      setHistory([]);
+      setFuture([]);
+      lastCommit.current = { at: 0, notice: "", anchor: "" };
+      setSelectedScreen(nextScreen?.id ?? "");
+      setSelectedNodeId(nextScreen?.nodes[0]?.id ?? null);
+      setNotice(`Reloaded ${conflict.name} at revision r${conflict.revision} from the other window.`);
+      return;
+    }
+    const created = await browserProjectCatalog().create(structuredClone(graphRef.current), { projectType, source: "created" });
+    if (!created.ok) {
+      setNotice(created.message);
+      setCatalogConflict(conflict);
+      return;
+    }
+    setActiveBrowserProject(window.localStorage, created.project.id);
+    catalogProjectRef.current = created.project;
+    setCatalogProject(created.project);
+    setCatalogSavedGraph(created.project.graph);
+    setCatalogSavedSnapshot(stableSerialize(created.project.graph));
+    setCatalogSaveState("saved");
+    setNotice(`Saved this window's edits as a separate project. ${conflict.name} keeps the other window's revision.`);
   };
 
   useEffect(() => {
@@ -492,6 +561,12 @@ export function Studio() {
             restoreProject(project, `Opened ${project.name} from the durable browser catalog.`);
             return;
           }
+          if (!window.intentformDesktop) {
+            if (cancelled) return;
+            stashBootNotice(window.sessionStorage, "The requested project could not be found in this browser's catalog. It may have been deleted or archived in another window.");
+            window.location.replace("/");
+            return;
+          }
         }
         if (window.intentformDesktop) {
           const response = await fetch("/api/project", { cache: "no-store" });
@@ -512,7 +587,8 @@ export function Studio() {
         }
         window.location.replace("/");
       } catch (cause) {
-        setNotice(cause instanceof Error ? cause.message : "The selected project could not be opened.");
+        if (cancelled) return;
+        stashBootNotice(window.sessionStorage, cause instanceof Error ? cause.message : "The selected project could not be opened.");
         window.location.replace("/");
       }
     })();
@@ -551,7 +627,7 @@ export function Studio() {
   }, [catalogProject, catalogSavedSnapshot, draftReady]);
 
   useEffect(() => {
-    if (/failed|could not|invalid|quota|unavailable|rejected|ignored|unsupported/i.test(notice)) setNoticeOpen(true);
+    if (/failed|could not|invalid|quota|unavailable|rejected|ignored|unsupported|(changed|archived) in another window/i.test(notice)) setNoticeOpen(true);
   }, [notice]);
 
   useEffect(() => {
@@ -755,20 +831,17 @@ export function Studio() {
   };
 
   useEffect(() => () => activeRequest.current?.controller.abort(), []);
-  /* Rapid identical edits (dragging a color token) coalesce into one undo
-     step instead of flooding the history. */
   const commitGraph = (nextGraph: SemanticInterfaceGraph, nextNotice: string) => {
     const validated = parseGraph(nextGraph);
-    const now = Date.now();
-    const coalesce = lastCommit.current.notice === nextNotice && now - lastCommit.current.at < 900;
-    if (!coalesce) {
+    const stamp = { at: Date.now(), notice: nextNotice, anchor: `${selectedScreen}:${selectedNodeId ?? ""}` };
+    if (!shouldCoalesceCommit(lastCommit.current, stamp)) {
       setHistory((items) => [...items.slice(-39), graph]);
       setFuture([]);
       setNotice(nextNotice);
     } else {
       setNoticeText(nextNotice);
     }
-    lastCommit.current = { at: now, notice: nextNotice };
+    lastCommit.current = stamp;
     setGraph(validated);
   };
 
@@ -799,7 +872,7 @@ export function Studio() {
     setFuture((items) => [graph, ...items].slice(0, 40));
     setGraph(previous);
     reconcileSelection(previous);
-    lastCommit.current = { at: 0, notice: "" };
+    lastCommit.current = { at: 0, notice: "", anchor: "" };
     setNotice("Undid the last semantic edit.");
   };
 
@@ -810,11 +883,23 @@ export function Studio() {
     setHistory((items) => [...items.slice(-39), graph]);
     setGraph(next);
     reconcileSelection(next);
-    lastCommit.current = { at: 0, notice: "" };
+    lastCommit.current = { at: 0, notice: "", anchor: "" };
     setNotice("Restored the semantic edit.");
   };
 
+  const revertsToSavedRevision = !judgeMode && catalogSavedGraph !== null;
+
   const resetProject = () => {
+    if (revertsToSavedRevision && catalogSavedGraph) {
+      setGraph(catalogSavedGraph);
+      reconcileSelection(catalogSavedGraph);
+      setHistory([]);
+      setFuture([]);
+      lastCommit.current = { at: 0, notice: "", anchor: "" };
+      setMenuOpen(false);
+      setNotice("Reverted the workspace to the last saved revision.");
+      return;
+    }
     setGraph(demoGraph);
     setBaseline(demoGraph);
     setWorkspace(defaultWorkspaceState(demoGraph));
@@ -825,7 +910,7 @@ export function Studio() {
     setFuture([]);
     setSelectedScreen("payment-request");
     setSelectedNodeId("payment-request.amount");
-    lastCommit.current = { at: 0, notice: "" };
+    lastCommit.current = { at: 0, notice: "", anchor: "" };
     setMenuOpen(false);
     setNotice("Reset the workspace to the verified sample project.");
   };
@@ -922,7 +1007,7 @@ export function Studio() {
         const nextScreen = nextGraph.screens.find((screen) => screen.id === selectedScreen) ?? nextGraph.screens[0];
         setSelectedScreen(nextScreen?.id ?? "");
         setSelectedNodeId(nextScreen?.nodes[0]?.id ?? null);
-        lastCommit.current = { at: 0, notice: "" };
+        lastCommit.current = { at: 0, notice: "", anchor: "" };
         setNotice(result.seeded
           ? "Initialized .intentform/graph.json from the verified sample and opened it."
           : "Opened the local .intentform project. Agent edits are now on the board.");
@@ -994,7 +1079,11 @@ export function Studio() {
     try {
       await navigator.clipboard.writeText(selectedCode.content);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
+      if (copyResetTimer.current !== null) window.clearTimeout(copyResetTimer.current);
+      copyResetTimer.current = window.setTimeout(() => {
+        copyResetTimer.current = null;
+        setCopied(false);
+      }, 1600);
     } catch {
       setNotice("The browser blocked clipboard access, so nothing was copied.");
     }
@@ -1223,6 +1312,18 @@ export function Studio() {
     activateDocument(tab);
   };
 
+  if (!draftReady) {
+    return (
+      <main className="studio-grain grid h-[100dvh] place-items-center overflow-hidden text-[var(--ink)]">
+        <div role="status" aria-live="polite" className="flex flex-col items-center gap-3.5">
+          <BrandMark size={28} />
+          <div aria-hidden="true" className="skeleton-block h-1 w-40 overflow-hidden rounded-full" />
+          <p className="text-[11px] text-[var(--muted)]">Opening project…</p>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="studio-grain h-[100dvh] overflow-hidden text-[var(--ink)]">
       <a className="skip-link" href="#studio-workspace">Skip to workspace</a>
@@ -1366,6 +1467,19 @@ export function Studio() {
               {noticeOpen ? (
                 <div ref={noticeContent} role="region" aria-label="Workspace status" className="menu-pop absolute right-0 top-10 z-[6] w-[min(320px,calc(100vw-24px))] overflow-hidden">
                   <div role="status" aria-live="polite" className="border-b border-[var(--line)] p-3 text-[12px] leading-relaxed text-[var(--ink)]">{notice}</div>
+                  {catalogConflict ? (
+                    <div className="border-b border-[var(--line)] p-2.5" data-testid="catalog-conflict-actions">
+                      <p className="text-[10.5px] leading-relaxed text-[var(--muted)]">{catalogConflict.archivedAt
+                        ? "This project was archived in another window. Choose how to continue; nothing is overwritten until you decide."
+                        : `Another window saved revision r${catalogConflict.revision}. Choose how to continue; nothing is overwritten until you decide.`}</p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {catalogConflict.archivedAt
+                          ? <button type="button" onClick={() => void resolveCatalogConflict("restore")} className="inline-flex h-7 items-center rounded-[5px] bg-[var(--accent-deep)] px-2.5 text-[10.5px] font-semibold text-white hover:brightness-105">Restore project</button>
+                          : <button type="button" onClick={() => void resolveCatalogConflict("reload")} className="inline-flex h-7 items-center rounded-[5px] bg-[var(--accent-deep)] px-2.5 text-[10.5px] font-semibold text-white hover:brightness-105">Reload latest revision</button>}
+                        <button type="button" onClick={() => void resolveCatalogConflict("copy")} className="inline-flex h-7 items-center rounded-[5px] border border-[var(--line)] px-2.5 text-[10.5px] font-semibold text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]">Save my edits as a copy</button>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="flex flex-wrap items-center gap-1 border-b border-[var(--line)] p-2"><DesktopControl /><EcosystemControl /><ModeBadge mode={mode} model={model} trace={lastTrace} /></div>
                   {activity.length > 1 ? (
                     <div className="max-h-56 overflow-auto p-1.5">
@@ -1429,10 +1543,10 @@ export function Studio() {
           <AnimatePresence mode="wait">
             <motion.div
               key={stage}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ type: "spring", stiffness: 120, damping: 20 }}
+              data-stage-surface={stage}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0, transition: { duration: 0.12, ease: "easeOut" } }}
+              exit={{ opacity: 0, transition: { duration: 0.06, ease: "easeIn" } }}
               className={stage === "canvas" ? "h-full" : stage === "outputs" || stage === "verify" ? "h-full overflow-hidden p-2 md:p-3" : "h-full overflow-auto p-5 md:p-8"}
             >
               {stage === "canvas" ? (
@@ -1463,6 +1577,7 @@ export function Studio() {
                   onRedo={redo}
                   onOpenStage={setStage}
                   onResetProject={requestProjectReset}
+                  resetProjectLabel={revertsToSavedRevision ? "Revert to saved revision" : "Reset to verified sample"}
                   onExportGraph={exportGraph}
                 />
               ) : null}
@@ -1590,7 +1705,7 @@ export function Studio() {
       ) : null}
       {pendingTabClose ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-[var(--backdrop)] p-4">
-          <section data-testid="dirty-tab-dialog" role="alertdialog" aria-modal="true" aria-labelledby="dirty-tab-title" aria-describedby="dirty-tab-description" className="menu-pop w-full max-w-md rounded-[10px] p-4 shadow-[var(--if-shadow-dialog)]">
+          <section data-testid="dirty-tab-dialog" role="alertdialog" aria-modal="true" aria-labelledby="dirty-tab-title" aria-describedby="dirty-tab-description" className="menu-pop w-full max-w-md rounded-[8px] p-4 shadow-[var(--if-shadow-dialog)]">
             <span className="grid size-8 place-items-center rounded-[6px] bg-[var(--warn-soft)] text-[var(--warn)]"><Warning size={16} weight="fill" /></span>
             <h2 id="dirty-tab-title" className="mt-3 text-[15px] font-[550] leading-[21px]">Save changes before closing?</h2>
             <p id="dirty-tab-description" className="mt-2 text-[12px] leading-relaxed text-[var(--muted)]">{pendingTabClose.title} has project changes that are not yet committed to the durable catalog.</p>
@@ -1615,10 +1730,12 @@ export function Studio() {
       ) : null}
       {resetConfirmOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-[var(--backdrop)] p-4" onPointerDown={(event) => { if (event.target === event.currentTarget) cancelProjectReset(); }}>
-          <section ref={resetDialog} data-testid="reset-project-dialog" role="alertdialog" aria-modal="true" aria-labelledby="reset-project-title" aria-describedby="reset-project-description" className="menu-pop w-full max-w-md rounded-[10px] p-4 shadow-[var(--if-shadow-dialog)]">
+          <section ref={resetDialog} data-testid="reset-project-dialog" role="alertdialog" aria-modal="true" aria-labelledby="reset-project-title" aria-describedby="reset-project-description" className="menu-pop w-full max-w-md rounded-[8px] p-4 shadow-[var(--if-shadow-dialog)]">
             <span className="grid size-8 place-items-center rounded-[6px] bg-[var(--danger-soft)] text-[var(--danger)]"><ArrowsCounterClockwise size={16} weight="bold" /></span>
             <h2 id="reset-project-title" className="mt-3 text-[15px] font-[550] leading-[21px] tracking-[-.02em]">Reset this workspace?</h2>
-            <p id="reset-project-description" className="mt-2 text-[12px] leading-relaxed text-[var(--muted)]">This replaces the current semantic graph with the verified sample. The previous committed revision remains available as last-known-good recovery.</p>
+            <p id="reset-project-description" className="mt-2 text-[12px] leading-relaxed text-[var(--muted)]">{revertsToSavedRevision
+              ? "This replaces the current semantic graph with the last saved revision of this project. Edits made since that save are discarded from this window."
+              : "This replaces the current semantic graph with the verified sample. The previous committed revision remains available as last-known-good recovery."}</p>
             {localChangesAreUnsaved ? <p className="mt-3 rounded-[6px] bg-[var(--warn-soft)] px-3 py-2 text-[11px] font-medium text-[var(--warn)]">This local project also has changes that have not been saved to disk.</p> : null}
             <div className="mt-4 flex justify-end gap-2">
               <button ref={resetCancelButton} type="button" onClick={cancelProjectReset} className="h-8 rounded-[6px] border border-[var(--line)] px-3 text-[11px] font-medium hover:bg-[var(--hover)]">Cancel</button>

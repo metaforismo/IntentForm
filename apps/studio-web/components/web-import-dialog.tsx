@@ -99,7 +99,9 @@ function sandboxSource(html: string, css: string): { source: string; removed: nu
   viewport.content = "width=device-width,initial-scale=1";
   parsed.head.append(viewport);
   const authoredStyle = parsed.createElement("style");
-  authoredStyle.textContent = css.replaceAll("</style", "<\\/style");
+  // The closing-tag escape must be case-insensitive: `</STYLE` closes the
+  // element just as `</style` does.
+  authoredStyle.textContent = css.replace(/<\/style/gi, "<\\/style");
   parsed.head.append(authoredStyle);
   return { source: `<!doctype html>${parsed.documentElement.outerHTML}`, removed };
 }
@@ -228,6 +230,25 @@ export function WebImportDialog({ open, graph, screenId, onClose, onApply }: Web
     setSource(sandbox.source);
   };
 
+  /* Graph validation raises Zod errors whose .message is the raw serialized
+     issue array; a person should read one sentence, not a JSON blob. */
+  const importErrorMessage = (error: unknown): string => {
+    if (error && typeof error === "object" && "issues" in error && Array.isArray((error as { issues?: unknown }).issues)) {
+      const issues = (error as { issues: Array<{ message?: string }> }).issues.slice(0, 3);
+      return issues.map((issue) => issue.message ?? "Invalid value").join(" · ");
+    }
+    const message = error instanceof Error ? error.message : "";
+    if (message.trim().startsWith("[")) {
+      try {
+        const parsed = JSON.parse(message) as Array<{ message?: string }>;
+        if (Array.isArray(parsed)) return parsed.slice(0, 3).map((issue) => issue?.message ?? "Invalid value").join(" · ");
+      } catch {
+        // Not JSON after all; fall through to the raw message.
+      }
+    }
+    return message || "The browser could not analyze this HTML/CSS input.";
+  };
+
   const capture = () => {
     if (!analyzingRef.current) return;
     try {
@@ -240,7 +261,7 @@ export function WebImportDialog({ open, graph, screenId, onClose, onApply }: Web
       });
       setProjection(projectComputedDom(graph, screenId, roots));
     } catch (captureError) {
-      setError(captureError instanceof Error ? captureError.message : "The browser could not analyze this HTML/CSS input.");
+      setError(`This import cannot replace the screen yet: ${importErrorMessage(captureError)}`);
     } finally {
       analyzingRef.current = false;
       setAnalyzing(false);
@@ -249,7 +270,7 @@ export function WebImportDialog({ open, graph, screenId, onClose, onApply }: Web
 
   return (
     <div className="fixed inset-0 z-[80] grid place-items-center bg-[var(--backdrop)] p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="web-import-title" className="grid max-h-[min(860px,94vh)] w-[min(1040px,96vw)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-[12px] border border-[var(--line-strong)] bg-[var(--panel)] shadow-2xl">
+      <section role="dialog" aria-modal="true" aria-labelledby="web-import-title" className="grid max-h-[min(860px,94vh)] w-[min(1040px,96vw)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-[8px] border border-[var(--line-strong)] bg-[var(--panel)] shadow-2xl">
         <header className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3">
           <div><h2 id="web-import-title" className="text-sm font-semibold text-[var(--ink)]">Import HTML/CSS</h2><p className="mt-0.5 text-[10px] text-[var(--muted)]">Scripts and network requests are blocked. The browser computes layout; only supported typed properties enter the graph.</p></div>
           <button type="button" onClick={onClose} className="h-7 rounded px-2 text-[10px] text-[var(--muted)] hover:bg-[var(--hover)]">Close</button>

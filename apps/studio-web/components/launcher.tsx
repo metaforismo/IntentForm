@@ -64,6 +64,7 @@ import {
   parseLauncherPreferences,
   type LauncherPreferences,
 } from "../lib/launcher-preferences";
+import { takeBootNotice } from "../lib/boot-notice";
 import { BrandMark } from "./brand-mark";
 import { LauncherAgents, LauncherBuilds, LauncherHome, LauncherLearn, LauncherSettings, ProjectOrganizationControls } from "./launcher-sections";
 
@@ -115,7 +116,14 @@ function projectTypeLabel(projectType: ProjectType): string {
   return projectType[0]!.toUpperCase() + projectType.slice(1);
 }
 
-function ProjectThumbnail({ graph }: { graph: SemanticInterfaceGraph }) {
+const projectTypeIcons: Record<ProjectType, typeof Cube> = {
+  application: BracketsCurly,
+  prototype: Sparkle,
+  "component-library": Cube,
+  "responsive-web": Browser,
+};
+
+function ProjectThumbnail({ graph, projectType }: { graph: SemanticInterfaceGraph; projectType?: ProjectType }) {
   const mode = graph.tokens.modes[graph.tokens.activeMode] ?? graph.tokens.modes[graph.tokens.defaultMode];
   const colors = mode?.values.colors ?? {};
   const accent = colors["color.accent"] ?? "#3478e5";
@@ -127,6 +135,10 @@ function ProjectThumbnail({ graph }: { graph: SemanticInterfaceGraph }) {
   return (
     <span className="relative block aspect-[16/10] overflow-hidden rounded-t-[8px] border-b border-[var(--if-border-subtle)] p-[8%]" style={{ color: ink, background: canvas }} aria-hidden="true">
       <span className="flex h-full flex-col overflow-hidden rounded-[6px] p-[8%] shadow-sm" style={{ background: surface }}>
+        {projectType && nodes.length <= 1 ? (() => {
+          const TypeIcon = projectTypeIcons[projectType];
+          return <span className="absolute bottom-2 right-2 opacity-25" style={{ color: accent }}><TypeIcon size={30} weight="duotone" /></span>;
+        })() : null}
         <span className="h-1 w-8 rounded-full opacity-55" style={{ background: accent }} />
         <span className="mt-1 truncate text-[12px] font-semibold leading-none">{screen?.title ?? "Project"}</span>
         <span className="mt-3 grid min-h-0 flex-1 content-start gap-1.5 overflow-hidden">{nodes.map((node) => node.kind === "primary-action" || node.kind === "secondary-action" ? <span key={node.id} className="mt-1 w-fit max-w-full truncate rounded-[3px] px-2 py-1 text-[7px] font-semibold text-white" style={{ background: accent }}>{node.label}</span> : <span key={node.id} className="truncate text-[7px] leading-tight" style={{ opacity: node.emphasis === "strong" ? .92 : .58 }}>{node.label}</span>)}</span>
@@ -167,10 +179,13 @@ function CatalogProjectCard({
   onRelink(): void;
 }) {
   const activeAction = action?.id === project.id ? action : null;
+  // Flip the action menu upward when the card sits near the viewport bottom
+  // so no menu item ever clips off-screen.
+  const [menuOpensUp, setMenuOpensUp] = useState(false);
   return (
     <article style={{ contentVisibility: "auto", containIntrinsicSize: catalogView === "grid" ? "260px" : "112px" }} className={`group relative overflow-hidden rounded-lg border border-[var(--if-border)] bg-[var(--if-panel)] ${project.archivedAt ? "opacity-65" : ""}`}>
       <button type="button" aria-label={project.missingLocalPath ? `${project.name}, open cached copy` : project.name} disabled={opening !== null || Boolean(project.archivedAt)} onClick={onOpen} className={`w-full text-left disabled:cursor-not-allowed ${catalogView === "list" ? "grid grid-cols-[112px_minmax(0,1fr)]" : "block"}`}>
-        <ProjectThumbnail graph={project.graph} />
+        <ProjectThumbnail graph={project.graph} projectType={project.projectType} />
         <span className="flex min-w-0 items-start gap-3 p-3">
           <span className="min-w-0 flex-1">
             <strong className="block truncate text-[13px] font-medium">{project.name}</strong>
@@ -192,13 +207,16 @@ function CatalogProjectCard({
         type="button"
         aria-label={`Project actions for ${project.name}`}
         aria-expanded={activeAction?.mode === "menu"}
-        onClick={() => onAction(activeAction?.mode === "menu" ? null : { id: project.id, mode: "menu" })}
+        onClick={(event) => {
+          setMenuOpensUp(window.innerHeight - event.clientY < 300);
+          onAction(activeAction?.mode === "menu" ? null : { id: project.id, mode: "menu" });
+        }}
         className="absolute right-2 top-2 grid size-7 place-items-center rounded-md bg-[var(--if-panel)]/90 text-[var(--if-text-secondary)] opacity-0 shadow-[var(--if-shadow-menu)] hover:bg-[var(--if-raised)] group-hover:opacity-100 focus-visible:opacity-100"
       >
         <DotsThree size={16} weight="bold" />
       </button>
       {activeAction?.mode === "menu" ? (
-        <div role="menu" aria-label={`Actions for ${project.name}`} className="absolute right-2 top-10 z-[2] w-40 rounded-lg border border-[var(--if-border)] bg-[var(--if-raised)] p-1 shadow-[var(--if-shadow-menu)]">
+        <div role="menu" aria-label={`Actions for ${project.name}`} className={`absolute right-2 z-[2] w-40 rounded-lg border border-[var(--if-border)] bg-[var(--if-raised)] p-1 shadow-[var(--if-shadow-menu)] ${menuOpensUp ? "bottom-10" : "top-10"}`}>
           <button type="button" role="menuitem" onClick={onOpen} className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] hover:bg-[var(--if-hover)]"><FolderOpen size={12} /> {project.missingLocalPath ? "Open cached copy" : "Open"}</button>
           {project.source === "local" && project.missingLocalPath ? <button type="button" role="menuitem" disabled={bridge !== "available"} onClick={onRelink} className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] hover:bg-[var(--if-hover)] disabled:cursor-not-allowed disabled:opacity-45"><CirclesThreePlus size={12} /> {bridge === "available" ? "Relink local project" : "Desktop bridge required"}</button> : null}
           <button type="button" role="menuitem" onClick={() => onAction({ id: project.id, mode: "rename", value: project.name })} className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] hover:bg-[var(--if-hover)]"><PencilSimple size={12} /> Rename</button>
@@ -268,6 +286,8 @@ export function Launcher() {
   useEffect(() => {
     setPreferences(parseLauncherPreferences(window.localStorage.getItem(LAUNCHER_PREFERENCES_KEY)));
     setPreferencesReady(true);
+    const bootNotice = takeBootNotice(window.sessionStorage);
+    if (bootNotice) setError(bootNotice);
   }, []);
 
   useEffect(() => {
@@ -626,8 +646,17 @@ export function Launcher() {
 
   const visibleExamples = filterProjectExamples(projectExamples, projectQuery);
   const sortedProjects = useMemo(() => filterAndSortProjects(projects ?? [], projectQuery, filters, preferences.sort), [filters, preferences.sort, projectQuery, projects]);
-  const visibleProjects = sortedProjects.filter((project) => section === "archive" ? Boolean(project.archivedAt) : showArchived || !project.archivedAt);
+  const visibleProjects = sortedProjects.filter((project) => section === "archive"
+    ? Boolean(project.archivedAt)
+    : section === "files"
+      ? project.source === "local" && !project.archivedAt
+      : showArchived || !project.archivedAt);
   const activeProjects = (projects ?? []).filter((project) => !project.archivedAt);
+  const sectionHasAnyProject = (projects ?? []).some((project) => section === "archive"
+    ? Boolean(project.archivedAt)
+    : section === "files"
+      ? project.source === "local" && !project.archivedAt
+      : showArchived || !project.archivedAt);
   const recentProjects = section === "recents" || section === "home"
     ? visibleProjects.filter((project) => !project.archivedAt).slice(0, section === "home" ? 6 : 12)
     : visibleProjects;
@@ -708,11 +737,11 @@ export function Launcher() {
 
           {section === "settings" ? <LauncherSettings preferences={preferences} projects={projects ?? []} storageEstimate={storageEstimate} onChange={setPreferences} /> : null}
 
-          {["projects", "files", "archive"].includes(section) ? <ProjectOrganizationControls sort={preferences.sort} filters={filters} projectTypes={projectTypeOptions} onSort={(sort) => setPreferences((current) => ({ ...current, sort }))} onFilters={setFilters} /> : null}
+          {["projects", "files", "archive"].includes(section) && sectionHasAnyProject ? <ProjectOrganizationControls sort={preferences.sort} filters={filters} projectTypes={projectTypeOptions} onSort={(sort) => setPreferences((current) => ({ ...current, sort }))} onFilters={setFilters} /> : null}
 
           {showRecents ? <section aria-labelledby="recent-projects-title">
             <div className="mb-4 flex items-center justify-between gap-3">
-              <div><h2 id="recent-projects-title" className="text-[13px] font-medium">{section === "home" ? "Continue working" : section === "projects" ? "Project catalog" : section === "files" ? "Local files and catalog copies" : section === "archive" ? "Archived projects" : "Recents"}</h2><p className="mt-0.5 text-[11px] text-[var(--if-text-secondary)]">{projects?.length ?? 0} durable {projects?.length === 1 ? "project" : "projects"} on this device</p></div>
+              <div><h2 id="recent-projects-title" className="text-[13px] font-medium">{section === "home" ? "Continue working" : section === "projects" ? "Project catalog" : section === "files" ? "Local files and catalog copies" : section === "archive" ? "Archived projects" : "Recents"}</h2><p className="mt-0.5 text-[11px] text-[var(--if-text-secondary)]">{visibleProjects.length} {section === "archive" ? "archived" : "durable"} {visibleProjects.length === 1 ? "project" : "projects"} on this device</p></div>
               {section === "projects" && (projects ?? []).some((project) => project.archivedAt) ? <button type="button" aria-pressed={showArchived} onClick={() => setShowArchived((shown) => !shown)} className="h-7 rounded-md px-2 text-[10.5px] text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)]">{showArchived ? "Hide archived" : "Show archived"}</button> : null}
             </div>
             {projects === null ? <div className="aspect-[16/10] max-w-80 animate-pulse rounded-lg bg-[var(--if-panel-alt)]" /> : recentProjects.length > 0 ? (
@@ -735,7 +764,7 @@ export function Launcher() {
                   onRelink={() => relinkLocalProject(project)}
                 />)}
               </div>
-            ) : <div className="max-w-[560px] rounded-lg border border-dashed border-[var(--if-border)] px-5 py-6"><strong className="text-[13px] font-medium">{projectQuery.trim() ? `No project matches “${projectQuery.trim()}”` : showArchived ? "No archived projects" : "No recent projects"}</strong><p className="mt-1 text-[11px] text-[var(--if-text-secondary)]">Create a project, open a local file, or start from a working example.</p><div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => setView("new")} className="h-8 rounded-md bg-[var(--if-blue)] px-3 text-[11px] font-medium text-white">New project</button><button type="button" onClick={() => importInput.current?.click()} className="h-8 rounded-md border border-[var(--if-border)] px-3 text-[11px] font-medium">Open project</button><button type="button" onClick={() => selectSection("examples")} className="h-8 rounded-md px-3 text-[11px] font-medium text-[var(--if-blue-text)] hover:bg-[var(--if-hover)]">Explore examples</button></div></div>}
+            ) : <div className="max-w-[560px] rounded-lg border border-dashed border-[var(--if-border)] px-5 py-6"><strong className="text-[13px] font-medium">{projectQuery.trim() ? `No project matches “${projectQuery.trim()}”` : section === "files" ? "No desktop-linked projects yet" : section === "archive" || showArchived ? "No archived projects" : "No recent projects"}</strong><p className="mt-1 text-[11px] text-[var(--if-text-secondary)]">{section === "files" ? "Files lists projects opened from a local .intentform folder through the desktop bridge; browser-only projects stay under Projects." : section === "archive" || showArchived ? "Archiving hides a project from Projects without deleting it. Use Archive in a project card menu; restore it from here at any time." : "Create a project, open a local file, or start from a working example."}</p><div className="mt-4 flex flex-wrap gap-2">{section === "archive" || showArchived ? <button type="button" onClick={() => selectSection("projects")} className="h-8 rounded-md border border-[var(--if-border)] px-3 text-[11px] font-medium">View projects</button> : <><button type="button" onClick={() => setView("new")} className="h-8 rounded-md bg-[var(--if-blue)] px-3 text-[11px] font-medium text-white">New project</button><button type="button" onClick={() => importInput.current?.click()} className="h-8 rounded-md border border-[var(--if-border)] px-3 text-[11px] font-medium">Open project</button><button type="button" onClick={() => selectSection("examples")} className="h-8 rounded-md px-3 text-[11px] font-medium text-[var(--if-blue-text)] hover:bg-[var(--if-hover)]">Explore examples</button></>}</div></div>}
           </section> : null}
 
           {showExamples ? <section aria-labelledby="example-projects-title" className={showRecents ? "mt-10 border-t border-[var(--if-border-subtle)] pt-7" : ""}>
@@ -748,7 +777,7 @@ export function Launcher() {
       </section>
 
       {view === "new" ? <div className="fixed inset-0 z-20 grid place-items-center bg-[var(--backdrop)] p-4" onPointerDown={(event) => { if (event.target === event.currentTarget) setView("projects"); }}>
-        <motion.form initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: [.2, .8, .2, 1] }} onSubmit={createProject} role="dialog" aria-modal="true" aria-labelledby="new-project-title" className="max-h-[calc(100dvh-32px)] w-full max-w-[640px] overflow-auto rounded-[10px] border border-[var(--if-border-strong)] bg-[var(--if-raised)] shadow-[var(--if-shadow-dialog)]">
+        <motion.form initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: [.2, .8, .2, 1] }} onSubmit={createProject} role="dialog" aria-modal="true" aria-labelledby="new-project-title" className="max-h-[calc(100dvh-32px)] w-full max-w-[640px] overflow-auto rounded-[8px] border border-[var(--if-border-strong)] bg-[var(--if-raised)] shadow-[var(--if-shadow-dialog)]">
           <header className="flex items-start justify-between border-b border-[var(--if-border-subtle)] p-5"><div><h2 id="new-project-title" className="text-[15px] font-[550] leading-[21px]">New project</h2><p className="mt-1 text-[11px] text-[var(--if-text-secondary)]">Create a valid local-first semantic project.</p></div><button type="button" aria-label="Close new project" onClick={() => setView("projects")} className="grid size-7 place-items-center rounded-md text-[var(--if-text-secondary)] hover:bg-[var(--if-hover)]"><X size={14} /></button></header>
           <div className="space-y-5 p-5">
             <fieldset><legend className="text-[11px] font-medium">Project type</legend><div className="mt-2 grid gap-1 rounded-lg border border-[var(--if-border)] p-1">{projectTypeOptions.map((option) => { const Icon = option.icon; const selected = projectType === option.id; return <label key={option.id} className={`flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 ${selected ? "bg-[var(--if-blue-soft)]" : "hover:bg-[var(--if-hover)]"}`}><input type="radio" name="project-type" value={option.id} checked={selected} onChange={() => setProjectType(option.id)} className="sr-only" /><Icon size={15} className={selected ? "text-[var(--if-blue)]" : "text-[var(--if-text-secondary)]"} /><span className="min-w-0 flex-1"><strong className="block text-[12px] font-medium">{option.label}</strong><span className="block truncate text-[10px] text-[var(--if-text-secondary)]">{option.detail}</span></span>{selected ? <Check size={13} weight="bold" className="text-[var(--if-blue)]" /> : null}</label>; })}</div></fieldset>

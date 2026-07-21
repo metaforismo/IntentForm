@@ -225,6 +225,18 @@ export function CanvasStage({
     () => createHorizontalFrameIndex(graph.screens.map((screen) => screen.id), profile.width, FRAME_GAP),
     [graph.screens, profile.width],
   );
+  /* One pass per commit instead of an O(threads) scan per node per render. */
+  const reviewThreadsByNode = useMemo(() => {
+    const byNode = new Map<string, SemanticInterfaceGraph["reviewThreads"][number][]>();
+    for (const thread of graph.reviewThreads) {
+      if (!thread.anchor.nodeId) continue;
+      const current = byNode.get(thread.anchor.nodeId);
+      if (current) current.push(thread);
+      else byNode.set(thread.anchor.nodeId, [thread]);
+    }
+    return byNode;
+  }, [graph.reviewThreads]);
+  const noReviewThreads = useMemo((): SemanticInterfaceGraph["reviewThreads"][number][] => [], []);
   const frames = useMemo(
     () => frameSpatialIndex.frames.map((frame) => ({ frame, screen: graph.screens[frame.index]!, x: frame.x })),
     [frameSpatialIndex, graph.screens],
@@ -425,10 +437,14 @@ export function CanvasStage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* Frames are laid out in array order, so adding, removing, or reordering
+     them moves frame positions and needs a refit; ordinary edits inside a
+     frame must never move the camera. */
+  const frameLayoutKey = frames.map((entry) => entry.screen.id).join("|");
   useEffect(() => {
     fitScreenRef.current(selectedScreenRef.current, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile.id, frames.length]);
+  }, [profile.id, frameLayoutKey]);
 
   const previousSelectedScreen = useRef(selectedScreen);
   useEffect(() => {
@@ -832,7 +848,7 @@ export function CanvasStage({
                       ? graph.flows.flatMap((flow) => flow.steps).find((step) => step.from === screen.id && step.event === previewNode.interactions[0]?.event)
                       : undefined;
                     const previewAction = Boolean(prototypeAction || flowStep);
-                    const nodeThreads = graph.reviewThreads.filter((thread) => thread.anchor.nodeId === node.id);
+                    const nodeThreads = reviewThreadsByNode.get(node.id) ?? noReviewThreads;
                     return (
                       <motion.div
                         layout

@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* Map the Tailwind font utilities onto the loaded Geist faces so font-sans
+   and font-mono never fall back to system stacks in the editor chrome. */
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
 :root {
   color-scheme: light;
 
@@ -43,7 +50,7 @@
   --app-bg: var(--if-app); --canvas-bg: var(--if-canvas); --panel: var(--if-panel); --panel-bg: var(--if-panel); --panel-raised: var(--if-raised);
   --control-bg: var(--if-panel-alt); --control-hover: var(--if-hover); --control-active: var(--if-pressed);
   --border: var(--if-border); --border-strong: var(--if-border-strong); --text: var(--if-text); --text-secondary: var(--if-text-secondary); --text-muted: var(--if-text-secondary);
-  --selection: var(--if-blue); --selection-soft: var(--if-blue-soft); --focus: var(--if-blue); --success: var(--if-green); --warning: var(--if-amber);
+  --selection: var(--if-blue); --selection-soft: var(--if-blue-soft); --focus: var(--if-blue); --success: var(--if-green); --success-soft: var(--if-green-soft); --warning: var(--if-amber);
   --canvas: var(--if-canvas); --board: var(--if-canvas); --board-dot: rgb(70 70 70 / 18%); --workspace: var(--if-panel); --surface: var(--if-panel); --surface-strong: var(--if-raised);
   --field: var(--if-input); --chrome: var(--if-panel); --chip: var(--if-panel-alt); --hover: var(--if-hover); --inset: var(--if-panel-alt);
   --ink: var(--if-text); --t-strong: var(--if-text); --muted: var(--if-text-secondary); --faint: var(--if-text-secondary);
@@ -243,6 +250,31 @@ html[data-intentform-minimal-ui] .studio-topbar {
   box-shadow: var(--if-shadow-menu);
 }
 
+/* Quiet range controls: a thin track and compact thumb instead of the
+   default browser widget, keeping real <input type=range> semantics. */
+.if-range {
+  appearance: none;
+  height: 14px;
+  background: transparent;
+  cursor: pointer;
+}
+.if-range::-webkit-slider-runnable-track { height: 3px; border-radius: 2px; background: var(--if-border-strong); }
+.if-range::-webkit-slider-thumb {
+  appearance: none;
+  margin-top: -4.5px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid var(--if-border-strong);
+  background: var(--if-raised);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 25%);
+  transition: border-color 120ms ease;
+}
+.if-range:hover::-webkit-slider-thumb, .if-range:focus-visible::-webkit-slider-thumb { border-color: var(--if-blue); }
+.if-range::-moz-range-track { height: 3px; border-radius: 2px; background: var(--if-border-strong); }
+.if-range::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--if-border-strong); background: var(--if-raised); }
+.if-range:disabled { cursor: default; opacity: .5; }
+
 /* Premium native selects: custom caret and quiet chrome while keeping real
    <select> semantics for accessibility and tests. */
 .select-control {
@@ -263,6 +295,52 @@ html[data-intentform-minimal-ui] .studio-topbar {
 .select-control:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 14%, transparent);
+}
+
+/* Customizable-select progressive enhancement (Chromium): the OPEN picker
+   adopts the app's menu language instead of the OS listbox. Real <select>
+   semantics are untouched, and other browsers keep their native picker. */
+@supports (appearance: base-select) {
+  .select-control,
+  .select-control::picker(select) {
+    appearance: base-select;
+  }
+  .select-control::picker-icon { display: none; }
+  .select-control::picker(select) {
+    margin-top: 4px;
+    border: 1px solid var(--if-border-strong);
+    border-radius: 8px;
+    padding: 4px;
+    background: var(--if-raised);
+    box-shadow: var(--if-shadow-menu);
+  }
+  .select-control option {
+    display: flex;
+    min-height: 26px;
+    align-items: center;
+    gap: 6px;
+    border-radius: 4px;
+    padding: 0 8px;
+    font-size: 11px;
+    color: var(--if-text);
+    background: transparent;
+  }
+  .select-control option:hover,
+  .select-control option:focus-visible {
+    background: var(--if-hover);
+  }
+  .select-control option:checked {
+    color: var(--if-blue-text);
+    background: var(--if-blue-soft);
+  }
+  .select-control option::checkmark { display: none; }
+}
+
+/* Native checkboxes and radios stay real controls but always carry the
+   product accent instead of the OS default blue. */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--if-blue);
 }
 
 /* Sandboxed active-graph preview. Every selector is scoped so the generated

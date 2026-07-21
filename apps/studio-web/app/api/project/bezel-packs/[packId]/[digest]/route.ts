@@ -1,6 +1,7 @@
 import { readLocalBezelAsset } from "@intentform/device-bezels";
 import { resolveProjectDir } from "@intentform/mcp-server/store";
 import { isLocalProjectRequestAllowed } from "../../../../../../lib/api-contracts";
+import { logServerFailure } from "../../../../../../lib/server-log";
 
 export const runtime = "nodejs";
 
@@ -41,7 +42,8 @@ export async function GET(
         "x-content-type-options": "nosniff",
       },
     });
-  } catch {
+  } catch (error) {
+    logServerFailure("bezel asset read", error);
     return Response.json({ error: "The local bezel reference is invalid." }, { status: 400, headers: noStoreHeaders });
   }
 }

@@ -39,7 +39,7 @@ export function GraphStage({ graph, selectedScreen, setSelectedScreen, onInspect
           ))}
         </div>
 
-        <div className="mt-5 rounded-xl border border-[var(--line)] bg-[var(--surface-strong)] p-3">
+        <div className="mt-5 rounded-[6px] border border-[var(--line)] bg-[var(--surface-strong)] p-3">
           <span className="font-mono text-[11px] text-[var(--accent)]">FLOWS</span>
           <div className="mt-2.5 grid gap-2">
             {graph.flows.flatMap((flow) => flow.steps).map((step) => (
@@ -64,7 +64,7 @@ export function GraphStage({ graph, selectedScreen, setSelectedScreen, onInspect
           <span className="rounded-full bg-[var(--accent-soft)] px-2.5 py-1 font-mono text-[10px] text-[var(--accent-text)]">valid · v{graph.schemaVersion}</span>
         </div>
 
-        <div className="mt-3 rounded-2xl border border-[var(--line)] bg-[var(--surface-strong)]">
+        <div className="mt-3 rounded-[6px] border border-[var(--line)] bg-[var(--surface-strong)]">
           <div className="divide-y divide-[var(--line)] px-1">
             {screen?.nodes.map((node, index) => {
               const primary = node.intent.importance === "primary";

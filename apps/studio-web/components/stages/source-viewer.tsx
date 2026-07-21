@@ -113,7 +113,10 @@ export function SourceViewer({
           >
             <span className="select-none border-r border-white/8 pr-3 text-right text-white/25">{index + 1}</span>
             <code className="whitespace-pre pl-4">{line ? tokenizeSourceLine(line).map((token, tokenIndex) => <span key={tokenIndex} className={tokenTone[token.kind]}>{token.value}</span>) : " "}</code>
-            {nodes.length ? <span className="sticky right-1 ml-4 flex gap-1 bg-[#1d1f21]/90 pl-2 opacity-60 group-hover:opacity-100">{nodes.slice(0, 2).map((nodeId) => <button key={nodeId} type="button" onClick={(event) => { event.stopPropagation(); onInspectNode(nodeId); }} className="my-0.5 rounded border border-[#82aaff]/30 px-1.5 text-[8px] leading-4 text-[#82aaff] hover:bg-[#82aaff]/10">{nodeId}</button>)}</span> : null}
+            {nodes.length ? <span className="sticky right-1 ml-4 flex items-center gap-1 bg-[#1d1f21]/95 pl-2 opacity-55 group-hover:opacity-100">
+              <button type="button" aria-label={`Show ${nodes[0]} on canvas`} title={nodes[0]} onClick={(event) => { event.stopPropagation(); onInspectNode(nodes[0]!); }} className="my-0.5 max-w-36 truncate rounded-[4px] border border-[#82aaff]/30 px-1.5 text-[8px] leading-4 text-[#82aaff] hover:bg-[#82aaff]/10">{nodes[0]!.split(".").at(-1)}</button>
+              {nodes.length > 1 ? <span title={nodes.slice(1).join(", ")} className="text-[8px] leading-4 text-white/30">+{nodes.length - 1}</span> : null}
+            </span> : null}
           </div>
         );
       })}
