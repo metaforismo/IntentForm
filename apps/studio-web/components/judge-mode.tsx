@@ -79,6 +79,10 @@ export function JudgeModePanel({ session, onSelectStep, onAdvance, onReset, onEx
     return () => controller.abort();
   }, [readiness, readinessError, readinessOpen]);
 
+  useEffect(() => {
+    setReadinessOpen(false);
+  }, [session.activeStep]);
+
   return (
     <aside data-testid="judge-mode-panel" aria-label="Judge Mode walkthrough" className="fixed bottom-3 right-3 z-30 flex max-h-[calc(100dvh-24px)] w-[min(344px,calc(100vw-24px))] flex-col overflow-hidden rounded-[9px] border border-[var(--if-border-strong)] bg-[var(--if-panel)] shadow-[var(--if-shadow-dialog)]">
       <header className="flex items-start gap-2.5 border-b border-[var(--if-border-subtle)] px-3 py-2.5">

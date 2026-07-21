@@ -22,6 +22,7 @@ import type { ScenarioId } from "../studio";
 import {
   countVerificationFindings,
   filterVerificationFindings,
+  preferredVerificationFindingId,
   type VerificationCategory,
   type VerificationSeverity,
   type RepairPreview,
@@ -76,7 +77,7 @@ export function VerifyStage({
   const [showSuppressed, setShowSuppressed] = useState(false);
   const [profileId, setProfileId] = useState("all");
   const [category, setCategory] = useState<"all" | VerificationCategory>("all");
-  const [selectedId, setSelectedId] = useState<string | null>(verification.findings[0]?.id ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(() => preferredVerificationFindingId(verification.findings));
   const counts = useMemo(() => countVerificationFindings(verification.findings), [verification.findings]);
   const visible = useMemo(() => filterVerificationFindings(verification.findings, {
     profileId,
@@ -93,7 +94,7 @@ export function VerifyStage({
 
   useEffect(() => {
     if (selectedId && verification.findings.some((finding) => finding.id === selectedId)) return;
-    setSelectedId(verification.findings[0]?.id ?? null);
+    setSelectedId(preferredVerificationFindingId(verification.findings));
   }, [selectedId, verification.findings]);
 
   const toggleSeverity = (severity: VerificationSeverity) => setSeverities((current) => {
@@ -119,9 +120,9 @@ export function VerifyStage({
           <Funnel size={12} className="shrink-0 text-[var(--faint)]" />
           {(["error", "warning", "info"] as const).map((severity) => <button key={severity} type="button" aria-pressed={severities.has(severity)} data-state={severities.has(severity) ? "active" : "idle"} onClick={() => toggleSeverity(severity)} className="if-editor-filter h-7 shrink-0 px-2 text-[9px] font-semibold capitalize">{severity}s · {counts[severity]}</button>)}
           <button type="button" aria-pressed={showSuppressed} data-state={showSuppressed ? "active" : "idle"} onClick={() => setShowSuppressed((value) => !value)} className="if-editor-filter h-7 shrink-0 px-2 text-[9px] font-semibold">Suppressed · {counts.suppressed}</button>
-          <select aria-label="Verification device" value={scenarioId} onChange={(event) => setScenarioId(event.target.value as ScenarioId)} className="select-control h-7 min-h-0 max-w-full text-[9px] sm:max-w-48">{Object.entries(scenarios).map(([id, item]) => <option key={id} value={id}>{item.label}</option>)}</select>
-          <select aria-label="Accessibility profile filter" value={profileId} onChange={(event) => setProfileId(event.target.value)} className="select-control h-7 min-h-0 max-w-full text-[9px] sm:max-w-48"><option value="all">All accessibility profiles</option>{ACCESSIBILITY_PROFILES.map((profile) => <option key={profile.id} value={profile.id}>{profile.id} · {profile.locale} · {Math.round(profile.textScale * 100)}%</option>)}</select>
-          <select aria-label="Verification category filter" value={category} onChange={(event) => setCategory(event.target.value as "all" | VerificationCategory)} className="select-control h-7 min-h-0 max-w-full text-[9px] sm:max-w-48"><option value="all">All categories</option><option value="design-quality">Design quality</option><option value="accessibility">Accessibility</option><option value="build">Build evidence</option><option value="semantic">Semantic intent</option></select>
+          <select aria-label="Verification device" title={scenario.label} value={scenarioId} onChange={(event) => setScenarioId(event.target.value as ScenarioId)} className="select-control if-compact-select h-7 w-44 max-w-full shrink-0 text-[9px]">{Object.entries(scenarios).map(([id, item]) => <option key={id} value={id}>{item.label}</option>)}</select>
+          <select aria-label="Accessibility profile filter" value={profileId} onChange={(event) => setProfileId(event.target.value)} className="select-control if-compact-select h-7 w-48 max-w-full shrink-0 text-[9px]"><option value="all">All accessibility profiles</option>{ACCESSIBILITY_PROFILES.map((profile) => <option key={profile.id} value={profile.id}>{profile.id} · {profile.locale} · {Math.round(profile.textScale * 100)}%</option>)}</select>
+          <select aria-label="Verification category filter" value={category} onChange={(event) => setCategory(event.target.value as "all" | VerificationCategory)} className="select-control if-compact-select h-7 w-40 max-w-full shrink-0 text-[9px]"><option value="all">All categories</option><option value="design-quality">Design quality</option><option value="accessibility">Accessibility</option><option value="build">Build evidence</option><option value="semantic">Semantic intent</option></select>
         </div>
         {!evidenceIsCurrent ? <div role="status" data-testid="verification-evidence-state" data-state={buildEvidenceState} className="mt-2 flex items-center justify-between gap-3 rounded border border-[var(--warn)]/25 bg-[var(--warn-soft)] px-2.5 py-1.5 text-[9px] text-[var(--warn)]"><span><strong>Build evidence {buildEvidenceState}.</strong> Semantic findings may be current, but this run is not proof of a current rendered build.</span><button type="button" onClick={rerunVerification} disabled={isPending} className="min-h-7 shrink-0 rounded border border-[var(--warn)]/30 px-2 py-1 font-semibold disabled:opacity-40">Refresh evidence</button></div> : null}
       </header>
@@ -158,7 +159,7 @@ export function VerifyStage({
 
               {selected.suppressionReason ? <p className="mt-4 rounded border border-[var(--warn)]/30 bg-[var(--warn-soft)] p-3 text-[10px] text-[var(--warn)]">Suppression: {selected.suppressionReason}</p> : null}
               <section className="mt-5 rounded border border-[var(--line)] bg-[var(--panel)] p-4">
-                <div className="flex items-center justify-between gap-4"><div><h4 className="text-[11px] font-semibold text-[var(--ink)]">Safe repair workflow</h4><p className="mt-1 text-[10px] leading-relaxed text-[var(--muted)]">{selected.suggestedRepair?.description ?? "Plan the smallest semantic change, validate it against graph invariants, and retain an evidence-backed diff."}</p></div><button type="button" onClick={() => previewRepair(selected)} disabled={isPending || selected.status === "suppressed"} className="min-h-9 shrink-0 rounded bg-[var(--accent-deep)] px-4 text-[10px] font-semibold text-white disabled:opacity-40">Preview repair</button></div>
+                <div className="flex items-center justify-between gap-4"><div><h4 className="text-[11px] font-semibold text-[var(--ink)]">{selected.category === "build" ? "Build evidence workflow" : "Safe repair workflow"}</h4><p className="mt-1 text-[10px] leading-relaxed text-[var(--muted)]">{selected.category === "build" ? "Generate or refresh the target build, then bind the new evidence to the current graph fingerprint." : selected.suggestedRepair?.description ?? "Plan the smallest semantic change, validate it against graph invariants, and retain an evidence-backed diff."}</p></div>{selected.category === "build" ? <button type="button" onClick={rerunVerification} disabled={isPending} className="min-h-9 shrink-0 rounded border border-[var(--line)] px-4 text-[10px] font-semibold text-[var(--muted)] disabled:opacity-40">Refresh evidence</button> : <button type="button" onClick={() => previewRepair(selected)} disabled={isPending || selected.status === "suppressed"} className="min-h-9 shrink-0 rounded bg-[var(--accent-deep)] px-4 text-[10px] font-semibold text-white disabled:opacity-40">Preview repair</button>}</div>
                 {repairPreview?.findingId === selected.id ? (
                   <div className="mt-4 border-t border-[var(--line)] pt-4" aria-label="Repair preview">
                     <div className="flex items-start justify-between gap-3"><div><strong className="text-[10px] text-[var(--ink)]">{repairPreview.proposal.summary}</strong><p className="mt-1 font-mono text-[8px] text-[var(--faint)]">Source {repairPreview.sourceFingerprint} · {repairPreview.proposal.patch.operations.length} operation(s) · {repairPreview.changes.length} semantic change(s)</p></div><div className="flex gap-1.5"><button type="button" onClick={dismissRepair} className="h-8 rounded border border-[var(--line)] px-3 text-[9px] font-semibold text-[var(--muted)]">Dismiss</button><button type="button" onClick={applyRepair} disabled={repairPreview.sourceFingerprint !== sourceFingerprint} className="h-8 rounded bg-[var(--accent-deep)] px-3 text-[9px] font-semibold text-white disabled:opacity-40">Apply repair</button></div></div>

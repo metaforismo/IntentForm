@@ -92,6 +92,19 @@ These captures come from the public production build at a 1440 × 960 viewport. 
 
 ## Quick start
 
+### Judge setup: no credentials required
+
+The fastest test is the hosted [Judge Mode](https://intentform-amber.vercel.app/studio?judge=1&step=design). It needs no account, installation, API key, credits, or model call. The four-step replay is deterministic, leaves durable browser projects untouched, and includes a safe repair preview.
+
+For a fresh local checkout, no `.env` file is required and judges should **not** supply a personal OpenAI key:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+Open `http://127.0.0.1:3000`, then choose **Judge Mode** or **Examples → Aster Sound**. Without `OPENAI_API_KEY`, brief interpretation and repair planning use the built-in reproducible replay paths; Design, Code, Verify, compilers, history, rollback, and the local MCP workflow remain available. `OPENAI_API_KEY` is an optional server-side deployment setting only for bounded live GPT-5.6 interpretation and repair judgment—never a browser field or a judge requirement.
+
 Requirements:
 
 - Node.js 22 or newer
