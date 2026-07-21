@@ -280,6 +280,7 @@ html[data-intentform-minimal-ui] .studio-topbar {
 .select-control {
   appearance: none;
   min-height: var(--if-control-standard);
+  overflow: hidden;
   padding: 0 22px 0 8px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -289,7 +290,9 @@ html[data-intentform-minimal-ui] .studio-topbar {
   background-position: right 7px center;
   color: var(--t-strong);
   outline: none;
+  text-overflow: ellipsis;
   transition: border-color 150ms ease, box-shadow 150ms ease;
+  white-space: nowrap;
 }
 .select-control:hover { border-color: var(--line-strong); }
 .select-control:focus {
@@ -304,6 +307,9 @@ html[data-intentform-minimal-ui] .studio-topbar {
   .select-control,
   .select-control::picker(select) {
     appearance: base-select;
+  }
+  .select-control.if-compact-select {
+    appearance: none;
   }
   .select-control::picker-icon { display: none; }
   .select-control::picker(select) {

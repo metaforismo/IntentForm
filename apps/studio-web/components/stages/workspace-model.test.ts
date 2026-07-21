@@ -8,6 +8,7 @@ import {
   filterVerificationFindings,
   localPreviewTarget,
   matchingCodeLineNumbers,
+  preferredVerificationFindingId,
   reconcileComparisonProfileIds,
   replaceComparisonProfile,
   usableLocalPreview,
@@ -115,6 +116,17 @@ describe("Code and Verify workspace model", () => {
       finding({ id: "suppressed", status: "suppressed" }),
     ];
     expect(countVerificationFindings(findings)).toEqual({ error: 1, warning: 1, info: 1, suppressed: 1 });
+  });
+
+  it("prefers an actionable semantic error over build evidence and suppressed findings", () => {
+    const findings = [
+      finding({ id: "build", category: "build", severity: "warning" }),
+      finding({ id: "suppressed-error", category: "semantic", status: "suppressed" }),
+      finding({ id: "semantic-error", category: "semantic", severity: "error" }),
+    ];
+    expect(preferredVerificationFindingId(findings)).toBe("semantic-error");
+    expect(preferredVerificationFindingId([findings[0]!])).toBe("build");
+    expect(preferredVerificationFindingId([])).toBeNull();
   });
 
   it("filters by severity, suppression, profile, and searchable evidence identity", () => {

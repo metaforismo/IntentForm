@@ -542,6 +542,29 @@ try {
       await panel.getByRole("button", { name: /^3\. Verify and repair/ }).click();
       await judgePage.waitForURL(`${origin}/studio?judge=1&step=verify`);
       await judgePage.getByRole("button", { name: "Verification" }).and(judgePage.locator('[aria-current="page"]')).waitFor();
+      await judgePage.waitForFunction(() => document.querySelector('[data-testid="judge-mode-panel"] [aria-expanded]')?.getAttribute("aria-expanded") === "false");
+      const verificationDevice = judgePage.getByLabel("Verification device");
+      await verificationDevice.selectOption("device:neutral.phone.compact");
+      const filterSelectPresentation = await judgePage.locator('[aria-label="Verification filters"] select').evaluateAll((elements) => elements.map((element) => {
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return {
+          height: rect.height,
+          width: rect.width,
+          whiteSpace: style.whiteSpace,
+        };
+      }));
+      if (filterSelectPresentation.some((control) => control.height > 29 || control.width < 150 || control.whiteSpace !== "nowrap")) {
+        throw new Error(`Verification select labels can escape their compact controls: ${JSON.stringify(filterSelectPresentation)}`);
+      }
+      const actionableFinding = judgePage.getByRole("button", { name: /primary action must remain persistently reachable/i });
+      if (await actionableFinding.getAttribute("aria-pressed") !== "true") {
+        throw new Error("Judge Mode did not select the actionable semantic finding before the build-evidence warning");
+      }
+      await judgePage.getByRole("button", { name: "Preview repair" }).click();
+      const repairPreview = judgePage.getByLabel("Repair preview");
+      await repairPreview.waitFor();
+      await repairPreview.getByRole("button", { name: "Dismiss" }).click();
       await judgePage.reload({ waitUntil: "networkidle" });
       await judgePage.getByTestId("judge-mode-panel").getByRole("button", { name: /^3\. Verify and repair/ }).and(judgePage.locator('[aria-current="step"]')).waitFor();
       await mkdir(join(root, "output/playwright"), { recursive: true });

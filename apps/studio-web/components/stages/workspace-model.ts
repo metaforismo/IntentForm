@@ -184,6 +184,16 @@ export function countVerificationFindings(findings: readonly VerificationFinding
   };
 }
 
+export function preferredVerificationFindingId(findings: readonly VerificationFinding[]): string | null {
+  const open = findings.filter((finding) => finding.status !== "suppressed");
+  return open.find((finding) => finding.severity === "error" && finding.category !== "build")?.id
+    ?? open.find((finding) => finding.category !== "build")?.id
+    ?? open.find((finding) => finding.severity === "error")?.id
+    ?? open[0]?.id
+    ?? findings[0]?.id
+    ?? null;
+}
+
 export function filterVerificationFindings(
   findings: readonly VerificationFinding[],
   options: {
