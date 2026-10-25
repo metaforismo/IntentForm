@@ -20,7 +20,7 @@
     "@electron/osx-sign": "2.5.0",
     "@electron/packager": "20.0.0",
     "@types/node": "^25.0.0",
-    "electron": "41.10.2",
+    "electron": "42.11.16",
     "esbuild": "0.28.1",
     "typescript": "^5.9.3",
     "vitest": "^4.1.0"
